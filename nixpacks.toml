@@ -1,0 +1,18 @@
+[phases.install]
+cmds = ["npm install"]
+
+[phases.build]
+cmds = [
+  "npm run build",
+  "grep -R \"AO-17C-AO18A-apply-revert-restore-point\" dist",
+  "grep -R \"Aplicar patch na branch\" dist",
+  "grep -R \"Reverter patch da branch\" dist",
+  "grep -R \"restore_point=true\" dist",
+  "if grep -R \"AO-16D-R4-force-fresh-build-admin-dry-run\" dist; then echo \"ERRO: AO-16D-R4 encontrado no dist\"; exit 1; fi",
+  "if grep -R \"AO-14 é console visual\" dist; then echo \"ERRO: AO-14 encontrado no dist\"; exit 1; fi",
+  "if grep -R \"Dry-run futuro\" dist; then echo \"ERRO: Dry-run futuro encontrado no dist\"; exit 1; fi",
+  "if grep -R \"Nenhum botão de execução foi incluído\" dist; then echo \"ERRO: copy antiga encontrada no dist\"; exit 1; fi"
+]
+
+[start]
+cmd = "npm run start:prod"
