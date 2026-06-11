@@ -943,6 +943,22 @@ function isPublicBetaInternalAgentInvocationLeak(text) {
   );
 }
 
+function canSeeInternalAdminSurfaces() {
+  // AO68F-HF1_ADMIN_FRONTEND_PARITY:
+  // Backend may authorize the founder/admin by email even when the frontend
+  // role is still "user" or "summit_investor". Use the same visible admin
+  // detector used by the console instead of relying only on lib/auth.isAdmin().
+  try {
+    if (Boolean(isAdmin?.())) return true;
+  } catch {}
+
+  try {
+    if (hasAdminAccess(getUser?.())) return true;
+  } catch {}
+
+  return false;
+}
+
 function sanitizePublicBetaAssistantText(value) {
   if (value === null || value === undefined) return value;
   if (typeof value !== "string") return value;
@@ -954,9 +970,7 @@ function sanitizePublicBetaAssistantText(value) {
   // Public beta users still get internal-agent names sanitized.
   // Admin/super-admin must see the actual delegated agent text so @Orion/@Chris
   // orchestration can be validated in staging without "novos agentes especializados".
-  try {
-    if (Boolean(isAdmin?.())) return text;
-  } catch {}
+  if (canSeeInternalAdminSurfaces()) return text;
 
   if (isPublicBetaTechnicalGovernanceLeak(text)) {
     return ORKIO_PUBLIC_BETA_TECH_GOVERNANCE_NOTICE;
@@ -1215,11 +1229,7 @@ function canonicalizeSpeakerLabel(raw) {
 // assistant for AMCHAM/public users. Backend may return blocked_agent=Orion and
 // resolved_agent=Orkio; the UI must honor the resolved public speaker.
 function canSeeInternalOrionSpeaker() {
-  try {
-    return Boolean(isAdmin?.());
-  } catch {
-    return false;
-  }
+  return canSeeInternalAdminSurfaces();
 }
 
 function readRuntimeRoutingField(messageLike, key) {
