@@ -335,6 +335,7 @@ function sanitizeExecutionTraceStep(step) {
 
 
 // ORKIO_WHATSAPP_CTA_PREMIUM
+// AO68L-HF1_WHATSAPP_CARD_I18N — card language follows message language.
 // Transforma links WhatsApp enviados pelo backend em um CTA visual premium,
 // sem alterar o conteúdo semântico da resposta do agente.
 function normalizeExternalHref(rawUrl = "") {
@@ -359,8 +360,61 @@ function isWhatsappUrl(rawUrl = "") {
   );
 }
 
-function renderWhatsappCtaCard(href, key) {
+function isLikelyEnglishMessageContent(rawText = "") {
+  const text = String(rawText || "").toLowerCase();
+
+  const englishSignals = [
+    "who is ",
+    "what is ",
+    "how does ",
+    "implementation",
+    "human support",
+    "talk to someone",
+    "talk to a human",
+    "speak to someone",
+    "speak to a human",
+    "can i have",
+    "whatsapp",
+    "website",
+    "official patroai website",
+    "you can talk to",
+    "our patroai",
+    "our team can",
+    "the team can",
+    "guided implementation",
+    "patroai consultech is",
+    "orkio is",
+    "amcham members",
+  ];
+
+  const portugueseSignals = [
+    "quem é",
+    "o que é",
+    "como funciona",
+    "implantação",
+    "suporte humano",
+    "falar com",
+    "site institucional",
+    "nossa equipe",
+    "atendimento humano",
+    "você pode",
+  ];
+
+  const englishHits = englishSignals.reduce((count, signal) => count + (text.includes(signal) ? 1 : 0), 0);
+  const portugueseHits = portugueseSignals.reduce((count, signal) => count + (text.includes(signal) ? 1 : 0), 0);
+
+  return englishHits > portugueseHits;
+}
+
+function renderWhatsappCtaCard(href, key, options = {}) {
   const safeHref = href || "https://wa.me/5551989697605";
+  const english = Boolean(options && options.english);
+  const title = english ? "Ready to turn this into a real project?" : "Quer transformar isso em projeto real?";
+  const body = english
+    ? "Our team can map your demand and design the right personalized agents for your company."
+    : "Nossa equipe pode mapear sua demanda e desenhar os agentes personalizados ideais para sua empresa.";
+  const button = english ? "💬 Talk to the team on WhatsApp" : "💬 Falar com a equipe no WhatsApp";
+  const footer = english ? "Human support • ORKIO/PATROAI" : "Atendimento humano • ORKIO/PATROAI";
 
   return (
     <div
@@ -386,7 +440,7 @@ function renderWhatsappCtaCard(href, key) {
           marginBottom: 6,
         }}
       >
-        Quer transformar isso em projeto real?
+        {title}
       </div>
 
       <div
@@ -397,7 +451,7 @@ function renderWhatsappCtaCard(href, key) {
           marginBottom: 12,
         }}
       >
-        Nossa equipe pode mapear sua demanda e desenhar os agentes personalizados ideais para sua empresa.
+        {body}
       </div>
 
       <a
@@ -419,7 +473,7 @@ function renderWhatsappCtaCard(href, key) {
           boxShadow: "0 12px 28px rgba(20,184,166,0.24)",
         }}
       >
-        💬 Falar com a equipe no WhatsApp
+        {button}
       </a>
 
       <div
@@ -430,7 +484,7 @@ function renderWhatsappCtaCard(href, key) {
           fontWeight: 700,
         }}
       >
-        Atendimento humano • ORKIO/PATROAI
+        {footer}
       </div>
     </div>
   );
@@ -440,6 +494,7 @@ function renderMessageContentPremium(value) {
   const text = String(value || "");
   if (!text) return "";
 
+  const whatsappCardEnglish = isLikelyEnglishMessageContent(text);
   const urlRegex = /(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)/gi;
   const nodes = [];
   let lastIndex = 0;
@@ -454,7 +509,7 @@ function renderMessageContentPremium(value) {
     const { href, displayUrl, trailing } = normalizeExternalHref(rawUrl);
 
     if (isWhatsappUrl(href)) {
-      nodes.push(renderWhatsappCtaCard(href, `whatsapp-cta-${match.index}-${matchIndex}`));
+      nodes.push(renderWhatsappCtaCard(href, `whatsapp-cta-${match.index}-${matchIndex}`, { english: whatsappCardEnglish }));
     } else {
       nodes.push(
         <a
