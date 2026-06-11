@@ -335,7 +335,7 @@ function sanitizeExecutionTraceStep(step) {
 
 
 // ORKIO_WHATSAPP_CTA_PREMIUM
-// AO68L-HF1_WHATSAPP_CARD_I18N — card language follows message language.
+// AO69A-HF1_PREMIUM_POLISH — card language follows message language; WhatsApp cards suppress residual URL punctuation.
 // Transforma links WhatsApp enviados pelo backend em um CTA visual premium,
 // sem alterar o conteúdo semântico da resposta do agente.
 function normalizeExternalHref(rawUrl = "") {
@@ -409,10 +409,10 @@ function isLikelyEnglishMessageContent(rawText = "") {
 function renderWhatsappCtaCard(href, key, options = {}) {
   const safeHref = href || "https://wa.me/5551989697605";
   const english = Boolean(options && options.english);
-  const title = english ? "Ready to turn this into a real project?" : "Quer transformar isso em projeto real?";
+  const title = english ? "Ready to turn this into a guided project?" : "Pronto para transformar isso em projeto guiado?";
   const body = english
-    ? "Our team can map your demand and design the right personalized agents for your company."
-    : "Nossa equipe pode mapear sua demanda e desenhar os agentes personalizados ideais para sua empresa.";
+    ? "The Patroai/Orkio team can map your demand, design the right agents and guide the next step."
+    : "A equipe Patroai/Orkio pode mapear sua demanda, desenhar os agentes certos e orientar o próximo passo.";
   const button = english ? "💬 Talk to the team on WhatsApp" : "💬 Falar com a equipe no WhatsApp";
   const footer = english ? "Human support • ORKIO/PATROAI" : "Atendimento humano • ORKIO/PATROAI";
 
@@ -507,8 +507,9 @@ function renderMessageContentPremium(value) {
     if (before) nodes.push(before);
 
     const { href, displayUrl, trailing } = normalizeExternalHref(rawUrl);
+    const isWhatsappHref = isWhatsappUrl(href);
 
-    if (isWhatsappUrl(href)) {
+    if (isWhatsappHref) {
       nodes.push(renderWhatsappCtaCard(href, `whatsapp-cta-${match.index}-${matchIndex}`, { english: whatsappCardEnglish }));
     } else {
       nodes.push(
@@ -530,7 +531,7 @@ function renderMessageContentPremium(value) {
       );
     }
 
-    if (trailing) nodes.push(trailing);
+    if (trailing && !isWhatsappHref) nodes.push(trailing);
     lastIndex = match.index + rawUrl.length;
     matchIndex += 1;
   }
