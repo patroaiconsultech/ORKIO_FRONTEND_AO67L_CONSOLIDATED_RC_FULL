@@ -1,4 +1,4 @@
-// AO68B-HF1_ADMIN_ORCHESTRATION_RECOVERY_FRONTEND
+// AO68C-HF1_REALTIME_ENTRYPOINT_ON_NO_CONTEXT_NOTES_SAFE_FRONTEND
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch, uploadFile, chat, chatStream, transcribeAudio, requestFounderHandoff, getRealtimeClientSecret, startRealtimeSession, startSummitSession, postRealtimeEventsBatch, endRealtimeSession, getRealtimeSession, getSummitSessionScore, submitSummitSessionReview, downloadRealtimeAta as downloadRealtimeAtaFile, guardRealtimeTranscript, getOrionSquadHealth, getOrionSquadPreview, getAgentCapabilities } from "../ui/api.js";
@@ -2001,10 +2001,10 @@ export default function AppConsole() {
 
   const SHOW_REALTIME_AUDIT = false;
 
-  // AO64D-HF6_CHAT_ONLY_DISABLE_PENDING_FEATURES
-  // Realtime voice and founder handoff stay visible as premium entry points,
-  // but are temporarily disabled while the chat text experience is stabilized.
-  const REALTIME_ENTRYPOINT_ENABLED = false;
+  // AO68C-HF1_REALTIME_ENTRYPOINT_RESTORED
+  // Realtime must be available from the UI so admin/staging can actually test /api/realtime/start.
+  // Founder handoff remains disabled until its own validation track.
+  const REALTIME_ENTRYPOINT_ENABLED = true;
   const FOUNDER_HANDOFF_ENTRYPOINT_ENABLED = false;
   const DISABLED_FEATURE_NOTICE =
     "Esta funcionalidade está em construção e será liberada futuramente. Por enquanto, o chat por texto está à disposição. Conforme a evolução das conversas e o uso correto da ferramenta, novas funcionalidades e agentes especializados poderão ser liberados.";
@@ -10483,7 +10483,7 @@ async function stopRealtime(reason = 'client_stop') {
                   }}
                   onClick={toggleRealtimeMode}
                   disabled={false}
-                  title={DISABLED_FEATURE_NOTICE}
+                  title={realtimeMode ? "Encerrar voz em tempo real" : "Iniciar voz em tempo real"}
                 >
                   <span style={{ fontSize: "16px" }}>⚡</span>
                   {false && realtimeMode && <span style={{ position: "absolute", top: "-2px", right: "-2px", width: "8px", height: "8px", borderRadius: "50%", background: "#50a0ff", animation: "pulse 1.5s infinite" }} />}
