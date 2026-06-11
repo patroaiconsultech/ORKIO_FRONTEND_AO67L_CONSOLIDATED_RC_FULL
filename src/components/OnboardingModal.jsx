@@ -1,3 +1,4 @@
+// AO68C-HF1_NO_CONTEXT_NOTES_ONBOARDING_SAFE
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getTenant, getToken } from "../lib/auth.js";
 import {
@@ -154,7 +155,6 @@ function sanitizeOnboardingPayload(payload, prechat) {
     segment ? `Segmento: ${segment}` : "",
     systems ? `Sistemas/automações existentes: ${systems}` : "",
     goal ? `Objetivo 90 dias: ${goal}` : "",
-    "Trial sugerido: 7 dias grátis.",
   ].filter(Boolean).join("\n");
 
   const enterpriseIntent = /erp|crm|integra|integrat|white\s*label|sistema|api|automação|automation/i.test(
@@ -169,7 +169,7 @@ function sanitizeOnboardingPayload(payload, prechat) {
     country,
     language: String(payload?.language || "").trim() || suggestLanguage(country),
     whatsapp: normalizeWhatsapp(payload?.whatsapp || ""),
-    notes: String(payload?.notes || notesFromPrechat || "").trim(),
+    notes: "",
   };
 }
 
@@ -440,7 +440,7 @@ export default function OnboardingModal({ user, onComplete, onClose, entrySource
       preferred_language: form.language || suggestLanguage(form.country || "BR"),
       whatsapp: normalizeWhatsapp(form.whatsapp || ""),
       whatsapp_number: normalizeWhatsapp(form.whatsapp || ""),
-      notes: enterpriseInterest ? appendEnterpriseContext(form.notes) : (form.notes || null),
+      notes: enterpriseInterest ? appendEnterpriseContext("") : null,
       onboarding_completed: true,
     };
 
@@ -688,15 +688,6 @@ export default function OnboardingModal({ user, onComplete, onClose, entrySource
             />
           </label>
 
-          <label style={{ gridColumn: "1 / -1" }}>
-            <span style={labelStyle}>Observações de contexto</span>
-            <textarea
-              style={{ ...fieldStyle, minHeight: 138, resize: "vertical", lineHeight: 1.5 }}
-              value={form.notes}
-              onChange={(e) => setField("notes", e.target.value)}
-              placeholder="Conte o objetivo, desafio principal, prioridade dos próximos dias ou algo que Orkio deve lembrar no primeiro chat..."
-            />
-          </label>
         </div>
 
         {isEnterpriseIntent(form.intent) && (
