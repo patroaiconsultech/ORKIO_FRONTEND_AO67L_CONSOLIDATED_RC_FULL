@@ -1,5 +1,7 @@
 import React from "react";
 
+// AO69B-HF1_SMART_NEXT_ACTIONS_PREMIUM
+
 /**
  * AO64D-HF6E_PUBLIC_BETA_RENDER_SAFE
  *
@@ -15,6 +17,144 @@ import React from "react";
  * - Impedir que conteúdo bruto com nomes internos volte a aparecer no balão.
  * - Não fazer fetch, stream, realtime ou chamada backend direta neste componente.
  */
+
+function isLikelyEnglishSmartActionContent(value) {
+  const text = String(value || "").toLowerCase();
+  if (!text.trim()) return false;
+  const englishHits = [
+    "who is", "what is", "how does", "implementation", "human support",
+    "talk to the team", "website", "amcham companies", "ready to turn",
+    "guided project", "next step", "patroai/orkio team"
+  ].filter((marker) => text.includes(marker)).length;
+  const portugueseHits = [
+    "quem é", "o que é", "como funciona", "implantação", "suporte humano",
+    "falar com", "site", "empresas da amcham", "pronto para transformar",
+    "projeto guiado", "próximo passo"
+  ].filter((marker) => text.includes(marker)).length;
+  return englishHits > portugueseHits;
+}
+
+function shouldShowSmartNextActions(value) {
+  const text = String(value || "").trim();
+  if (!text || text.length < 80) return false;
+  const lower = text.toLowerCase();
+
+  const safePublicMarkers = [
+    "patroai", "orkio", "amcham", "whatsapp", "implantação", "implementation",
+    "guided project", "projeto guiado", "site institucional", "official patroai website"
+  ];
+  if (!safePublicMarkers.some((marker) => lower.includes(marker))) return false;
+
+  const blockedMarkers = [
+    "patch approval", "aprovar patch", "executar patch", "audit_receipt",
+    "trace_id", "runtime/", "src/routes/", "main.py", "@orion", "@chris",
+    "governance/approve-patch", "terminal guard", "stack trace"
+  ];
+  if (blockedMarkers.some((marker) => lower.includes(marker))) return false;
+
+  return true;
+}
+
+function buildSmartNextActions(value) {
+  const text = String(value || "");
+  if (!shouldShowSmartNextActions(text)) return [];
+
+  const lower = text.toLowerCase();
+  const english = isLikelyEnglishSmartActionContent(text);
+  const isContactContext = (
+    lower.includes("whatsapp") ||
+    lower.includes("talk to the team") ||
+    lower.includes("falar com a equipe") ||
+    lower.includes("atendimento humano") ||
+    lower.includes("human support")
+  );
+  const isSiteContext = (
+    lower.includes("www.patroai.com") ||
+    lower.includes("official patroai website") ||
+    lower.includes("site institucional")
+  );
+  const isImplementationContext = (
+    lower.includes("implementation") ||
+    lower.includes("implantação") ||
+    lower.includes("guided implementation") ||
+    lower.includes("jornada consultiva")
+  );
+  const isAmchamContext = lower.includes("amcham");
+
+  const actions = [];
+
+  const push = (id, label, prompt) => {
+    if (!actions.some((item) => item.id === id)) actions.push({ id, label, prompt });
+  };
+
+  if (english) {
+    if (!isImplementationContext) push("implementation", "See implementation", "How does implementation work?");
+    if (!isContactContext) push("contact", "Talk to the team", "Can I have your WhatsApp?");
+    if (!isSiteContext) push("site", "Visit website", "What is the Patroai website?");
+    if (isAmchamContext) {
+      push("amcham-use", "AMCHAM use cases", "What can AMCHAM members use Orkio for?");
+    } else {
+      push("test-case", "Test another use case", "Show me one practical way my company could test Orkio.");
+    }
+  } else {
+    if (!isImplementationContext) push("implementation", "Ver implantação", "Como funciona a implantação?");
+    if (!isContactContext) push("contact", "Falar com a equipe", "Quero falar com alguém.");
+    if (!isSiteContext) push("site", "Conhecer o site", "Qual é o site da Patroai?");
+    if (isAmchamContext) {
+      push("amcham-use", "Casos AMCHAM", "O que associados da AMCHAM podem testar com o Orkio?");
+    } else {
+      push("test-case", "Testar outro caso", "Me dê um exemplo prático de como minha empresa pode testar o Orkio.");
+    }
+  }
+
+  return actions.slice(0, 4);
+}
+
+function SmartNextActions({ actions, onAction }) {
+  if (!Array.isArray(actions) || !actions.length || typeof onAction !== "function") return null;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 8,
+        marginTop: 12,
+        paddingTop: 10,
+        borderTop: "1px solid rgba(255,255,255,0.08)",
+      }}
+    >
+      {actions.map((action) => (
+        <button
+          key={action.id}
+          type="button"
+          onClick={(event) => {
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            onAction(action.prompt);
+          }}
+          title={action.prompt}
+          style={{
+            border: "1px solid rgba(148,163,184,0.28)",
+            borderRadius: 999,
+            padding: "7px 10px",
+            background: "linear-gradient(135deg, rgba(15,23,42,0.78), rgba(30,41,59,0.72))",
+            color: "rgba(226,232,240,0.94)",
+            cursor: "pointer",
+            fontSize: 12,
+            fontWeight: 900,
+            letterSpacing: "0.01em",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.16)",
+          }}
+        >
+          {action.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+
 export default function MessageBubble({
   message,
   styles,
@@ -37,6 +177,7 @@ export default function MessageBubble({
   openPatchApprovalModal,
   extractPatchApprovalMeta,
   executeApprovedPatchFromMessage,
+  onSmartNextAction,
   canAccessAdmin,
 }) {
   const m = message || {};
@@ -145,6 +286,13 @@ export default function MessageBubble({
                   <div style={styles?.messageContent || { whiteSpace: "pre-wrap", lineHeight: 1.45 }}>
                     {renderMessageContentPremium?.(visibleForActions) ?? visibleForActions}
                   </div>
+
+                  {!isUser && !isSystem && visibleForActions && (
+                    <SmartNextActions
+                      actions={buildSmartNextActions(visibleForActions)}
+                      onAction={onSmartNextAction}
+                    />
+                  )}
 
                   {!isUser && !isSystem && visibleForActions && (() => {
                     // AO65A-HF6/HF7: if any classic TTS is active, the next click must stop it immediately.
