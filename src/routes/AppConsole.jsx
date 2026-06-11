@@ -1,4 +1,4 @@
-// AO68C-HF1_REALTIME_ENTRYPOINT_ON_NO_CONTEXT_NOTES_SAFE_FRONTEND
+// AO68D-HF1_REALTIME_TOGGLE_OFF_ADMIN_SPEAKER_SESSION_COMPAT
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch, uploadFile, chat, chatStream, transcribeAudio, requestFounderHandoff, getRealtimeClientSecret, startRealtimeSession, startSummitSession, postRealtimeEventsBatch, endRealtimeSession, getRealtimeSession, getSummitSessionScore, submitSummitSessionReview, downloadRealtimeAta as downloadRealtimeAtaFile, guardRealtimeTranscript, getOrionSquadHealth, getOrionSquadPreview, getAgentCapabilities } from "../ui/api.js";
@@ -1272,12 +1272,19 @@ function sanitizePublicAssistantSpeaker(messageLike, proposedName = "Orkio") {
     ""
   ).toLowerCase();
 
+  // AO68D-HF1_ADMIN_INTERNAL_SPEAKER_PARITY:
+  // Public users must still see Orkio for blocked internal-agent routes.
+  // Admin users, however, need to see the real delegated speaker during staging
+  // so @Orion/@Chris orchestration can be validated instead of being visually collapsed to Orkio.
   if (
-    blockedKey === "orion" ||
-    resolvedKey === "orkio" ||
-    contentText.includes("orion é um agente interno") ||
-    contentText.includes("orion faz parte da equipe interna") ||
-    contentText.includes("orion e um agente interno")
+    !canSeeInternalOrionSpeaker() &&
+    (
+      blockedKey === "orion" ||
+      resolvedKey === "orkio" ||
+      contentText.includes("orion é um agente interno") ||
+      contentText.includes("orion faz parte da equipe interna") ||
+      contentText.includes("orion e um agente interno")
+    )
   ) {
     return "Orkio";
   }
@@ -7564,6 +7571,40 @@ function scheduleRealtimeIdleFollowup() {
     }
   }
 
+  async function getRealtimeSessionCompat(args = {}) {
+    const sid = String(args?.session_id || "").trim();
+    if (!sid) return null;
+
+    try {
+      return await getRealtimeSession(args);
+    } catch (err) {
+      const status = Number(err?.status || err?.data?.status || err?.response?.status || 0);
+      logRealtimeStep("ao68d_hf1:session_get_primary_failed", {
+        sessionId: sid,
+        status: Number.isFinite(status) ? status : 0,
+        message: err?.message || null,
+      });
+    }
+
+    try {
+      const suffix = args?.finals_only ? "?finals_only=true" : "";
+      const { data } = await apiFetch(`/api/realtime/${encodeURIComponent(sid)}${suffix}`, {
+        method: "GET",
+        token,
+        org: tenant,
+        skipAuthRedirect: true,
+      });
+      return data || null;
+    } catch (fallbackErr) {
+      logRealtimeStep("ao68d_hf1:session_get_compat_failed", {
+        sessionId: sid,
+        message: fallbackErr?.message || null,
+        status: fallbackErr?.status || null,
+      });
+      throw fallbackErr;
+    }
+  }
+
   function safeParseRealtimeMeta(meta) {
     if (!meta) return {};
     if (typeof meta === "object") return meta;
@@ -7661,7 +7702,7 @@ function scheduleRealtimeIdleFollowup() {
           clearRealtimeLivePoll();
           return;
         }
-        const data = await getRealtimeSession({ session_id: sid, finals_only: true });
+        const data = await getRealtimeSessionCompat({ session_id: sid, finals_only: true });
         await handleBackendRealtimeAssistantResponses(data || {});
       } catch (err) {
         console.warn("[Realtime] live poll failed", err);
@@ -7693,7 +7734,7 @@ function scheduleRealtimeIdleFollowup() {
       let last = null;
       while (Date.now() - started < deadlineMs) {
         try {
-          const data = await getRealtimeSession({ session_id: sid, finals_only: true });
+          const data = await getRealtimeSessionCompat({ session_id: sid, finals_only: true });
           last = data;
           if (data?.events) {
             setRtcAuditEvents(data.events);
@@ -8074,7 +8115,7 @@ async function stopRealtime(reason = 'client_stop') {
           }
 
           try {
-            const data = await getRealtimeSession({ session_id: sid, finals_only: true });
+            const data = await getRealtimeSessionCompat({ session_id: sid, finals_only: true });
             if (data?.events) setRtcAuditEvents(data.events);
             await handleBackendRealtimeAssistantResponses(data || {});
           } catch {}
@@ -8325,26 +8366,18 @@ async function stopRealtime(reason = 'client_stop') {
     if (SUMMIT_VOICE_MODE !== "realtime") return;
     const next = !realtimeMode;
 
-    // AO68A-HF6R9:
-    // During warmup, a second tap on the lightning/voice button must NOT be
-    // interpreted as "stop". It was ending the just-created backend session,
-    // and the next tap fell into public cooldown. Treat it as activation retry.
+    // AO68D-HF1_REALTIME_TOGGLE_OFF_MUST_DISARM:
+    // HF6R9 protected against accidental second taps during warmup, but in staging it
+    // made the visible Realtime button impossible to disarm: every off-click became
+    // an activation nudge. A user/admin explicit off-click must always cleanly stop
+    // the local WebRTC/audio/DataChannel state. Backend /end is still gated inside
+    // stopRealtime(), so this does not reintroduce fake quota/cooldown consumption.
     if (!next && realtimeMode) {
-      const ageMs = getRealtimeSessionAgeMs();
-      const warmupActive = Boolean(
-        rtcConnectingRef.current ||
-        (
-          rtcSessionIdRef.current &&
-          !rtcConversationStartedRef.current &&
-          ageMs >= 0 &&
-          ageMs < 180000
-        )
-      );
-
-      if (warmupActive) {
-        const nudged = nudgeRealtimeActivation("second_tap_during_warmup");
-        if (nudged) return;
-      }
+      logRealtimeStep("ao68d_hf1:toggle_off_requested", {
+        sessionId: rtcSessionIdRef.current || null,
+        ageMs: getRealtimeSessionAgeMs(),
+        conversationStarted: Boolean(rtcConversationStartedRef.current),
+      });
     }
 
     if (next && rtcSessionIdRef.current && !rtcConversationStartedRef.current) {
