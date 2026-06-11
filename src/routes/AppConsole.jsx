@@ -1,3 +1,4 @@
+// AO68B-HF1_ADMIN_ORCHESTRATION_RECOVERY_FRONTEND
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch, uploadFile, chat, chatStream, transcribeAudio, requestFounderHandoff, getRealtimeClientSecret, startRealtimeSession, startSummitSession, postRealtimeEventsBatch, endRealtimeSession, getRealtimeSession, getSummitSessionScore, submitSummitSessionReview, downloadRealtimeAta as downloadRealtimeAtaFile, guardRealtimeTranscript, getOrionSquadHealth, getOrionSquadPreview, getAgentCapabilities } from "../ui/api.js";
@@ -19,7 +20,6 @@ import { useRealtimeTranscriptSummary } from "../hooks/realtime/useRealtimeTrans
 // AO68A-HF6R10_NO_BACKEND_END_ON_WARMUP — suppress fake quota/cooldown on failed realtime warmup
 
 // AO68A-HF6R9_REALTIME_NO_COOLDOWN_ON_RETRY — safe AppConsole patch applied
-// AO68A-HF1_NO_COUNTER_RESIDUAL_PUBLIC_SPEAKER_ORKIO — remove advisory-only clock residue and keep public speaker as Orkio
 
 // ORKIO_AO60D_REALTIME_MOBILE_HARDENING
 function buildRealtimeDiagnosticError(code, message, diagnostic = {}) {
@@ -1185,24 +1185,19 @@ function canonicalizeSpeakerLabel(raw) {
     security_guardian: "Security Guardian",
     data_db_architect: "Data DB Architect",
     realtime_voice_engineer: "Realtime Voice Engineer",
+    realtime_assistant: "Orkio",
     longest: "Orkio",
     response_done_longest: "Orkio",
     response_done: "Orkio",
     realtime: "Orkio",
-    realtime_assistant: "Orkio",
+    agent: "Orkio",
+    agente: "Orkio",
+    assistant: "Orkio",
+    model: "Orkio",
     orkio: "Orkio",
     chris: "Chris",
     orion: "Orion",
-    chris: "Chris",
     warren: "Warren",
-    longest: "Orkio",
-    response_done_longest: "Orkio",
-    response_done: "Orkio",
-    realtime: "Orkio",
-    agent: "Agent",
-    agente: "Agent",
-    assistant: "Agent",
-    model: "Agent",
   };
 
   return map[normalizedKey] || text;
@@ -1305,10 +1300,6 @@ function sanitizePublicAssistantSpeaker(messageLike, proposedName = "Orkio") {
     "data db architect",
     "realtime voice engineer",
     "longest",
-    "agent",
-    "agente",
-    "assistant",
-    "model",
   ]);
 
   if (publicHiddenSpeakerKeys.has(proposedKey) && !canSeeInternalOrionSpeaker()) {
@@ -1333,9 +1324,7 @@ function inferSpeakerNameFromContent(content) {
   const normalizedInferred = String(inferred || "").trim().toLowerCase();
   const normalizedFirst = String(first || "").trim().toLowerCase();
   if (!inferred) return "";
-  // AO68A-HF1: generic runtime labels must not become a visible public speaker.
-  // In public Realtime/chat surfaces, the assistant identity is Orkio.
-  if (["agent", "assistant", "model", "agente"].includes(normalizedFirst)) return "Orkio";
+  if (["agent", "assistant", "model", "agente"].includes(normalizedFirst)) return "Agent";
   if (inferred !== first) return inferred;
   return "";
 }
@@ -5678,10 +5667,9 @@ function scheduleRealtimeIdleFollowup() {
   }
 
   function shouldShowRealtimeCounter() {
-    // AO68A-HF1_NO_COUNTER_RESIDUAL_PUBLIC_SPEAKER_ORKIO
+    // AO68B-HF1_NO_COUNTER_RESIDUAL_PUBLIC_SPEAKER_ORKIO
     // Backend/frontend timebox is advisory-only. When the hard-timebox flag is off,
-    // never render the floating clock/counter, even if realtimeMode or premium
-    // status is active. This keeps the ESG guidance without a misleading timer.
+    // never render the floating clock/counter, even if realtimeMode or premium status is active.
     return Boolean(
       REALTIME_FRONTEND_HARD_TIMEBOX_ENABLED === true
       && SUMMIT_VOICE_MODE === "realtime"
@@ -10074,7 +10062,7 @@ async function stopRealtime(reason = 'client_stop') {
 
         {shouldShowRealtimeCounter() ? (
           <div
-            data-orkio-realtime-counter="ao68a-hf1-disabled-when-advisory"
+            data-orkio-realtime-counter="ao61a-hf4"
             style={{
               position: "fixed",
               top: "calc(env(safe-area-inset-top, 0px) + 12px)",
