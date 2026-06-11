@@ -1,4 +1,4 @@
-// AO68D-HF1_REALTIME_TOGGLE_OFF_ADMIN_SPEAKER_SESSION_COMPAT
+// AO68E-HF1_REALTIME_INLINE_CHAT_NO_TRANSCRIPT_MODAL_ADMIN_ORCH_VISUAL_PARITY
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch, uploadFile, chat, chatStream, transcribeAudio, requestFounderHandoff, getRealtimeClientSecret, startRealtimeSession, startSummitSession, postRealtimeEventsBatch, endRealtimeSession, getRealtimeSession, getSummitSessionScore, submitSummitSessionReview, downloadRealtimeAta as downloadRealtimeAtaFile, guardRealtimeTranscript, getOrionSquadHealth, getOrionSquadPreview, getAgentCapabilities } from "../ui/api.js";
@@ -12,7 +12,6 @@ import EmptyStatePremium from "../components/EmptyStatePremium.jsx";
 import ExecutionTimeline from "../components/ExecutionTimeline.jsx";
 import MessageBubble from "../components/chat/MessageBubble.jsx";
 import RealtimeTimeboxOverlay from "../components/realtime/RealtimeTimeboxOverlay.jsx";
-import RealtimeTranscriptSummary from "../components/realtime/RealtimeTranscriptSummary.jsx";
 import { useRealtimeTranscriptSummary } from "../hooks/realtime/useRealtimeTranscriptSummary.js";
 
 // AO64D-HF6C_PUBLIC_BETA_GUARDRAILS_EFATAH777 — public beta copy, rewards narrative and internal-agent sanitation
@@ -950,6 +949,14 @@ function sanitizePublicBetaAssistantText(value) {
 
   let text = value;
   if (!text.trim()) return text;
+
+  // AO68E-HF1_ADMIN_INTERNAL_CONTENT_PARITY:
+  // Public beta users still get internal-agent names sanitized.
+  // Admin/super-admin must see the actual delegated agent text so @Orion/@Chris
+  // orchestration can be validated in staging without "novos agentes especializados".
+  try {
+    if (Boolean(isAdmin?.())) return text;
+  } catch {}
 
   if (isPublicBetaTechnicalGovernanceLeak(text)) {
     return ORKIO_PUBLIC_BETA_TECH_GOVERNANCE_NOTICE;
@@ -2504,6 +2511,8 @@ const messagesEndRef = useRef(null);
   const rtcLastAssistantFinalRef = useRef("");
   const rtcAssistantFinalCommittedRef = useRef(false);
   const rtcAssistantFinalMessageIdRef = useRef(null);
+  const rtcRealtimeInlineUserKeyRef = useRef("");
+  const rtcRealtimeInlineAssistantKeyRef = useRef("");
   const rtcAssistantFinalTextRef = useRef("");
   const rtcAssistantPendingFinalTextRef = useRef("");
   const rtcAssistantPendingFinalSourceRef = useRef("");
@@ -2587,11 +2596,13 @@ const rtcLastUserActivityAtRef = useRef(0);
     getSessionId: () => rtcSessionIdRef.current || lastRealtimeSessionId || null,
     getUserTextFallback: () => rtcLastFinalTranscriptRef.current,
     getAssistantTextFallback: () => rtcAssistantFinalTextRef.current,
-    // AO64D-HF1A: keep PATCH 1 as summary-only. Do not inline to chat here.
-    // Inline chat insertion needs a separate audited helper to avoid duplicate turns.
+    // AO68E-HF1:
+    // Realtime must be recorded directly in the main chat timeline.
+    // The separate transcript modal is suppressed; final user/assistant turns are
+    // committed through appendRealtimeInlineChatTurn/commitRealtimeAssistantFinal.
     appendSummaryToChat: null,
     inlineToChat: false,
-    modalSuppressed: false,
+    modalSuppressed: true,
   });
   const realtimeTranscriptSummary = realtimeSummary.summary;
   const realtimeTranscriptSummaryOpen = realtimeSummary.summaryOpen;
@@ -5728,6 +5739,8 @@ function scheduleRealtimeIdleFollowup() {
   }
 
   function resetRealtimeTranscriptSession(reason = "reset") {
+    try { rtcRealtimeInlineUserKeyRef.current = ""; } catch {}
+    try { rtcRealtimeInlineAssistantKeyRef.current = ""; } catch {}
     return realtimeSummary.reset(reason);
   }
 
@@ -5740,7 +5753,79 @@ function scheduleRealtimeIdleFollowup() {
   }
 
   function publishRealtimeTranscriptSummary(reason = "ended", extra = {}) {
-    return realtimeSummary.publish(reason, extra);
+    // AO68E-HF1: keep summary data available for audit, but never open a separate
+    // transcript screen. The conversation belongs to the canonical chat timeline.
+    try { setRealtimeTranscriptSummaryOpen(false); } catch {}
+    return realtimeSummary.publish(reason, { ...(extra || {}), forceOpen: false });
+  }
+
+  function buildRealtimeInlineDedupeKey(role, content) {
+    const safeRole = String(role || "").trim().toLowerCase() === "assistant" ? "assistant" : "user";
+    const safeContent = normalizeRealtimeTranscriptText(content)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+    return `${safeRole}:${safeContent}`;
+  }
+
+  function appendRealtimeInlineChatTurn(role, content, meta = {}) {
+    const cleanText = normalizeRealtimeTranscriptText(content);
+    if (!cleanText) return false;
+
+    const safeRole = String(role || "").trim().toLowerCase() === "assistant" ? "assistant" : "user";
+    const dedupeKey = buildRealtimeInlineDedupeKey(safeRole, cleanText);
+    if (!dedupeKey || dedupeKey.endsWith(":")) return false;
+
+    const dedupeRef = safeRole === "assistant"
+      ? rtcRealtimeInlineAssistantKeyRef
+      : rtcRealtimeInlineUserKeyRef;
+
+    if (String(dedupeRef.current || "") === dedupeKey) return false;
+    dedupeRef.current = dedupeKey;
+
+    const now = Math.floor(Date.now() / 1000);
+    const sessionId = rtcSessionIdRef.current || lastRealtimeSessionId || null;
+    const displayUserName = String(user?.name || user?.full_name || "Você").trim() || "Você";
+
+    setMessages((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const last = list[list.length - 1] || null;
+      const lastKey = last?.meta?.realtime_inline_turn
+        ? buildRealtimeInlineDedupeKey(last?.role, last?.content)
+        : "";
+
+      if (lastKey && lastKey === dedupeKey) return list;
+
+      return list.concat([{
+        id: `rtc_${safeRole}_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+        role: safeRole,
+        content: cleanText,
+        agent_id: safeRole === "assistant" ? "orkio" : null,
+        agent_name: safeRole === "assistant" ? "Orkio" : displayUserName,
+        final_speaker: safeRole === "assistant" ? "Orkio" : displayUserName,
+        visible_agent: safeRole === "assistant" ? "Orkio" : displayUserName,
+        created_at: now,
+        meta: {
+          ...(meta && typeof meta === "object" ? meta : {}),
+          realtime_inline_turn: true,
+          realtime_session_id: sessionId,
+          source: meta?.source || "realtime_final_transcript",
+          marker: "AO68E-HF1_REALTIME_INLINE_CHAT",
+        },
+      }]);
+    });
+
+    try {
+      console.log("REALTIME_INLINE_CHAT_TURN_COMMITTED", {
+        role: safeRole,
+        sessionId,
+        length: cleanText.length,
+        marker: "AO68E-HF1_REALTIME_INLINE_CHAT",
+      });
+    } catch {}
+
+    return true;
   }
 
   function getRealtimePremiumStatusLabel() {
@@ -7118,6 +7203,7 @@ function scheduleRealtimeIdleFollowup() {
             try {} catch {}
             rtcLastFinalTranscriptRef.current = raw;
             appendRealtimeTranscriptTurn("user", raw, { source: "input_audio_transcription.completed" });
+            appendRealtimeInlineChatTurn("user", raw, { source: "input_audio_transcription.completed" });
             markRealtimeUserActivity();
 
             Promise.resolve(guardAndMaybeBlockRealtimeTranscript(raw)).then((blocked) => {
@@ -7858,6 +7944,7 @@ function scheduleRealtimeIdleFollowup() {
     rtcAssistantFinalCommittedRef.current = true;
     rtcAssistantFinalTextRef.current = finalText;
     appendRealtimeTranscriptTurn("assistant", finalText, { source });
+    try { rtcRealtimeInlineAssistantKeyRef.current = buildRealtimeInlineDedupeKey("assistant", finalText); } catch {}
 
     queueRealtimeEvent({ event_type: 'response.final', role: 'assistant', content: finalText, is_final: true, meta: { source, hf4: true, upgraded: isMeaningfulUpgrade } });
 
@@ -9457,11 +9544,8 @@ async function stopRealtime(reason = 'client_stop') {
         void stopRealtime("client_stop_fullscreen_clock");
       }}
     />
-    <RealtimeTranscriptSummary
-      open={realtimeTranscriptSummaryOpen}
-      summary={realtimeTranscriptSummary}
-      onClose={() => setRealtimeTranscriptSummaryOpen(false)}
-    />
+    {/* AO68E-HF1: separate Realtime transcript modal removed.
+        Final Realtime user/assistant turns are written directly into the main chat. */}
     {bootstrapFailOpen && (
       <div style={{ position: "fixed", top: "12px", left: "50%", transform: "translateX(-50%)", zIndex: 120, padding: "10px 14px", borderRadius: "12px", border: "1px solid rgba(251,191,36,0.35)", background: "rgba(120,53,15,0.92)", color: "#fde68a", fontSize: "12px", fontWeight: 700, boxShadow: "0 12px 28px rgba(0,0,0,0.28)" }}>
         Console liberado em modo fail-open. O bootstrap inicial demorou mais que o esperado.
