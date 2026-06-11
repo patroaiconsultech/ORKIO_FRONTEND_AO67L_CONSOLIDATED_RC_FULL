@@ -1,3 +1,4 @@
+// AO69B-HF1_SMART_NEXT_ACTIONS_PREMIUM
 // AO68E-HF1_REALTIME_INLINE_CHAT_NO_TRANSCRIPT_MODAL_ADMIN_ORCH_VISUAL_PARITY
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -3736,6 +3737,14 @@ function formatAgentOptionLabel(agent) {
   }
 
   function handlePremiumTertiaryAction() { fillPremiumPrompt("Orkio, organize um plano prático para eu testar a plataforma hoje com foco em impacto real e baixo risco."); }
+
+  // AO69B-HF1: Smart Next Actions — guided chips below public Orkio answers.
+  // The chip sends an explicit user prompt through the same audited sendMessage rail.
+  function handleSmartNextAction(promptText) {
+    const next = String(promptText || "").trim();
+    if (!next || sendingRef.current) return;
+    void sendMessage(next);
+  }
 
 function openPatchApprovalModal(message) {
     const meta = extractPatchGovernanceMeta(message?.content || "");
@@ -10161,6 +10170,7 @@ async function stopRealtime(reason = 'client_stop') {
                 openPatchApprovalModal={openPatchApprovalModal}
                 extractPatchApprovalMeta={extractPatchApprovalMeta}
                 executeApprovedPatchFromMessage={executeApprovedPatchFromMessage}
+                onSmartNextAction={handleSmartNextAction}
                 canAccessAdmin={canAccessAdmin}
               />
             ))          )}
