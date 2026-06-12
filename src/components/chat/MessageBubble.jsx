@@ -1,5 +1,6 @@
 import React from "react";
 
+// AO69B-HF2_SMART_NEXT_ACTIONS_AMCHAM_EN_I18N
 // AO69B-HF1_SMART_NEXT_ACTIONS_PREMIUM
 
 /**
@@ -21,16 +22,47 @@ import React from "react";
 function isLikelyEnglishSmartActionContent(value) {
   const text = String(value || "").toLowerCase();
   if (!text.trim()) return false;
-  const englishHits = [
-    "who is", "what is", "how does", "implementation", "human support",
-    "talk to the team", "website", "amcham companies", "ready to turn",
-    "guided project", "next step", "patroai/orkio team"
-  ].filter((marker) => text.includes(marker)).length;
-  const portugueseHits = [
-    "quem é", "o que é", "como funciona", "implantação", "suporte humano",
-    "falar com", "site", "empresas da amcham", "pronto para transformar",
-    "projeto guiado", "próximo passo"
-  ].filter((marker) => text.includes(marker)).length;
+
+  const markerScore = (markers) => (
+    markers.filter((marker) => text.includes(marker)).length
+  );
+
+  const tokenScore = (tokens) => (
+    tokens.reduce((score, token) => {
+      const pattern = new RegExp(`\\b${token}\\b`, "g");
+      return score + (text.match(pattern)?.length || 0);
+    }, 0)
+  );
+
+  const englishHits =
+    markerScore([
+      "who is", "what is", "how does", "implementation", "human support",
+      "talk to the team", "website", "amcham companies", "amcham members",
+      "member company", "can test orkio", "ready to turn", "guided project",
+      "next step", "patroai/orkio team", "professional development",
+      "skill mapping", "new business creation"
+    ]) +
+    tokenScore([
+      "the", "is", "are", "can", "with", "through", "members", "company",
+      "website", "implementation", "support", "talk", "ready", "next",
+      "this", "its", "from", "your"
+    ]);
+
+  const portugueseHits =
+    markerScore([
+      "quem é", "o que é", "como funciona", "implantação", "suporte humano",
+      "falar com", "site institucional", "empresas da amcham",
+      "associados da amcham", "empresa membro", "pode testar o orkio",
+      "pronto para transformar", "projeto guiado", "próximo passo",
+      "desenvolvimento profissional", "mapeamento de skills",
+      "criação de novos negócios"
+    ]) +
+    tokenScore([
+      "é", "são", "pode", "com", "por", "associados", "empresa",
+      "implantação", "suporte", "falar", "pronto", "próximo",
+      "nesse", "sua", "seu", "para"
+    ]);
+
   return englishHits > portugueseHits;
 }
 
