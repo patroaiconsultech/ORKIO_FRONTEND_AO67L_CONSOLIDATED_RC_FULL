@@ -1,5 +1,6 @@
 import React from "react";
 
+// AO69C-HF1_SMART_ACTIONS_INTERACTION_GOVERNANCE
 // AO69B-HF2_SMART_NEXT_ACTIONS_AMCHAM_EN_I18N
 // AO69B-HF1_SMART_NEXT_ACTIONS_PREMIUM
 
@@ -115,8 +116,17 @@ function buildSmartNextActions(value) {
 
   const actions = [];
 
-  const push = (id, label, prompt) => {
-    if (!actions.some((item) => item.id === id)) actions.push({ id, label, prompt });
+  const push = (id, label, prompt, options = {}) => {
+    if (actions.some((item) => item.id === id)) return;
+    actions.push({
+      id,
+      label,
+      prompt,
+      behavior: options.behavior || "send-prompt",
+      tone: options.tone || (actions.length === 0 ? "primary" : "secondary"),
+      pendingLabel: options.pendingLabel || (english ? "Sending…" : "Enviando…"),
+      completedLabel: options.completedLabel || (english ? "Sent" : "Enviado"),
+    });
   };
 
   if (english) {
@@ -126,7 +136,17 @@ function buildSmartNextActions(value) {
     if (isAmchamContext) {
       push("amcham-use", "AMCHAM use cases", "What can AMCHAM members use Orkio for?");
     } else {
-      push("test-case", "Test another use case", "Show me one practical way my company could test Orkio.");
+      push(
+        "test-case",
+        "Test another use case",
+        "",
+        {
+          behavior: "focus-composer",
+          tone: "neutral",
+          pendingLabel: "Opening…",
+          completedLabel: "Composer ready",
+        }
+      );
     }
   } else {
     if (!isImplementationContext) push("implementation", "Ver implantação", "Como funciona a implantação?");
@@ -135,18 +155,45 @@ function buildSmartNextActions(value) {
     if (isAmchamContext) {
       push("amcham-use", "Casos AMCHAM", "O que associados da AMCHAM podem testar com o Orkio?");
     } else {
-      push("test-case", "Testar outro caso", "Me dê um exemplo prático de como minha empresa pode testar o Orkio.");
+      push(
+        "test-case",
+        "Testar outro caso",
+        "",
+        {
+          behavior: "focus-composer",
+          tone: "neutral",
+          pendingLabel: "Abrindo…",
+          completedLabel: "Campo pronto",
+        }
+      );
     }
   }
 
   return actions.slice(0, 4);
 }
 
-function SmartNextActions({ actions, onAction }) {
+export function isSmartNextActionsEligible(value) {
+  return buildSmartNextActions(value).length > 0;
+}
+
+function SmartNextActions({
+  actions,
+  onAction,
+  disabled = false,
+  selectedActionId = "",
+  interactionPhase = "idle",
+}) {
   if (!Array.isArray(actions) || !actions.length || typeof onAction !== "function") return null;
+
+  const selectedId = String(selectedActionId || "");
+  const consumed = interactionPhase === "consumed" && selectedId;
+  const visibleActions = consumed
+    ? actions.filter((action) => action.id === selectedId)
+    : actions;
 
   return (
     <div
+      aria-label="Próximas ações sugeridas"
       style={{
         display: "flex",
         flexWrap: "wrap",
@@ -156,32 +203,63 @@ function SmartNextActions({ actions, onAction }) {
         borderTop: "1px solid rgba(255,255,255,0.08)",
       }}
     >
-      {actions.map((action) => (
-        <button
-          key={action.id}
-          type="button"
-          onClick={(event) => {
-            event?.preventDefault?.();
-            event?.stopPropagation?.();
-            onAction(action.prompt);
-          }}
-          title={action.prompt}
-          style={{
-            border: "1px solid rgba(148,163,184,0.28)",
-            borderRadius: 999,
-            padding: "7px 10px",
-            background: "linear-gradient(135deg, rgba(15,23,42,0.78), rgba(30,41,59,0.72))",
-            color: "rgba(226,232,240,0.94)",
-            cursor: "pointer",
-            fontSize: 12,
-            fontWeight: 900,
-            letterSpacing: "0.01em",
-            boxShadow: "0 10px 24px rgba(0,0,0,0.16)",
-          }}
-        >
-          {action.label}
-        </button>
-      ))}
+      {visibleActions.map((action) => {
+        const isSelected = action.id === selectedId;
+        const isSending = isSelected && interactionPhase === "sending";
+        const isConsumed = isSelected && interactionPhase === "consumed";
+        const isDisabled = Boolean(disabled || isSending || isConsumed);
+        const isPrimary = action.tone === "primary";
+        const isNeutral = action.tone === "neutral";
+        const buttonLabel = isSending
+          ? action.pendingLabel
+          : isConsumed
+            ? action.completedLabel
+            : action.label;
+
+        return (
+          <button
+            key={action.id}
+            type="button"
+            data-smart-next-action={action.id}
+            disabled={isDisabled}
+            aria-disabled={isDisabled}
+            aria-busy={isSending}
+            aria-pressed={isSelected}
+            aria-label={action.prompt ? `${action.label}. ${action.prompt}` : action.label}
+            onClick={(event) => {
+              event?.preventDefault?.();
+              event?.stopPropagation?.();
+              if (isDisabled) return;
+              onAction(action);
+            }}
+            title={action.prompt || action.label}
+            style={{
+              border: isPrimary
+                ? "1px solid rgba(125,211,252,0.48)"
+                : "1px solid rgba(148,163,184,0.28)",
+              borderRadius: 999,
+              padding: isPrimary ? "8px 12px" : "7px 10px",
+              background: isPrimary
+                ? "linear-gradient(135deg, rgba(14,116,144,0.88), rgba(30,64,175,0.78))"
+                : isNeutral
+                  ? "rgba(255,255,255,0.035)"
+                  : "linear-gradient(135deg, rgba(15,23,42,0.78), rgba(30,41,59,0.72))",
+              color: "rgba(240,249,255,0.96)",
+              cursor: isDisabled ? "not-allowed" : "pointer",
+              opacity: isDisabled && !isSelected ? 0.48 : 1,
+              fontSize: 12,
+              fontWeight: isPrimary ? 950 : 850,
+              letterSpacing: "0.01em",
+              boxShadow: isPrimary
+                ? "0 12px 28px rgba(2,132,199,0.20)"
+                : "0 10px 24px rgba(0,0,0,0.16)",
+              transition: "transform 140ms ease, opacity 140ms ease, border-color 140ms ease",
+            }}
+          >
+            {buttonLabel}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -210,6 +288,9 @@ export default function MessageBubble({
   extractPatchApprovalMeta,
   executeApprovedPatchFromMessage,
   onSmartNextAction,
+  smartNextActionsActive = false,
+  smartNextActionsDisabled = false,
+  smartNextActionState = null,
   canAccessAdmin,
 }) {
   const m = message || {};
@@ -319,10 +400,23 @@ export default function MessageBubble({
                     {renderMessageContentPremium?.(visibleForActions) ?? visibleForActions}
                   </div>
 
-                  {!isUser && !isSystem && visibleForActions && (
+                  {!isUser && !isSystem && smartNextActionsActive && visibleForActions && (
                     <SmartNextActions
                       actions={buildSmartNextActions(visibleForActions)}
-                      onAction={onSmartNextAction}
+                      disabled={smartNextActionsDisabled}
+                      selectedActionId={
+                        String(smartNextActionState?.messageId || "") === String(m.id || m.message_id || "")
+                          ? smartNextActionState?.actionId
+                          : ""
+                      }
+                      interactionPhase={
+                        String(smartNextActionState?.messageId || "") === String(m.id || m.message_id || "")
+                          ? smartNextActionState?.phase
+                          : "idle"
+                      }
+                      onAction={(action) => onSmartNextAction?.(action, {
+                        messageId: String(m.id || m.message_id || ""),
+                      })}
                     />
                   )}
 
