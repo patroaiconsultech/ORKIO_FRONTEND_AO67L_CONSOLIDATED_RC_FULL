@@ -1,3 +1,4 @@
+// AO69C-HF1_SMART_ACTIONS_INTERACTION_GOVERNANCE
 // AO69B-HF1_SMART_NEXT_ACTIONS_PREMIUM
 // AO68E-HF1_REALTIME_INLINE_CHAT_NO_TRANSCRIPT_MODAL_ADMIN_ORCH_VISUAL_PARITY
 import React, { useEffect, useRef, useState } from "react";
@@ -11,7 +12,7 @@ import OnboardingModal from "../components/OnboardingModal.jsx";
 import { startSessionHeartbeat } from "../lib/sessionHeartbeat.js";
 import EmptyStatePremium from "../components/EmptyStatePremium.jsx";
 import ExecutionTimeline from "../components/ExecutionTimeline.jsx";
-import MessageBubble from "../components/chat/MessageBubble.jsx";
+import MessageBubble, { isSmartNextActionsEligible } from "../components/chat/MessageBubble.jsx";
 import RealtimeTimeboxOverlay from "../components/realtime/RealtimeTimeboxOverlay.jsx";
 import { useRealtimeTranscriptSummary } from "../hooks/realtime/useRealtimeTranscriptSummary.js";
 
@@ -2242,8 +2243,15 @@ const [onboardingForm, setOnboardingForm] = useState(() => sanitizeOnboardingFor
   }
 
   const [text, setText] = useState("");
+  const textareaRef = useRef(null);
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
+  const smartActionLockRef = useRef(false);
+  const [smartActionInteraction, setSmartActionInteraction] = useState({
+    messageId: "",
+    actionId: "",
+    phase: "idle",
+  });
   const [runtimeHints, setRuntimeHints] = useState(null);
   const showRuntimeHints = Boolean(user?.role === "admin" && typeof window !== "undefined" && window.localStorage?.getItem("orkio_show_runtime_hints") === "1");
   const showOrionSquad = Boolean(user?.role === "admin" && typeof window !== "undefined" && window.localStorage?.getItem("orkio_show_orion_squad") === "1");
@@ -3738,12 +3746,58 @@ function formatAgentOptionLabel(agent) {
 
   function handlePremiumTertiaryAction() { fillPremiumPrompt("Orkio, organize um plano prático para eu testar a plataforma hoje com foco em impacto real e baixo risco."); }
 
-  // AO69B-HF1: Smart Next Actions — guided chips below public Orkio answers.
-  // The chip sends an explicit user prompt through the same audited sendMessage rail.
-  function handleSmartNextAction(promptText) {
-    const next = String(promptText || "").trim();
-    if (!next || sendingRef.current) return;
-    void sendMessage(next);
+  // AO69C-HF1: Smart Actions Interaction Governance.
+  // Only one action can be consumed at a time. Conversational actions use the
+  // audited sendMessage rail; "test another use case" only focuses the composer.
+  async function handleSmartNextAction(action, context = {}) {
+    const actionId = String(action?.id || "").trim();
+    const behavior = String(action?.behavior || "send-prompt").trim();
+    const messageId = String(context?.messageId || "").trim();
+    const prompt = String(action?.prompt || "").trim();
+
+    if (!actionId || !messageId || sendingRef.current || smartActionLockRef.current) return;
+
+    smartActionLockRef.current = true;
+
+    if (behavior === "focus-composer") {
+      setSmartActionInteraction({
+        messageId,
+        actionId,
+        phase: "consumed",
+      });
+      try {
+        window.requestAnimationFrame(() => textareaRef.current?.focus?.());
+      } catch {
+        textareaRef.current?.focus?.();
+      } finally {
+        smartActionLockRef.current = false;
+      }
+      return;
+    }
+
+    if (!prompt) {
+      smartActionLockRef.current = false;
+      return;
+    }
+
+    setSmartActionInteraction({
+      messageId,
+      actionId,
+      phase: "sending",
+    });
+
+    try {
+      const delivered = await sendMessage(prompt, { smartAction: true });
+      setSmartActionInteraction(
+        delivered
+          ? { messageId, actionId, phase: "consumed" }
+          : { messageId: "", actionId: "", phase: "idle" }
+      );
+    } catch {
+      setSmartActionInteraction({ messageId: "", actionId: "", phase: "idle" });
+    } finally {
+      smartActionLockRef.current = false;
+    }
   }
 
 function openPatchApprovalModal(message) {
@@ -3860,7 +3914,7 @@ async function sendMessage(presetMsg = null, opts = {}) {
     const isRetry = !!opts?.isRetry;
     clearRealtimeIdleFollowup();
     const msg = ((presetMsg ?? text) || "").trim();
-    if (!msg || sendingRef.current) return;
+    if (!msg || sendingRef.current) return false;
 
     const pendingApprovedExecution = findPendingApprovedPatchExecution(messagesRef.current || messages);
     if (pendingApprovedExecution) {
@@ -3886,7 +3940,7 @@ async function sendMessage(presetMsg = null, opts = {}) {
           } catch {}
         }, 80);
       } catch {}
-      return;
+      return false;
     }
 
     const turnStartedAt = Math.floor(Date.now() / 1000);
@@ -4216,7 +4270,7 @@ async function sendMessage(presetMsg = null, opts = {}) {
               collapseExecutionTrace();
             },
           }), CHAT_STREAM_TIMEOUT_MS, "CHAT_STREAM_TIMEOUT");
-          if (isStale()) return;
+          if (isStale()) return false;
           resp = {
             data: {
               thread_id: streamMeta?.thread_id || newThreadId,
@@ -4276,7 +4330,7 @@ async function sendMessage(presetMsg = null, opts = {}) {
             setV2vError(null);
             setRuntimeHandoffLabel("");
             collapseExecutionTrace();
-            return;
+            return false;
           }
 
           if (streamErr instanceof StreamSemanticError) {
@@ -4374,7 +4428,7 @@ async function sendMessage(presetMsg = null, opts = {}) {
             setV2vError(null);
             closeCapacityModal();
             openCapacityModal(msg, streamErr?.retryAfter || null);
-            return;
+            return false;
           } else if (
             streamErr?.status === 401 ||
             streamErr?.status === 403 ||
@@ -4406,14 +4460,14 @@ async function sendMessage(presetMsg = null, opts = {}) {
             if (streamErr?.status === 403) {
               setV2vPhase("error");
               setV2vError("Acesso negado para esta execução.");
-              return;
+              return false;
             }
             const expired = await logoutIfSessionReallyExpired("chatStream401");
             if (!expired) {
               setV2vPhase(null);
               setV2vError("Sessão oscilou. Tente enviar novamente.");
             }
-            return;
+            return false;
           } else {
             if (!ORKIO_CHAT_DIRECT_FALLBACK_ENABLED) {
               failStreamWithoutDirectFallback("CHAT_STREAM_DEGRADED_NO_DIRECT_FALLBACK");
@@ -4713,8 +4767,9 @@ async function sendMessage(presetMsg = null, opts = {}) {
         }
       }
 
+      return true;
     } catch (e) {
-      if (isStale()) return;
+      if (isStale()) return false;
       console.error("[V2V] sendMessage error:", e);
       if (
         e?.code === "CHAT_STREAM_ENDED_WITHOUT_DONE" ||
@@ -4741,13 +4796,13 @@ async function sendMessage(presetMsg = null, opts = {}) {
         );
         setV2vPhase(null);
         setV2vError(null);
-        return;
+        return false;
       }
       if (e?.status === 401) {
         const expired = await logoutIfSessionReallyExpired("sendMessage");
         if (expired) {
           setSending(false);
-          return;
+          return false;
         }
       }
       if (isAbortLikeError(e)) {
@@ -4768,7 +4823,7 @@ async function sendMessage(presetMsg = null, opts = {}) {
         }
         setV2vPhase(null);
         setV2vError(null);
-        return;
+        return false;
       }
       if (
         e?.code === "CHAT_STREAM_FAILED_NO_DIRECT_FALLBACK" ||
@@ -4777,7 +4832,7 @@ async function sendMessage(presetMsg = null, opts = {}) {
       ) {
         setV2vPhase("error");
         setV2vError("Stream não estabilizou e o fallback direto não estava disponível neste build.");
-        return;
+        return false;
       }
       if (e?.status === 429 || e?.code === "RATE_LIMITED" || e?.isRateLimited) {
         appendExecutionTrace({
@@ -4800,7 +4855,7 @@ async function sendMessage(presetMsg = null, opts = {}) {
         openCapacityModal(msg, e?.retryAfter || null);
         setV2vPhase(null);
         setV2vError(null);
-        return;
+        return false;
       }
       setV2vPhase('error');
       const walletDetail = normalizeWalletErrorPayload(e);
@@ -4834,6 +4889,7 @@ async function sendMessage(presetMsg = null, opts = {}) {
         // e impede o V2V de reiniciar o microfone
         setV2vError(normalizeUserFacingRuntimeMessage(e?.message || "Falha ao enviar mensagem"));
       }
+      return false;
     } finally {
       const stillCurrentTurn =
         streamCtlRef.current === ctl ||
@@ -9500,6 +9556,23 @@ async function stopRealtime(reason = 'client_stop') {
   const effectiveDestMode = publicBetaOrkioOnly ? "single" : destMode;
 
   const pendingApprovedPatchExecution = findPendingApprovedPatchExecution(messages);
+  const orderedChatMessages = orderChatMessages(messages);
+  const latestSmartActionMessageId = (() => {
+    for (let index = orderedChatMessages.length - 1; index >= 0; index -= 1) {
+      const candidate = orderedChatMessages[index] || {};
+      const role = String(candidate.role || "").toLowerCase();
+      if (role !== "assistant" && role !== "agent") continue;
+      const content = (
+        candidate.content ||
+        candidate.final_text ||
+        candidate.text ||
+        ""
+      );
+      if (!isSmartNextActionsEligible(content)) continue;
+      return String(candidate.id || candidate.message_id || "");
+    }
+    return "";
+  })();
 
   const realtimeOverlayActive = Boolean(
     !rtcOverlayForceClosed
@@ -10146,7 +10219,7 @@ async function stopRealtime(reason = 'client_stop') {
               </div>
             </div>
           ) : (
-            orderChatMessages(messages).map((m) => (
+            orderedChatMessages.map((m) => (
               <MessageBubble
                 key={m.id}
                 message={m}
@@ -10171,6 +10244,15 @@ async function stopRealtime(reason = 'client_stop') {
                 extractPatchApprovalMeta={extractPatchApprovalMeta}
                 executeApprovedPatchFromMessage={executeApprovedPatchFromMessage}
                 onSmartNextAction={handleSmartNextAction}
+                smartNextActionsActive={
+                  Boolean(latestSmartActionMessageId) &&
+                  String(m.id || m.message_id || "") === latestSmartActionMessageId
+                }
+                smartNextActionsDisabled={
+                  sending ||
+                  smartActionInteraction.phase === "sending"
+                }
+                smartNextActionState={smartActionInteraction}
                 canAccessAdmin={canAccessAdmin}
               />
             ))          )}
@@ -10644,6 +10726,7 @@ async function stopRealtime(reason = 'client_stop') {
             ) : null}
 
             <textarea
+              ref={textareaRef}
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={handleKeyDown}
