@@ -3,6 +3,7 @@ import React, { useMemo, useState } from "react";
 import AvatarPrechatModal from "../components/AvatarPrechatModal.jsx";
 import LandingLanguageSwitch from "../components/LandingLanguageSwitch.jsx";
 import { useLandingLocale } from "../lib/landingLocale.js";
+import { apiFetch } from "../ui/api.js";
 
 const ROUTES = {
   orkioOS: "/orkio",
@@ -15,6 +16,57 @@ const ROUTES = {
 const LOGO_PRIMARY = "/patroai-assets/logo-patroai-novo.png";
 const LOGO_FALLBACK = "/patroai-assets/logo-patroai-novo.webp";
 
+// AO69B-HF3_LANDING_CONTACT_WHATSAPP_RECOVERY
+// Fallback confirmado no fluxo público de contato atual. Pode ser sobrescrito
+// por VITE_WHATSAPP_PHONE_E164 ou window.__ORKIO_ENV__.WHATSAPP_PHONE_E164.
+const PATROAI_WHATSAPP_FALLBACK_E164 = "555189697605";
+
+function readPatroaiWhatsappNumber() {
+  const runtimeValue =
+    typeof window !== "undefined"
+      ? window.__ORKIO_ENV__?.WHATSAPP_PHONE_E164 ||
+        window.__ORKIO_ENV__?.VITE_WHATSAPP_PHONE_E164
+      : "";
+
+  const buildValue =
+    import.meta.env.VITE_WHATSAPP_PHONE_E164 ||
+    import.meta.env.WHATSAPP_PHONE_E164 ||
+    "";
+
+  return String(runtimeValue || buildValue || PATROAI_WHATSAPP_FALLBACK_E164)
+    .replace(/\D/g, "");
+}
+
+function buildPatroaiWhatsappHref(locale = "pt") {
+  const number = readPatroaiWhatsappNumber();
+  const message =
+    locale === "en"
+      ? "Hello, I came from the PatroAI website and would like to speak with the team."
+      : "Olá, vim pelo site da PatroAI e gostaria de falar com a equipe.";
+
+  return `https://wa.me/${number}?text=${encodeURIComponent(message)}`;
+}
+
+function normalizeContactReceipt(result) {
+  const payload =
+    result?.data && typeof result.data === "object"
+      ? result.data
+      : result && typeof result === "object"
+        ? result
+        : {};
+
+  const emailDelivery =
+    payload?.email_delivery && typeof payload.email_delivery === "object"
+      ? payload.email_delivery
+      : {};
+
+  return {
+    id: payload?.id || emailDelivery?.contact_id || null,
+    message: payload?.message || "",
+    emailStatus: String(emailDelivery?.status || "unknown").trim().toLowerCase(),
+  };
+}
+
 const PATROAI_PAGE_COPY = {
   pt: {
     navAria: "Navegação principal",
@@ -25,6 +77,7 @@ const PATROAI_PAGE_COPY = {
       orkio: "Orkio",
       resources: "ESG & Método",
       about: "Sobre",
+      contact: "Contato",
     },
     actions: {
       admin: "Admin",
@@ -217,6 +270,48 @@ const PATROAI_PAGE_COPY = {
       ["brain", "Gera insights e recomendações"],
       ["gear", "Acompanha evolução com governança e continuidade"],
     ],
+    contact: {
+      label: "Fale com a PatroAI",
+      title: "Conte o desafio. Nós ajudamos a desenhar o próximo passo.",
+      text:
+        "Use o formulário para solicitar uma demonstração, apresentar uma parceria ou conversar sobre IA, integrações, agentes personalizados e novos negócios.",
+      formTitle: "Enviar uma mensagem",
+      formText: "Sua solicitação será registrada e você receberá um protocolo.",
+      fields: {
+        name: "Nome completo",
+        email: "E-mail",
+        whatsapp: "WhatsApp",
+        subject: "Assunto",
+        message: "Como podemos ajudar?",
+      },
+      subjects: [
+        ["General Inquiry", "Informações gerais"],
+        ["Partnerships", "Parcerias"],
+        ["Technical Support", "Suporte técnico"],
+        ["Data Privacy Request", "Privacidade e dados"],
+        ["Other", "Outro"],
+      ],
+      consent:
+        "Li e aceito os Termos de Uso e a Política de Privacidade.",
+      marketing:
+        "Autorizo contato institucional por e-mail e WhatsApp.",
+      send: "Enviar mensagem",
+      sending: "Enviando...",
+      successTitle: "Mensagem registrada com sucesso.",
+      successText:
+        "Nossa equipe recebeu sua solicitação. Guarde o protocolo abaixo.",
+      protocol: "Protocolo",
+      emailSent: "Confirmação por e-mail enviada.",
+      emailPending:
+        "A solicitação foi registrada. A confirmação por e-mail pode levar alguns minutos.",
+      errorFallback:
+        "Não foi possível enviar agora. Revise os dados ou fale conosco pelo WhatsApp.",
+      whatsappTitle: "Prefere falar agora?",
+      whatsappText:
+        "Abra uma conversa direta com a equipe PatroAI pelo WhatsApp.",
+      whatsappButton: "Falar pelo WhatsApp",
+      floatingWhatsapp: "Falar com a PatroAI no WhatsApp",
+    },
     footer: {
       text:
         "PatroAI Consultech · Startups, outsourcing, IA para empresas, integrações, verticais inteligentes, ESG, governança e rastreabilidade.",
@@ -233,6 +328,7 @@ const PATROAI_PAGE_COPY = {
       orkio: "Orkio",
       resources: "ESG & Method",
       about: "About",
+      contact: "Contact",
     },
     actions: {
       admin: "Admin",
@@ -425,6 +521,48 @@ const PATROAI_PAGE_COPY = {
       ["brain", "Generates insights and recommendations"],
       ["gear", "Supports evolution with governance and continuity"],
     ],
+    contact: {
+      label: "Talk to PatroAI",
+      title: "Share the challenge. We will help design the next step.",
+      text:
+        "Use the form to request a demo, propose a partnership or discuss AI, integrations, personalized agents and new ventures.",
+      formTitle: "Send a message",
+      formText: "Your request will be registered and you will receive a protocol.",
+      fields: {
+        name: "Full name",
+        email: "Email",
+        whatsapp: "WhatsApp",
+        subject: "Subject",
+        message: "How can we help?",
+      },
+      subjects: [
+        ["General Inquiry", "General inquiry"],
+        ["Partnerships", "Partnerships"],
+        ["Technical Support", "Technical support"],
+        ["Data Privacy Request", "Privacy and data"],
+        ["Other", "Other"],
+      ],
+      consent:
+        "I have read and accept the Terms of Use and Privacy Policy.",
+      marketing:
+        "I authorize institutional contact by email and WhatsApp.",
+      send: "Send message",
+      sending: "Sending...",
+      successTitle: "Message registered successfully.",
+      successText:
+        "Our team received your request. Keep the protocol below.",
+      protocol: "Protocol",
+      emailSent: "Email confirmation sent.",
+      emailPending:
+        "The request was registered. Email confirmation may take a few minutes.",
+      errorFallback:
+        "We could not send it now. Review the information or contact us on WhatsApp.",
+      whatsappTitle: "Would you rather talk now?",
+      whatsappText:
+        "Open a direct conversation with the PatroAI team on WhatsApp.",
+      whatsappButton: "Talk on WhatsApp",
+      floatingWhatsapp: "Talk to PatroAI on WhatsApp",
+    },
     footer: {
       text:
         "PatroAI Consultech · Startups, outsourcing, AI for companies, integrations, intelligent verticals, ESG, governance and traceability.",
@@ -514,14 +652,79 @@ export default function PatroaiLanding() {
   usePatroaiSeo();
 
   const [prechatOpen, setPrechatOpen] = useState(false);
+  const [contactForm, setContactForm] = useState({
+    full_name: "",
+    email: "",
+    whatsapp: "",
+    subject: "General Inquiry",
+    message: "",
+    consent_terms: false,
+    consent_marketing: false,
+  });
+  const [contactSending, setContactSending] = useState(false);
+  const [contactError, setContactError] = useState("");
+  const [contactReceipt, setContactReceipt] = useState(null);
+
   const { locale, setLocale, ttsLocale } = useLandingLocale();
   const copy = PATROAI_PAGE_COPY[locale] || PATROAI_PAGE_COPY.pt;
 
   const heroSubtitle = useMemo(() => copy.hero.subtitle, [copy.hero.subtitle]);
   const orkioSpeech = useMemo(() => copy.orkioSpeech, [copy.orkioSpeech]);
+  const whatsappHref = useMemo(() => buildPatroaiWhatsappHref(locale), [locale]);
+
+  function updateContactField(field, value) {
+    setContactForm((current) => ({ ...current, [field]: value }));
+    if (contactError) setContactError("");
+  }
 
   function handleDemo() {
-    safeNavigateToAuth({ mode: "register", source: "patroai_demo", lang: locale });
+    document.getElementById("contact")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }
+
+  async function handleContactSubmit(event) {
+    event.preventDefault();
+
+    if (!contactForm.consent_terms) {
+      setContactError(
+        locale === "en"
+          ? "You must accept the Terms of Use and Privacy Policy."
+          : "Você precisa aceitar os Termos de Uso e a Política de Privacidade."
+      );
+      return;
+    }
+
+    setContactSending(true);
+    setContactError("");
+    setContactReceipt(null);
+
+    try {
+      const result = await apiFetch("/api/public/contact", {
+        method: "POST",
+        body: {
+          ...contactForm,
+          terms_version: "2026-06",
+        },
+      });
+
+      setContactReceipt(normalizeContactReceipt(result));
+      setContactForm((current) => ({
+        ...current,
+        message: "",
+        consent_terms: false,
+        consent_marketing: false,
+      }));
+    } catch (error) {
+      setContactError(
+        error?.userMessage ||
+          error?.message ||
+          copy.contact.errorFallback
+      );
+    } finally {
+      setContactSending(false);
+    }
   }
 
   function handleStartAvatarJourney() {
@@ -1165,6 +1368,212 @@ export default function PatroaiLanding() {
           color: rgba(255,255,255,.82);
         }
 
+        .contact-section {
+          display: grid;
+          grid-template-columns: minmax(0, .82fr) minmax(340px, 1.18fr);
+          gap: clamp(24px, 5vw, 52px);
+          align-items: start;
+          border-radius: 34px;
+          border: 1px solid rgba(255,255,255,.10);
+          background:
+            radial-gradient(circle at 0% 0%, rgba(250,204,21,.10), transparent 34%),
+            linear-gradient(135deg, rgba(15,23,42,.88), rgba(2,6,23,.94));
+          padding: clamp(24px, 5vw, 48px);
+          box-shadow: 0 28px 78px rgba(0,0,0,.28);
+        }
+
+        .contact-intro {
+          display: grid;
+          gap: 20px;
+          position: sticky;
+          top: 112px;
+        }
+
+        .contact-whatsapp-card {
+          display: grid;
+          gap: 12px;
+          border-radius: 24px;
+          padding: 22px;
+          border: 1px solid rgba(34,197,94,.24);
+          background: rgba(34,197,94,.08);
+        }
+
+        .contact-whatsapp-card h3 {
+          margin: 0;
+          font-size: 20px;
+        }
+
+        .contact-whatsapp-card p {
+          margin: 0;
+          color: rgba(255,255,255,.70);
+          line-height: 1.7;
+        }
+
+        .contact-form-card {
+          border-radius: 26px;
+          border: 1px solid rgba(255,255,255,.10);
+          background: rgba(255,255,255,.045);
+          padding: clamp(20px, 4vw, 32px);
+        }
+
+        .contact-form-card h3 {
+          margin: 0;
+          font-size: clamp(24px, 3vw, 34px);
+          letter-spacing: -.025em;
+        }
+
+        .contact-form-card > p {
+          margin: 8px 0 0;
+          color: rgba(255,255,255,.68);
+          line-height: 1.65;
+        }
+
+        .contact-form {
+          display: grid;
+          gap: 16px;
+          margin-top: 24px;
+        }
+
+        .contact-form-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 14px;
+        }
+
+        .contact-field {
+          display: grid;
+          gap: 8px;
+        }
+
+        .contact-field.full {
+          grid-column: 1 / -1;
+        }
+
+        .contact-field label {
+          font-size: 13px;
+          font-weight: 850;
+          color: rgba(255,255,255,.78);
+        }
+
+        .contact-input,
+        .contact-select,
+        .contact-textarea {
+          width: 100%;
+          box-sizing: border-box;
+          border: 1px solid rgba(255,255,255,.13);
+          background: rgba(2,6,23,.72);
+          color: #fff;
+          border-radius: 16px;
+          padding: 13px 14px;
+          font: inherit;
+          outline: none;
+          transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+        }
+
+        .contact-textarea {
+          min-height: 142px;
+          resize: vertical;
+        }
+
+        .contact-input:focus,
+        .contact-select:focus,
+        .contact-textarea:focus {
+          border-color: rgba(250,204,21,.70);
+          box-shadow: 0 0 0 4px rgba(250,204,21,.10);
+          background: rgba(2,6,23,.90);
+        }
+
+        .contact-check {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          color: rgba(255,255,255,.70);
+          font-size: 13px;
+          line-height: 1.55;
+          cursor: pointer;
+        }
+
+        .contact-check input {
+          margin-top: 3px;
+          accent-color: #facc15;
+        }
+
+        .contact-check a {
+          color: #fde68a;
+          font-weight: 800;
+        }
+
+        .contact-feedback {
+          border-radius: 16px;
+          padding: 14px 16px;
+          border: 1px solid rgba(255,255,255,.10);
+          line-height: 1.55;
+          font-size: 14px;
+        }
+
+        .contact-feedback.success {
+          border-color: rgba(34,197,94,.28);
+          background: rgba(34,197,94,.10);
+          color: #bbf7d0;
+        }
+
+        .contact-feedback.error {
+          border-color: rgba(248,113,113,.28);
+          background: rgba(248,113,113,.10);
+          color: #fecaca;
+        }
+
+        .contact-protocol {
+          display: inline-flex;
+          margin-top: 8px;
+          padding: 6px 10px;
+          border-radius: 999px;
+          background: rgba(255,255,255,.08);
+          color: #fff;
+          font-weight: 900;
+          word-break: break-all;
+        }
+
+        .contact-submit-row {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+
+        .whatsapp-floating {
+          position: fixed;
+          right: 20px;
+          bottom: 20px;
+          z-index: 60;
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          min-height: 54px;
+          padding: 0 18px;
+          border-radius: 999px;
+          color: #ecfdf5;
+          background: linear-gradient(135deg, #16a34a, #15803d);
+          border: 1px solid rgba(255,255,255,.20);
+          box-shadow: 0 18px 44px rgba(0,0,0,.38);
+          text-decoration: none;
+          font-weight: 900;
+          transition: transform .18s ease, box-shadow .18s ease;
+        }
+
+        .whatsapp-floating:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 22px 52px rgba(0,0,0,.44);
+        }
+
+        .whatsapp-floating svg {
+          width: 24px;
+          height: 24px;
+          flex: 0 0 auto;
+          fill: currentColor;
+        }
+
         .patroai-footer {
           padding: 34px 0 46px;
           color: rgba(255,255,255,.58);
@@ -1204,8 +1613,13 @@ export default function PatroaiLanding() {
           .orkio-section,
           .esg-section,
           .verticals-header,
-          .verticals-grid {
+          .verticals-grid,
+          .contact-section {
             grid-template-columns: 1fr;
+          }
+
+          .contact-intro {
+            position: static;
           }
 
           .verticals-header {
@@ -1272,6 +1686,29 @@ export default function PatroaiLanding() {
             width: min(240px, 72vw);
             border-radius: 34px;
           }
+
+          .contact-form-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .contact-field.full {
+            grid-column: auto;
+          }
+
+          .contact-submit-row .patroai-btn {
+            width: 100%;
+          }
+
+          .whatsapp-floating {
+            right: 12px;
+            bottom: 12px;
+            min-height: 50px;
+            padding: 0 15px;
+          }
+
+          .whatsapp-floating span {
+            display: none;
+          }
         }
       `}</style>
 
@@ -1292,6 +1729,7 @@ export default function PatroaiLanding() {
             <a href="#orkio">{copy.nav.orkio}</a>
             <a href="#method">{copy.nav.resources}</a>
             <a href="#mission">{copy.nav.about}</a>
+            <a href="#contact">{copy.nav.contact}</a>
           </nav>
 
           <div className="patroai-actions">
@@ -1485,12 +1923,206 @@ export default function PatroaiLanding() {
         </div>
       </section>
 
+      <section className="patroai-shell patroai-section" id="contact">
+        <div className="contact-section">
+          <div className="contact-intro">
+            <div className="section-heading">
+              <span>{copy.contact.label}</span>
+              <h2>{copy.contact.title}</h2>
+              <p>{copy.contact.text}</p>
+            </div>
+
+            <article className="contact-whatsapp-card">
+              <PremiumMark icon="✓" />
+              <h3>{copy.contact.whatsappTitle}</h3>
+              <p>{copy.contact.whatsappText}</p>
+              <a
+                className="patroai-btn"
+                href={whatsappHref}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {copy.contact.whatsappButton}
+              </a>
+            </article>
+          </div>
+
+          <div className="contact-form-card">
+            <h3>{copy.contact.formTitle}</h3>
+            <p>{copy.contact.formText}</p>
+
+            <form
+              className="contact-form"
+              onSubmit={handleContactSubmit}
+              aria-busy={contactSending}
+            >
+              <div className="contact-form-grid">
+                <div className="contact-field">
+                  <label htmlFor="patroai-contact-name">{copy.contact.fields.name}</label>
+                  <input
+                    id="patroai-contact-name"
+                    className="contact-input"
+                    type="text"
+                    autoComplete="name"
+                    value={contactForm.full_name}
+                    onChange={(event) => updateContactField("full_name", event.target.value)}
+                    required
+                    maxLength={200}
+                  />
+                </div>
+
+                <div className="contact-field">
+                  <label htmlFor="patroai-contact-email">{copy.contact.fields.email}</label>
+                  <input
+                    id="patroai-contact-email"
+                    className="contact-input"
+                    type="email"
+                    autoComplete="email"
+                    value={contactForm.email}
+                    onChange={(event) => updateContactField("email", event.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="contact-field">
+                  <label htmlFor="patroai-contact-whatsapp">
+                    {copy.contact.fields.whatsapp}
+                  </label>
+                  <input
+                    id="patroai-contact-whatsapp"
+                    className="contact-input"
+                    type="tel"
+                    autoComplete="tel"
+                    value={contactForm.whatsapp}
+                    onChange={(event) => updateContactField("whatsapp", event.target.value)}
+                    maxLength={40}
+                  />
+                </div>
+
+                <div className="contact-field">
+                  <label htmlFor="patroai-contact-subject">
+                    {copy.contact.fields.subject}
+                  </label>
+                  <select
+                    id="patroai-contact-subject"
+                    className="contact-select"
+                    value={contactForm.subject}
+                    onChange={(event) => updateContactField("subject", event.target.value)}
+                    required
+                  >
+                    {copy.contact.subjects.map(([value, label]) => (
+                      <option value={value} key={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="contact-field full">
+                  <label htmlFor="patroai-contact-message">
+                    {copy.contact.fields.message}
+                  </label>
+                  <textarea
+                    id="patroai-contact-message"
+                    className="contact-textarea"
+                    value={contactForm.message}
+                    onChange={(event) => updateContactField("message", event.target.value)}
+                    required
+                    minLength={3}
+                    maxLength={5000}
+                  />
+                </div>
+              </div>
+
+              <label className="contact-check">
+                <input
+                  type="checkbox"
+                  checked={contactForm.consent_terms}
+                  onChange={(event) =>
+                    updateContactField("consent_terms", event.target.checked)
+                  }
+                  required
+                />
+                <span>
+                  {copy.contact.consent}{" "}
+                  <a href="/legal/terms" target="_blank" rel="noopener noreferrer">
+                    {locale === "en" ? "Terms" : "Termos"}
+                  </a>
+                  {" · "}
+                  <a href="/legal/privacy" target="_blank" rel="noopener noreferrer">
+                    {locale === "en" ? "Privacy" : "Privacidade"}
+                  </a>
+                </span>
+              </label>
+
+              <label className="contact-check">
+                <input
+                  type="checkbox"
+                  checked={contactForm.consent_marketing}
+                  onChange={(event) =>
+                    updateContactField("consent_marketing", event.target.checked)
+                  }
+                />
+                <span>{copy.contact.marketing}</span>
+              </label>
+
+              {contactReceipt ? (
+                <div className="contact-feedback success" role="status">
+                  <strong>{copy.contact.successTitle}</strong>
+                  <div>{copy.contact.successText}</div>
+                  <div>
+                    {contactReceipt.emailStatus === "sent"
+                      ? copy.contact.emailSent
+                      : copy.contact.emailPending}
+                  </div>
+                  {contactReceipt.id ? (
+                    <span className="contact-protocol">
+                      {copy.contact.protocol}: {contactReceipt.id}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {contactError ? (
+                <div className="contact-feedback error" role="alert">
+                  {contactError}
+                </div>
+              ) : null}
+
+              <div className="contact-submit-row">
+                <button
+                  className="patroai-btn primary"
+                  type="submit"
+                  disabled={contactSending}
+                >
+                  {contactSending ? copy.contact.sending : copy.contact.send}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+
       <footer className="patroai-footer">
         <div className="patroai-shell patroai-footer-inner">
           <span>{copy.footer.text}</span>
           <span>{copy.footer.rights}</span>
         </div>
       </footer>
+
+      <a
+        className="whatsapp-floating"
+        href={whatsappHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={copy.contact.floatingWhatsapp}
+        title={copy.contact.floatingWhatsapp}
+      >
+        <svg viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M16.04 3C8.85 3 3 8.7 3 15.72c0 2.24.6 4.43 1.74 6.35L3 29l7.12-1.83a13.22 13.22 0 0 0 5.91 1.42h.01C23.23 28.59 29 22.89 29 15.86 29 8.83 23.23 3 16.04 3Zm0 23.43h-.01a11.06 11.06 0 0 1-5.64-1.55l-.4-.23-4.23 1.09 1.13-4.02-.26-.42a10.46 10.46 0 0 1-1.68-5.68c0-5.82 4.98-10.56 11.1-10.56 6.11 0 11.08 4.78 11.08 10.66 0 5.9-4.97 10.71-11.09 10.71Zm6.08-7.94c-.33-.16-1.96-.94-2.26-1.05-.3-.1-.52-.16-.74.16-.22.32-.85 1.05-1.04 1.26-.19.22-.38.24-.71.08-.33-.16-1.4-.5-2.66-1.6-.98-.85-1.64-1.9-1.84-2.23-.19-.32-.02-.49.14-.65.15-.14.33-.38.5-.57.16-.19.22-.32.33-.54.11-.22.05-.4-.03-.57-.08-.16-.74-1.74-1.01-2.38-.27-.64-.54-.55-.74-.56h-.63c-.22 0-.58.08-.88.4-.3.32-1.15 1.1-1.15 2.67s1.18 3.1 1.34 3.31c.16.22 2.31 3.45 5.6 4.84.78.33 1.4.52 1.87.66.79.24 1.5.21 2.07.13.63-.09 1.96-.78 2.23-1.53.27-.76.27-1.4.19-1.53-.08-.13-.3-.21-.63-.38Z" />
+        </svg>
+        <span>WhatsApp</span>
+      </a>
 
       <AvatarPrechatModal
         open={prechatOpen}
