@@ -2100,6 +2100,7 @@ export default function AppConsole() {
   const REALTIME_PUBLIC_BETA_COOLDOWN_SECONDS = 60 * 60;
   const REALTIME_PUBLIC_BETA_CLOSING_NOTICE_SECONDS = 16;
   const REALTIME_ANNOUNCEMENT_PHRASE_FALLBACK_MS = 3200;
+  const REALTIME_FINAL_MESSAGE_GRACE_MS = 16000;
   const REALTIME_COOLDOWN_STORAGE_KEY = "orkio_realtime_public_cooldown_until_v1";
   const REALTIME_FRONTEND_HARD_TIMEBOX_ENABLED = true;
   // ORKIO_AO60K_HF5B_FRONTEND_ENDED_AT_SECONDS_TIMEBOX_VERIFY
@@ -2638,16 +2639,22 @@ const rtcLastUserActivityAtRef = useRef(0);
   const rtcConversationStartedRef = useRef(false);
   const rtcTimeboxStartedRef = useRef(false);
   const rtcPendingTimeboxSecondsRef = useRef(null);
-  // AO72C-HF1: synchronize the visible countdown with the spoken "two minutes"
-  // announcement, then enter a non-interruptible closing phase before hard stop.
+  // AO72D-HF1: greet first, start the countdown when "two minutes" is spoken,
+  // reach 00:00, then finish one non-interruptible closing message before stopping.
   const rtcTimeboxAnnouncementPendingRef = useRef(false);
   const rtcTimeboxAnnouncementResponseIdRef = useRef(null);
   const rtcTimeboxAnnouncementTranscriptRef = useRef("");
   const rtcTimeboxAnnouncementAudioSeenRef = useRef(false);
   const rtcTimeboxAnnouncementFallbackTimerRef = useRef(null);
+  // AO72D-HF1: opening speech is outside the timer; the microphone stays muted
+  // until the greeting response finishes, preventing the model from hearing itself.
+  const rtcOpeningMicrophoneMutedRef = useRef(false);
   const rtcTimeboxClosingRef = useRef(false);
   const rtcTimeboxClosingNoticeSentRef = useRef(false);
   const rtcTimeboxClosingNoticeDoneRef = useRef(false);
+  const rtcTimeboxClosingResponseIdRef = useRef(null);
+  const rtcTimeboxFinalStopTimerRef = useRef(null);
+  const rtcTimeboxFinalStopScheduledRef = useRef(false);
   const rtcCooldownTimerRef = useRef(null);
   const rtcCooldownUntilRef = useRef(readPersistedRealtimeCooldownUntil());
   // ORKIO_AO60I_HF2_POLICY_REF
@@ -6054,15 +6061,28 @@ function scheduleRealtimeIdleFollowup() {
     rtcTimeboxAnnouncementFallbackTimerRef.current = null;
   }
 
+  function clearRealtimeFinalStopTimer() {
+    try {
+      if (rtcTimeboxFinalStopTimerRef.current) {
+        clearTimeout(rtcTimeboxFinalStopTimerRef.current);
+      }
+    } catch {}
+    rtcTimeboxFinalStopTimerRef.current = null;
+  }
+
   function resetRealtimeTimeboxConversationState() {
     clearRealtimeAnnouncementFallback();
+    clearRealtimeFinalStopTimer();
     try { rtcTimeboxAnnouncementPendingRef.current = false; } catch {}
     try { rtcTimeboxAnnouncementResponseIdRef.current = null; } catch {}
     try { rtcTimeboxAnnouncementTranscriptRef.current = ""; } catch {}
     try { rtcTimeboxAnnouncementAudioSeenRef.current = false; } catch {}
+    try { rtcOpeningMicrophoneMutedRef.current = false; } catch {}
     try { rtcTimeboxClosingRef.current = false; } catch {}
     try { rtcTimeboxClosingNoticeSentRef.current = false; } catch {}
     try { rtcTimeboxClosingNoticeDoneRef.current = false; } catch {}
+    try { rtcTimeboxClosingResponseIdRef.current = null; } catch {}
+    try { rtcTimeboxFinalStopScheduledRef.current = false; } catch {}
   }
 
   function readPersistedRealtimeCooldownUntil() {
@@ -6439,7 +6459,7 @@ function scheduleRealtimeIdleFollowup() {
     } catch {}
   }
 
-  function announceRealtimeTimeboxEnding(remainingSeconds = REALTIME_PUBLIC_BETA_CLOSING_NOTICE_SECONDS) {
+  function announceRealtimeTimeboxEnding(remainingSeconds = 0) {
     try {
       if (!isRealtimeTimeboxLimitedUser()) return false;
       if (rtcTimeboxClosingRef.current) return Boolean(rtcTimeboxClosingNoticeSentRef.current);
@@ -6449,18 +6469,22 @@ function scheduleRealtimeIdleFollowup() {
 
       rtcTimeboxClosingRef.current = true;
       rtcTimeboxClosingNoticeDoneRef.current = false;
+      rtcTimeboxClosingNoticeSentRef.current = false;
+      rtcTimeboxClosingResponseIdRef.current = null;
+      rtcTimeboxFinalStopScheduledRef.current = false;
       clearRealtimeActivationProbe();
       clearRealtimeAutoResponseFallback();
       clearRealtimeIdleFollowup();
       setRtcReadyToRespond(false);
       setRealtimeMicrophoneEnabled(false);
 
-      // Preempt any late answer (for example, a pitch) before the mandatory closing message.
+      // AO72D-HF1: at 00:00, stop accepting new user turns, cancel any late answer,
+      // then allow only the final closing message to finish before ending the session.
       const hadActiveResponse = Boolean(rtcResponseInFlightRef.current);
       if (hadActiveResponse) {
-        sendRealtimeClientEvent(dc, { type: "response.cancel" }, "timebox_closing_cancel_active_response");
+        sendRealtimeClientEvent(dc, { type: "response.cancel" }, "timebox_zero_cancel_active_response");
       }
-      sendRealtimeClientEvent(dc, { type: "input_audio_buffer.clear" }, "timebox_closing_clear_input");
+      sendRealtimeClientEvent(dc, { type: "input_audio_buffer.clear" }, "timebox_zero_clear_input");
       rtcResponseInFlightRef.current = false;
 
       const rawName = String(user?.name || user?.first_name || "").trim();
@@ -6473,52 +6497,73 @@ function scheduleRealtimeIdleFollowup() {
 
       const spokenText =
         lang === "en"
-          ? `${vocative}unfortunately, we have reached our two minutes. I am ending the voice session now. You can continue in the text chat, and in ${cooldownLabel} we can talk by voice for another two minutes.`
+          ? `${vocative}we have reached the end of our two minutes. I will now close the voice session. You can continue in the text chat, and in ${cooldownLabel} voice will be available again.`
           : lang === "es"
-            ? `${vocative}lamentablemente, hemos llegado a nuestros dos minutos. Voy a cerrar la sesión de voz ahora. Puedes continuar en el chat de texto y, en ${cooldownLabel}, podremos hablar por voz durante otros dos minutos.`
-            : `${vocative}infelizmente, chegamos aos nossos dois minutos. Vou encerrar a sessão de voz agora. Você pode continuar pelo chat e, em ${cooldownLabel}, teremos novamente dois minutos para conversar por voz.`;
+            ? `${vocative}hemos llegado al final de nuestros dos minutos. Ahora cerraré la sesión de voz. Puedes continuar en el chat de texto y, en ${cooldownLabel}, la voz estará disponible nuevamente.`
+            : `${vocative}chegamos ao fim dos nossos dois minutos. Vou encerrar a sessão de voz agora. Você pode continuar pelo chat e, em ${cooldownLabel}, a voz estará disponível novamente.`;
 
-      updateRealtimePremiumStatus("ending", "⚠️ Encerrando a sessão de voz.");
-      setUploadStatus("⚠️ Chegamos aos dois minutos. Encerrando a voz; o chat por texto continua disponível.");
+      updateRealtimePremiumStatus("ending", "⏱️ Tempo concluído. Orkio está encerrando a sessão.");
+      setUploadStatus("⏱️ Dois minutos concluídos. Finalizando a mensagem de encerramento.");
+
+      const scheduleSafetyStop = (reason = "closing_message_timeout") => {
+        clearRealtimeFinalStopTimer();
+        rtcTimeboxFinalStopTimerRef.current = setTimeout(() => {
+          try {
+            if (!rtcSessionIdRef.current || rtcStopInFlightRef.current) return;
+            logRealtimeStep("ao72d_hf1:timebox_final_message_timeout", {
+              reason,
+              graceMs: REALTIME_FINAL_MESSAGE_GRACE_MS,
+              sessionId: rtcSessionIdRef.current || null,
+            });
+            void stopRealtime("time_limit_frontend_hard_stop");
+          } catch {}
+        }, REALTIME_FINAL_MESSAGE_GRACE_MS);
+      };
 
       const dispatchClosingNotice = () => {
         try {
           if (!realtimeModeRef.current || !rtcSessionIdRef.current) return;
           const currentDc = rtcDcRef.current;
-          if (!currentDc || currentDc.readyState !== "open") return;
+          if (!currentDc || currentDc.readyState !== "open") {
+            scheduleSafetyStop("closing_dc_not_open");
+            return;
+          }
 
           const sent = requestRealtimeSpokenResponse(currentDc, {
-            reason: "timebox_final_closing_notice",
+            reason: "timebox_final_closing_notice_after_zero",
             conversationItem: false,
             instructions: `Fale exatamente esta mensagem, sem acrescentar perguntas, ofertas, pitch ou continuação do assunto: ${spokenText}`,
           });
 
           rtcTimeboxClosingNoticeSentRef.current = Boolean(sent);
+          scheduleSafetyStop(sent ? "closing_response_wait" : "closing_response_not_sent");
+
           if (sent) {
-            queueRealtimeTelemetry("timebox_final_closing_notice_sent", {
+            queueRealtimeTelemetry("timebox_final_closing_notice_sent_after_zero", {
               remainingSeconds,
               cooldownSeconds: REALTIME_PUBLIC_BETA_COOLDOWN_SECONDS,
               hasName: Boolean(firstName),
             });
-            logRealtimeStep("ao72c_hf1:timebox_final_closing_notice_sent", {
+            logRealtimeStep("ao72d_hf1:timebox_final_closing_notice_sent_after_zero", {
               remainingSeconds,
               cooldownSeconds: REALTIME_PUBLIC_BETA_COOLDOWN_SECONDS,
               hasName: Boolean(firstName),
             });
           }
         } catch (err) {
-          logRealtimeStep("ao72c_hf1:timebox_final_closing_notice_failed", {
+          scheduleSafetyStop("closing_dispatch_exception");
+          logRealtimeStep("ao72d_hf1:timebox_final_closing_notice_failed", {
             message: err?.message || null,
             remainingSeconds,
           });
         }
       };
 
-      // Give response.cancel a brief moment to settle before creating the final response.
-      setTimeout(dispatchClosingNotice, hadActiveResponse ? 180 : 80);
+      // Let any cancelled late answer settle before creating the sole closing response.
+      setTimeout(dispatchClosingNotice, hadActiveResponse ? 220 : 80);
       return true;
     } catch (err) {
-      logRealtimeStep("ao72c_hf1:timebox_closing_phase_failed", {
+      logRealtimeStep("ao72d_hf1:timebox_closing_phase_failed", {
         message: err?.message || null,
         remainingSeconds,
       });
@@ -6530,8 +6575,6 @@ function scheduleRealtimeIdleFollowup() {
     const force = Boolean(options?.force);
     const source = String(options?.source || "unknown");
 
-    // AO72B-HF1: public sessions use the visible two-minute timer and local hard stop.
-    // Admin/founder-admin remain bypassed by isRealtimeTimeboxLimitedUser().
     if (REALTIME_FRONTEND_HARD_TIMEBOX_ENABLED !== true) {
       clearRealtimeTimeboxTimer();
       try { setRtcTimeboxRemaining(null); } catch {}
@@ -6542,37 +6585,40 @@ function scheduleRealtimeIdleFollowup() {
 
     if (!force && !isRealtimeTimeboxLimitedUser() && rtcBackendTimeboxLimitedRef.current !== true) return;
     clearRealtimeTimeboxTimer();
+    clearRealtimeFinalStopTimer();
 
     const maxSeconds = Math.max(1, Math.ceil(Number(seconds || REALTIME_PUBLIC_BETA_TIMEBOX_SECONDS)));
     try { rtcTimeboxPolicyRef.current = { ...(rtcTimeboxPolicyRef.current || {}), remainingSeconds: maxSeconds }; } catch {}
     const startedAt = Date.now();
     const endsAt = startedAt + maxSeconds * 1000;
     rtcTimeboxDeadlineRef.current = endsAt;
+    rtcTimeboxFinalStopScheduledRef.current = false;
+
+    // Emergency-only stop. Normal flow reaches 00:00, speaks the closing message,
+    // waits for its matching response.done and only then calls stopRealtime().
     try {
       if (rtcTimeboxHardStopTimerRef.current) clearTimeout(rtcTimeboxHardStopTimerRef.current);
       rtcTimeboxHardStopTimerRef.current = setTimeout(() => {
         try {
-          if (!rtcSessionIdRef.current) return;
-          console.log("REALTIME_TIMEBOX_HARD_STOP", {
-            marker: ORKIO_AO61A_HF4_BUILD_MARKER,
+          if (!rtcSessionIdRef.current || rtcStopInFlightRef.current) return;
+          console.warn("REALTIME_TIMEBOX_EMERGENCY_STOP", {
+            marker: "AO72D-HF1_GREETING_BEFORE_TIMER_FINAL_AFTER_ZERO",
             sessionId: rtcSessionIdRef.current || null,
             maxSeconds,
             source,
           });
-        } catch {}
-        try {
           setRealtimeMicrophoneEnabled(false);
           const dc = rtcDcRef.current;
           if (dc && dc.readyState === "open" && rtcResponseInFlightRef.current) {
-            sendRealtimeClientEvent(dc, { type: "response.cancel" }, "timebox_hard_stop_cancel_response");
+            sendRealtimeClientEvent(dc, { type: "response.cancel" }, "timebox_emergency_stop_cancel_response");
           }
+          void stopRealtime("time_limit_frontend_hard_stop");
         } catch {}
-        try { void stopRealtime("time_limit_frontend_hard_stop"); } catch {}
-      }, Math.max(1, maxSeconds * 1000 + 350));
+      }, Math.max(1, maxSeconds * 1000 + REALTIME_FINAL_MESSAGE_GRACE_MS + 2000));
     } catch {}
+
     let warned15 = false;
     let warned10 = false;
-    let spokenEndingNoticeSent = false;
 
     const tick = () => {
       const remaining = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
@@ -6582,73 +6628,59 @@ function scheduleRealtimeIdleFollowup() {
         updateRealtimePremiumStatus("listening", "📝 Transcrição ativa");
       }
 
-      if (
-        remaining <= REALTIME_PUBLIC_BETA_CLOSING_NOTICE_SECONDS &&
-        remaining > 0 &&
-        !spokenEndingNoticeSent
-      ) {
-        spokenEndingNoticeSent = announceRealtimeTimeboxEnding(remaining);
-      }
-
       if (remaining <= 15 && remaining > 10 && !warned15) {
         warned15 = true;
-        updateRealtimePremiumStatus("ending", "⚠️ Esta sessão será encerrada em 15 segundos.");
-        setUploadStatus("⚠️ Esta sessão será encerrada em 15 segundos. Em uma hora, a voz estará disponível novamente.");
-        setTimeout(() => setUploadStatus(""), 3500);
+        updateRealtimePremiumStatus("ending", "⚠️ Restam 15 segundos.");
+        setUploadStatus("⚠️ Restam 15 segundos de conversa por voz.");
+        setTimeout(() => setUploadStatus(""), 3000);
       }
 
       if (remaining <= 10 && remaining > 0 && !warned10) {
         warned10 = true;
-        updateRealtimePremiumStatus("ending", "⚠️ Encerrando em breve.");
-        setUploadStatus("⚠️ Encerrando em breve. O chat por texto continuará disponível.");
+        updateRealtimePremiumStatus("ending", "⚠️ Restam 10 segundos.");
+        setUploadStatus("⚠️ Restam 10 segundos. Conclua sua ideia.");
         setTimeout(() => setUploadStatus(""), 2500);
       }
 
       if (remaining <= 0) {
-        clearRealtimeTimeboxTimer();
-        logRealtimeStep("timebox:limit_reached", {
+        try {
+          if (rtcTimeboxTimerRef.current) clearInterval(rtcTimeboxTimerRef.current);
+        } catch {}
+        rtcTimeboxTimerRef.current = null;
+        setRtcTimeboxRemaining(0);
+
+        logRealtimeStep("ao72d_hf1:timebox_zero_reached", {
           maxSeconds,
-          marker: ORKIO_AO61A_BUILD_MARKER,
+          marker: "AO72D-HF1_GREETING_BEFORE_TIMER_FINAL_AFTER_ZERO",
           closingNoticeSent: Boolean(rtcTimeboxClosingNoticeSentRef.current),
           closingNoticeDone: Boolean(rtcTimeboxClosingNoticeDoneRef.current),
         });
-        try {
-          setRealtimeMicrophoneEnabled(false);
-          const dc = rtcDcRef.current;
-          if (dc && dc.readyState === "open" && rtcResponseInFlightRef.current) {
-            sendRealtimeClientEvent(dc, { type: "response.cancel" }, "timebox_zero_cancel_remaining_response");
-          }
-        } catch {}
-        setRealtimeMode(false);
-        realtimeModeRef.current = false;
-        setV2vPhase("cooldown");
-        const cooldownSeconds = Math.max(1, Math.ceil(Number(rtcTimeboxPolicyRef.current?.cooldownSeconds || REALTIME_PUBLIC_BETA_COOLDOWN_SECONDS)));
-        const cooldownLabel = formatRealtimeCountdown(cooldownSeconds);
-        const cooldownMessage = `A sessão de voz foi encerrada. Ela estará disponível novamente em ${cooldownLabel}. O chat por texto continua disponível.`;
-        setV2vError(cooldownMessage);
-        updateRealtimePremiumStatus("cooldown", cooldownMessage);
-        setUploadStatus(`⏳ ${cooldownMessage}`);
-        setTimeout(() => setUploadStatus(""), 4500);
-        try {
-          console.log("REALTIME_TIMEBOX_AUTO_STOP", {
-            marker: ORKIO_AO61A_BUILD_MARKER,
-            hf3Marker: ORKIO_AO61A_HF3_BUILD_MARKER,
-            hf4Marker: ORKIO_AO61A_HF4_BUILD_MARKER,
-            source,
-            previousMarker: ORKIO_AO60K_HF5B_BUILD_MARKER,
-            remaining,
-            maxSeconds,
-            cooldownSeconds,
-            sessionId: rtcSessionIdRef.current || null,
-          });
-        } catch {}
-        void stopRealtime("time_limit_frontend");
+
+        updateRealtimePremiumStatus("ending", "⏱️ Tempo concluído. Orkio está encerrando a sessão.");
+        setUploadStatus("⏱️ Dois minutos concluídos. Aguarde a mensagem final do Orkio.");
+
+        const closingStarted = announceRealtimeTimeboxEnding(0);
+        if (!closingStarted) {
+          clearRealtimeFinalStopTimer();
+          rtcTimeboxFinalStopTimerRef.current = setTimeout(() => {
+            try {
+              if (rtcSessionIdRef.current && !rtcStopInFlightRef.current) {
+                void stopRealtime("time_limit_frontend_hard_stop");
+              }
+            } catch {}
+          }, 1800);
+        }
       }
     };
 
     tick();
     rtcTimeboxTimerRef.current = setInterval(tick, 1000);
-    logRealtimeStep("timebox:started", { seconds: maxSeconds, marker: ORKIO_AO61A_BUILD_MARKER, hf3Marker: ORKIO_AO61A_HF3_BUILD_MARKER, hf4Marker: ORKIO_AO61A_HF4_BUILD_MARKER, source, deadline: rtcTimeboxDeadlineRef.current });
+    logRealtimeStep("ao72d_hf1:timebox_started_after_spoken_phrase", {
+      seconds: maxSeconds,
+      marker: "AO72D-HF1_GREETING_BEFORE_TIMER_FINAL_AFTER_ZERO",
+      source,
+      deadline: rtcTimeboxDeadlineRef.current,
+    });
   }
 
   function markRealtimeConversationActivated(source = "provider_event", meta = {}) {
@@ -6920,39 +6952,42 @@ function scheduleRealtimeIdleFollowup() {
     const maxSeconds = Math.max(1, Math.ceil(Number(seconds || REALTIME_PUBLIC_BETA_TIMEBOX_SECONDS)));
     const durationLabel = formatRealtimeDurationLabel(maxSeconds);
     const lang = normalizeRealtimeLanguageProfile(rtcLanguageProfileRef.current);
+    const limited = Boolean(isRealtimeTimeboxLimitedUser());
 
+    // AO72D-HF1: greeting first, timer phrase second. The countdown starts only
+    // when the assistant transcript reaches "two minutes", after the greeting.
     const announcement =
       lang === "en"
         ? (
-          isRealtimeTimeboxLimitedUser()
-            ? `We have ${durationLabel} of conversation starting now. Efatà. I am Orkio, live in real time. What would you like to start with?`
-            : "Efatà. Orkio is live in real time. You are in an unrestricted admin session. I will ask one short question at a time. What would you like to start with?"
+          limited
+            ? `Hello, I am Orkio. It is a pleasure to speak with you in real time. We have ${durationLabel} of conversation starting now. Where would you like to begin?`
+            : "Hello, I am Orkio. It is a pleasure to speak with you in real time. This is an unrestricted admin session. Where would you like to begin?"
         )
         : lang === "es"
           ? (
-            isRealtimeTimeboxLimitedUser()
-              ? `Tenemos ${durationLabel} de conversación a partir de ahora. Efatà. Soy Orkio y estoy en tiempo real. ¿Por dónde quieres empezar?`
-              : "Efatà. Orkio está en tiempo real. Estás en una sesión de administrador sin límite público. Haré una pregunta corta por vez. ¿Por dónde quieres empezar?"
+            limited
+              ? `Hola, soy Orkio. Es un placer hablar contigo en tiempo real. Tenemos ${durationLabel} de conversación a partir de ahora. ¿Por dónde quieres empezar?`
+              : "Hola, soy Orkio. Es un placer hablar contigo en tiempo real. Esta es una sesión de administrador sin límite público. ¿Por dónde quieres empezar?"
           )
           : (
-            isRealtimeTimeboxLimitedUser()
-              ? `Temos ${durationLabel} de conversa a partir de agora. Efatà. Eu sou Orkio e estou em tempo real. Por onde você quer começar?`
-              : "Efatà. Orkio em tempo real. Você está em uma sessão admin sem limite público. Vou fazer uma pergunta curta por vez. Por onde você quer começar?"
+            limited
+              ? `Olá, eu sou Orkio. Prazer em falar com você em tempo real. Temos ${durationLabel} de conversa a partir de agora. Por onde você quer começar?`
+              : "Olá, eu sou Orkio. Prazer em falar com você em tempo real. Esta é uma sessão admin sem limite público. Por onde você quer começar?"
           );
 
     const activationInput =
       lang === "en"
-        ? "Start this real-time voice session now with a short greeting and one opening question."
+        ? "Start this real-time voice session now with the exact short greeting provided."
         : lang === "es"
-          ? "Inicia ahora esta sesión de voz en tiempo real con un saludo breve y una pregunta inicial."
-          : "Inicie agora esta sessão de voz em tempo real com uma saudação curta e uma pergunta inicial.";
+          ? "Inicia ahora esta sesión de voz en tiempo real con el saludo breve exacto indicado."
+          : "Inicie agora esta sessão de voz em tempo real com a saudação curta exata indicada.";
 
-    const limited = Boolean(isRealtimeTimeboxLimitedUser());
-    logRealtimeStep("ao68a_hf6r8:start_announcement_requested", {
+    logRealtimeStep("ao72d_hf1:start_announcement_requested", {
       seconds: maxSeconds,
       durationLabel,
       languageProfile: lang,
       limited,
+      greetingBeforeTimer: true,
     });
 
     if (limited && !rtcTimeboxStartedRef.current) {
@@ -6961,19 +6996,21 @@ function scheduleRealtimeIdleFollowup() {
       rtcTimeboxAnnouncementResponseIdRef.current = null;
       rtcTimeboxAnnouncementTranscriptRef.current = "";
       rtcTimeboxAnnouncementAudioSeenRef.current = false;
+      rtcOpeningMicrophoneMutedRef.current = true;
+      setRealtimeMicrophoneEnabled(false);
     }
 
     const sent = requestRealtimeSpokenResponse(dc, {
-      reason: "start_announcement",
+      reason: "start_announcement_greeting_before_timer",
       conversationItem: true,
       inputText: activationInput,
-      instructions: limited
-        ? `Fale exatamente esta mensagem, começando diretamente pela duração e sem acrescentar nada antes: ${announcement}`
-        : announcement,
+      instructions: `Fale exatamente esta mensagem, começando pela saudação e sem acrescentar nada antes ou depois: ${announcement}`,
     });
 
     if (!sent && limited) {
       rtcTimeboxAnnouncementPendingRef.current = false;
+      rtcOpeningMicrophoneMutedRef.current = false;
+      setRealtimeMicrophoneEnabled(true);
       clearRealtimeAnnouncementFallback();
     }
     return sent;
@@ -7721,7 +7758,18 @@ function scheduleRealtimeIdleFollowup() {
               createdResponseId
             ) {
               rtcTimeboxAnnouncementResponseIdRef.current = createdResponseId;
-              logRealtimeStep("ao72c_hf1:start_announcement_response_created", {
+              logRealtimeStep("ao72d_hf1:start_announcement_response_created", {
+                responseId: createdResponseId,
+              });
+            }
+            if (
+              rtcTimeboxClosingRef.current &&
+              rtcTimeboxClosingNoticeSentRef.current &&
+              !rtcTimeboxClosingResponseIdRef.current &&
+              createdResponseId
+            ) {
+              rtcTimeboxClosingResponseIdRef.current = createdResponseId;
+              logRealtimeStep("ao72d_hf1:closing_response_created", {
                 responseId: createdResponseId,
               });
             }
@@ -7823,17 +7871,67 @@ function scheduleRealtimeIdleFollowup() {
             clearRealtimeActivationProbe();
             clearRealtimeAutoResponseFallback();
             rtcResponseInFlightRef.current = false;
+            const completedResponseId = ev?.response?.id || ev?.response_id || null;
             if (rtcTimeboxClosingRef.current) {
-              rtcTimeboxClosingNoticeDoneRef.current = true;
-              clearRealtimeAutoResponseFallback();
-              clearRealtimeIdleFollowup();
-              setRtcReadyToRespond(false);
-              updateRealtimePremiumStatus("ending", "⚠️ Encerrando a sessão de voz.");
-              logRealtimeStep("ao72c_hf1:timebox_final_closing_notice_done", {
-                responseId: ev?.response?.id || ev?.response_id || null,
-              });
-            } else if (rtcTimeboxAnnouncementPendingRef.current) {
-              startRealtimeConversationTimeboxIfNeeded("response.done_announcement_fallback");
+              const expectedClosingResponseId = rtcTimeboxClosingResponseIdRef.current;
+              const isExpectedClosingResponse = Boolean(
+                rtcTimeboxClosingNoticeSentRef.current &&
+                expectedClosingResponseId &&
+                completedResponseId &&
+                String(expectedClosingResponseId) === String(completedResponseId)
+              );
+
+              if (isExpectedClosingResponse) {
+                rtcTimeboxClosingNoticeDoneRef.current = true;
+                clearRealtimeAutoResponseFallback();
+                clearRealtimeIdleFollowup();
+                clearRealtimeFinalStopTimer();
+                setRtcReadyToRespond(false);
+                updateRealtimePremiumStatus("ending", "✅ Mensagem final concluída. Encerrando a voz.");
+                logRealtimeStep("ao72d_hf1:timebox_final_closing_notice_done", {
+                  responseId: completedResponseId,
+                });
+
+                if (!rtcTimeboxFinalStopScheduledRef.current) {
+                  rtcTimeboxFinalStopScheduledRef.current = true;
+                  rtcTimeboxFinalStopTimerRef.current = setTimeout(() => {
+                    try {
+                      if (rtcSessionIdRef.current && !rtcStopInFlightRef.current) {
+                        void stopRealtime("time_limit_frontend");
+                      }
+                    } catch {}
+                  }, 320);
+                }
+              } else {
+                logRealtimeStep("ao72d_hf1:non_closing_response_done_ignored_during_closing", {
+                  responseId: completedResponseId,
+                  expectedClosingResponseId,
+                  closingNoticeSent: Boolean(rtcTimeboxClosingNoticeSentRef.current),
+                });
+              }
+            } else {
+              const openingResponseId = rtcTimeboxAnnouncementResponseIdRef.current;
+              const isOpeningResponseDone = Boolean(
+                rtcOpeningMicrophoneMutedRef.current &&
+                (
+                  !openingResponseId ||
+                  !completedResponseId ||
+                  String(openingResponseId) === String(completedResponseId)
+                )
+              );
+
+              if (isOpeningResponseDone) {
+                rtcOpeningMicrophoneMutedRef.current = false;
+                setRealtimeMicrophoneEnabled(true);
+                logRealtimeStep("ao72d_hf1:opening_finished_microphone_enabled", {
+                  responseId: completedResponseId,
+                  timerStarted: Boolean(rtcTimeboxStartedRef.current),
+                });
+              }
+
+              if (rtcTimeboxAnnouncementPendingRef.current) {
+                startRealtimeConversationTimeboxIfNeeded("response.done_announcement_fallback");
+              }
             }
             if (!rtcConversationStartedRef.current) updateRealtimePremiumStatus("listening", "📝 Transcrição ativa");
 
