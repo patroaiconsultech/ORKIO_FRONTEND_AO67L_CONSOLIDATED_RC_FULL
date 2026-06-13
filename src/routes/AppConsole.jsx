@@ -2091,15 +2091,15 @@ export default function AppConsole() {
   const DISABLED_FEATURE_NOTICE =
     "Esta funcionalidade está em construção e será liberada futuramente. Por enquanto, o chat por texto está à disposição. Conforme a evolução das conversas e o uso correto da ferramenta, novas funcionalidades e agentes especializados poderão ser liberados.";
 
-  // ORKIO_AO60I_REALTIME_TIMEBOX_COOLDOWN_COUNTER
-  // ORKIO_AO60J_HF1_PREMIUM_2MIN_10MIN_WAKE_COUNTER
-  // Unified web/PWA default = 2min session + 10min cooldown; backend remains source of truth.
+  // AO72B-HF1_PUBLIC_2MIN_PER_HOUR_FRONTEND
+  // Product rule for the public beta: 2 minutes of Realtime followed by 1 hour of cooldown.
+  // Admin/founder-admin keep the existing bypass. The backend must still become the
+  // authoritative cross-device source before production; this frontend guard provides
+  // the requested staging UX and local enforcement.
   const REALTIME_PUBLIC_BETA_TIMEBOX_SECONDS = 2 * 60;
-  const REALTIME_PUBLIC_BETA_COOLDOWN_SECONDS = 10 * 60;
-  // AO64D-HF5_NO_HARD_TIMEBOX_ESG_FRONTEND
-  // Time limits are now advisory-only. Backend HF4 removed hard cooldown/timebox,
-  // and the frontend must not render a blocking clock nor auto-stop Realtime.
-  const REALTIME_FRONTEND_HARD_TIMEBOX_ENABLED = false;
+  const REALTIME_PUBLIC_BETA_COOLDOWN_SECONDS = 60 * 60;
+  const REALTIME_COOLDOWN_STORAGE_KEY = "orkio_realtime_public_cooldown_until_v1";
+  const REALTIME_FRONTEND_HARD_TIMEBOX_ENABLED = true;
   // ORKIO_AO60K_HF5B_FRONTEND_ENDED_AT_SECONDS_TIMEBOX_VERIFY
   // Build marker used only for audit/debug so we can prove the active bundle contains HF5B.
   const ORKIO_AO60K_HF5B_BUILD_MARKER = "AO60K-HF5B_FRONTEND_ENDED_AT_SECONDS_TIMEBOX_VERIFY";
@@ -2637,7 +2637,7 @@ const rtcLastUserActivityAtRef = useRef(0);
   const rtcTimeboxStartedRef = useRef(false);
   const rtcPendingTimeboxSecondsRef = useRef(null);
   const rtcCooldownTimerRef = useRef(null);
-  const rtcCooldownUntilRef = useRef(0);
+  const rtcCooldownUntilRef = useRef(readPersistedRealtimeCooldownUntil());
   // ORKIO_AO60I_HF2_POLICY_REF
   // Keeps web and PWA timer/cooldown aligned with backend-returned timebox policy.
   const rtcTimeboxPolicyRef = useRef({
@@ -2646,9 +2646,30 @@ const rtcLastUserActivityAtRef = useRef(0);
     remainingSeconds: null,
   });
   const [rtcTimeboxRemaining, setRtcTimeboxRemaining] = useState(null);
-  const [rtcCooldownRemaining, setRtcCooldownRemaining] = useState(0);
+  const [rtcCooldownRemaining, setRtcCooldownRemaining] = useState(() => {
+    const until = readPersistedRealtimeCooldownUntil();
+    return Math.max(0, Math.ceil((until - Date.now()) / 1000));
+  });
   const [rtcPremiumStatus, setRtcPremiumStatus] = useState(null);
   const [rtcPremiumStatusDetail, setRtcPremiumStatusDetail] = useState("");
+
+  useEffect(() => {
+    if (REALTIME_FRONTEND_HARD_TIMEBOX_ENABLED !== true) return undefined;
+    if (canAccessAdmin) {
+      persistRealtimeCooldownUntil(0);
+      rtcCooldownUntilRef.current = 0;
+      setRtcCooldownRemaining(0);
+      return undefined;
+    }
+    const until = readPersistedRealtimeCooldownUntil();
+    if (until > Date.now()) {
+      const remaining = Math.max(1, Math.ceil((until - Date.now()) / 1000));
+      startRealtimeCooldown(remaining, "restore_local_public_cooldown");
+    }
+    return () => {
+      try { clearRealtimeCooldownTimer(); } catch {}
+    };
+  }, [canAccessAdmin]);
   // AO66R-HF4: visual kill switch independent from WebRTC/backend cleanup.
   const [rtcOverlayForceClosed, setRtcOverlayForceClosed] = useState(false);
   // ORKIO_AO60K_HF2_429_COOLDOWN_HARDENING
@@ -5795,8 +5816,16 @@ function scheduleRealtimeIdleFollowup() {
   function formatRealtimeDurationLabel(totalSeconds) {
     const safe = Math.max(1, Math.ceil(Number(totalSeconds || REALTIME_PUBLIC_BETA_TIMEBOX_SECONDS)));
     if (safe < 60) return `${safe} segundo${safe === 1 ? "" : "s"}`;
-    const minutes = Math.floor(safe / 60);
+    const hours = Math.floor(safe / 3600);
+    const minutes = Math.floor((safe % 3600) / 60);
     const seconds = safe % 60;
+    if (hours > 0) {
+      const hourLabel = `${hours} hora${hours === 1 ? "" : "s"}`;
+      if (!minutes && !seconds) return hourLabel;
+      const minuteLabel = minutes ? `, ${minutes} minuto${minutes === 1 ? "" : "s"}` : "";
+      const secondLabel = seconds ? ` e ${seconds} segundo${seconds === 1 ? "" : "s"}` : "";
+      return `${hourLabel}${minuteLabel}${secondLabel}`;
+    }
     if (!seconds) return `${minutes} minuto${minutes === 1 ? "" : "s"}`;
     return `${minutes} minuto${minutes === 1 ? "" : "s"} e ${seconds} segundo${seconds === 1 ? "" : "s"}`;
   }
@@ -5979,13 +6008,15 @@ function scheduleRealtimeIdleFollowup() {
   }
 
   function isRealtimeTimeboxLimitedUser() {
-    // AO64D-HF5: hard timebox/cooldown removed for all users.
-    // Usage duration may still be shown as advisory elsewhere, but it must not block or stop Realtime.
     if (REALTIME_FRONTEND_HARD_TIMEBOX_ENABLED !== true) return false;
 
-    // AO01-HF6R16 — Admin/superadmin and backend-declared bypass never use public beta timebox/cooldown.
+    // Admin/founder-admin and backend-declared bypass never use the public beta limit.
     if (canAccessAdmin || rtcAdminTimeboxBypassRef.current === true || rtcAdminTimeboxBypass === true) return false;
-    return rtcBackendTimeboxLimitedRef.current === true || rtcBackendTimeboxLimited === true;
+
+    // AO72B-HF1: every public user receives the 2-minute local guard even while
+    // the recovery backend still reports advisory_only_esg. Server-side,
+    // cross-device enforcement remains a separate mandatory backend patch.
+    return true;
   }
 
   function clearRealtimeTimeboxTimer(options = {}) {
@@ -5999,6 +6030,27 @@ function scheduleRealtimeIdleFollowup() {
     rtcTimeboxHardStopTimerRef.current = null;
     rtcTimeboxDeadlineRef.current = 0;
     if (!options?.preserveDisplay) setRtcTimeboxRemaining(null);
+  }
+
+  function readPersistedRealtimeCooldownUntil() {
+    if (typeof window === "undefined") return 0;
+    try {
+      const value = Number(window.localStorage?.getItem(REALTIME_COOLDOWN_STORAGE_KEY) || 0);
+      return Number.isFinite(value) && value > Date.now() ? value : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  function persistRealtimeCooldownUntil(until = 0) {
+    if (typeof window === "undefined") return;
+    try {
+      if (Number(until) > Date.now()) {
+        window.localStorage?.setItem(REALTIME_COOLDOWN_STORAGE_KEY, String(Math.ceil(Number(until))));
+      } else {
+        window.localStorage?.removeItem(REALTIME_COOLDOWN_STORAGE_KEY);
+      }
+    } catch {}
   }
 
   function clearRealtimeCooldownTimer() {
@@ -6024,8 +6076,10 @@ function scheduleRealtimeIdleFollowup() {
     // If the backend returns 429/Retry-After, the UI must enter cooldown even when
     // the local cached user object is stale or incorrectly looks like admin.
     const duration = Math.max(1, Math.ceil(Number(seconds || REALTIME_PUBLIC_BETA_COOLDOWN_SECONDS)));
-    const until = Date.now() + duration * 1000;
+    const existingUntil = readPersistedRealtimeCooldownUntil();
+    const until = Math.max(existingUntil, Date.now() + duration * 1000);
     rtcCooldownUntilRef.current = until;
+    persistRealtimeCooldownUntil(until);
 
     clearRealtimeCooldownTimer();
     const tick = () => {
@@ -6037,6 +6091,7 @@ function scheduleRealtimeIdleFollowup() {
       if (remaining <= 0) {
         clearRealtimeCooldownTimer();
         rtcCooldownUntilRef.current = 0;
+        persistRealtimeCooldownUntil(0);
         updateRealtimePremiumStatus(null, "");
       }
     };
@@ -6337,12 +6392,62 @@ function scheduleRealtimeIdleFollowup() {
 
 
 
+  function announceRealtimeTimeboxEnding(remainingSeconds = 20) {
+    try {
+      if (!isRealtimeTimeboxLimitedUser()) return false;
+      if (rtcResponseInFlightRef.current) return false;
+      const dc = rtcDcRef.current;
+      if (!dc || dc.readyState !== "open") return false;
+
+      const rawName = String(user?.name || user?.first_name || "").trim();
+      const firstName = rawName
+        ? rawName.split(/\s+/)[0].replace(/[^A-Za-zÀ-ÖØ-öø-ÿ0-9'’-]/g, "")
+        : "";
+      const vocative = firstName ? `${firstName}, ` : "";
+      const cooldownLabel = formatRealtimeDurationLabel(REALTIME_PUBLIC_BETA_COOLDOWN_SECONDS);
+      const lang = normalizeRealtimeLanguageProfile(rtcLanguageProfileRef.current);
+
+      const spokenText =
+        lang === "en"
+          ? `${vocative}we are reaching the end of our two minutes. This voice session will close shortly. In ${cooldownLabel}, we can have another two-minute conversation if you are interested.`
+          : lang === "es"
+            ? `${vocative}estamos llegando al final de nuestros dos minutos. Esta sesión de voz se cerrará en breve. En ${cooldownLabel}, podremos conversar durante otros dos minutos si te interesa.`
+            : `${vocative}estamos chegando ao fim dos nossos dois minutos. Esta sessão de voz será encerrada em instantes. Em ${cooldownLabel}, teremos novamente dois minutos para conversar, caso você tenha interesse.`;
+
+      const sent = requestRealtimeSpokenResponse(dc, {
+        reason: "timebox_closing_notice",
+        conversationItem: false,
+        instructions: `Fale somente esta mensagem, sem acrescentar perguntas nem continuar o assunto: ${spokenText}`,
+      });
+
+      if (sent) {
+        queueRealtimeTelemetry("timebox_closing_notice_sent", {
+          remainingSeconds,
+          cooldownSeconds: REALTIME_PUBLIC_BETA_COOLDOWN_SECONDS,
+          hasName: Boolean(firstName),
+        });
+        logRealtimeStep("ao72b_hf1:timebox_closing_notice_sent", {
+          remainingSeconds,
+          cooldownSeconds: REALTIME_PUBLIC_BETA_COOLDOWN_SECONDS,
+          hasName: Boolean(firstName),
+        });
+      }
+      return Boolean(sent);
+    } catch (err) {
+      logRealtimeStep("ao72b_hf1:timebox_closing_notice_failed", {
+        message: err?.message || null,
+        remainingSeconds,
+      });
+      return false;
+    }
+  }
+
   function startRealtimeTimebox(seconds = REALTIME_PUBLIC_BETA_TIMEBOX_SECONDS, options = {}) {
     const force = Boolean(options?.force);
     const source = String(options?.source || "unknown");
 
-    // AO64D-HF5_NO_HARD_TIMEBOX_ESG_FRONTEND
-    // The clock/timebox is advisory-only now. Do not start timers, warnings, cooldowns or hard-stop.
+    // AO72B-HF1: public sessions use the visible two-minute timer and local hard stop.
+    // Admin/founder-admin remain bypassed by isRealtimeTimeboxLimitedUser().
     if (REALTIME_FRONTEND_HARD_TIMEBOX_ENABLED !== true) {
       clearRealtimeTimeboxTimer();
       try { setRtcTimeboxRemaining(null); } catch {}
@@ -6376,6 +6481,7 @@ function scheduleRealtimeIdleFollowup() {
     } catch {}
     let warned15 = false;
     let warned10 = false;
+    let spokenEndingNoticeSent = false;
 
     const tick = () => {
       const remaining = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
@@ -6385,11 +6491,15 @@ function scheduleRealtimeIdleFollowup() {
         updateRealtimePremiumStatus("listening", "📝 Transcrição ativa");
       }
 
+      if (remaining <= 25 && remaining > 5 && !spokenEndingNoticeSent) {
+        spokenEndingNoticeSent = announceRealtimeTimeboxEnding(remaining);
+      }
+
       if (remaining <= 15 && remaining > 10 && !warned15) {
         warned15 = true;
         updateRealtimePremiumStatus("ending", "⚠️ Esta sessão será encerrada em 15 segundos.");
-        setUploadStatus("⚠️ Esta sessão será encerrada em 15 segundos.");
-        setTimeout(() => setUploadStatus(""), 2500);
+        setUploadStatus("⚠️ Esta sessão será encerrada em 15 segundos. Em uma hora, a voz estará disponível novamente.");
+        setTimeout(() => setUploadStatus(""), 3500);
       }
 
       if (remaining <= 10 && remaining > 0 && !warned10) {
@@ -9136,6 +9246,68 @@ async function stopRealtime(reason = 'client_stop') {
     setUploadOpen(true);
   }
 
+  function bridgeUploadedFileToRealtime(uploadResult, file) {
+    try {
+      if (!realtimeModeRef.current || !rtcSessionIdRef.current) return false;
+      const dc = rtcDcRef.current;
+      if (!dc || dc.readyState !== "open") return false;
+
+      const payload = uploadResult?.data && typeof uploadResult.data === "object"
+        ? uploadResult.data
+        : (uploadResult || {});
+      const filename = String(payload?.filename || file?.name || "arquivo").trim() || "arquivo";
+      const extractedChars = Number(payload?.extracted_chars || 0);
+      const chunksCreated = Number(payload?.chunks_created || 0);
+      const extractionFailed = payload?.extraction_failed === true;
+      const processingStatus = extractionFailed
+        ? "O upload foi concluído, mas a extração de texto falhou."
+        : extractedChars > 0 || chunksCreated > 0
+          ? `O backend registrou a indexação do documento (${extractedChars || 0} caracteres; ${chunksCreated || 0} trechos).`
+          : "O upload foi concluído, mas este evento não confirma a extração integral do conteúdo.";
+
+      const contextText = [
+        "CONTEXTO OPERACIONAL DO SISTEMA:",
+        `O usuário acabou de anexar o arquivo "${filename}" à thread atual.`,
+        processingStatus,
+        "Reconheça que o anexo foi recebido e está vinculado à conversa.",
+        "Este evento transmite metadados do upload, não o texto integral do documento.",
+        "Não invente conteúdo nem diga que o anexo não chegou.",
+        "Se o usuário pedir análise detalhada, informe com transparência que a ponte documental completa do Realtime ainda precisa fornecer o conteúdo extraído; o chat por texto pode ser usado enquanto isso.",
+      ].join(" ");
+
+      const sent = sendRealtimeClientEvent(dc, {
+        type: "conversation.item.create",
+        item: {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: contextText }],
+        },
+      }, "ao72b_hf1:file_upload_context");
+
+      if (sent) {
+        queueRealtimeTelemetry("file_upload_context_attached", {
+          filename,
+          extractedChars,
+          chunksCreated,
+          extractionFailed,
+        });
+        logRealtimeStep("ao72b_hf1:file_upload_context_attached", {
+          filename,
+          extractedChars,
+          chunksCreated,
+          extractionFailed,
+        });
+      }
+      return Boolean(sent);
+    } catch (err) {
+      logRealtimeStep("ao72b_hf1:file_upload_context_failed", {
+        filename: file?.name || null,
+        message: err?.message || null,
+      });
+      return false;
+    }
+  }
+
   async function confirmUpload() {
     const f = uploadFileObj;
     if (!f) return;
@@ -9157,14 +9329,16 @@ async function stopRealtime(reason = 'client_stop') {
 
       if (uploadScope === "thread") {
         console.info("[Upload] start", { scope: "thread", filename: f?.name, threadId: effectiveThreadId, size: f?.size || null });
-        await uploadFile(f, { token, org: tenant, threadId: effectiveThreadId, intent: "chat" });
-        setUploadStatus("Arquivo anexado à conversa ✅");
+        const uploadResult = await uploadFile(f, { token, org: tenant, threadId: effectiveThreadId, intent: "chat" });
+        const realtimeBridged = bridgeUploadedFileToRealtime(uploadResult, f);
+        setUploadStatus(realtimeBridged ? "Arquivo anexado e sinalizado ao Realtime ✅" : "Arquivo anexado à conversa ✅");
         try { await loadMessages(effectiveThreadId, { force: true, expectedEpoch: activeThreadEpochRef.current }); } catch {}
       } else if (uploadScope === "agents") {
         if (!canAccessAdmin) {
           setUploadStatus("No beta público, arquivos são anexados à conversa com Orkio.");
-          await uploadFile(f, { token, org: tenant, threadId: effectiveThreadId, intent: "chat" });
-          setUploadStatus("Arquivo anexado à conversa ✅");
+          const uploadResult = await uploadFile(f, { token, org: tenant, threadId: effectiveThreadId, intent: "chat" });
+          const realtimeBridged = bridgeUploadedFileToRealtime(uploadResult, f);
+          setUploadStatus(realtimeBridged ? "Arquivo anexado e sinalizado ao Realtime ✅" : "Arquivo anexado à conversa ✅");
           try { await loadMessages(effectiveThreadId, { force: true, expectedEpoch: activeThreadEpochRef.current }); } catch {}
           return;
         }
@@ -9179,16 +9353,18 @@ async function stopRealtime(reason = 'client_stop') {
         console.info("[Upload] start", { scope: "institutional", filename: f?.name, threadId: effectiveThreadId, size: f?.size || null });
         const admin = isAdmin(user);
         if (admin) {
-          await uploadFile(f, { token, org: tenant, threadId: effectiveThreadId, intent: "institutional", linkAllAgents: true });
-          setUploadStatus("Arquivo institucional (global) ✅");
+          const uploadResult = await uploadFile(f, { token, org: tenant, threadId: effectiveThreadId, intent: "institutional", linkAllAgents: true });
+          const realtimeBridged = bridgeUploadedFileToRealtime(uploadResult, f);
+          setUploadStatus(realtimeBridged ? "Arquivo institucional anexado e sinalizado ao Realtime ✅" : "Arquivo institucional (global) ✅");
           // STAB: reload com effectiveThreadId para garantir que mensagem system aparece
           try {
             if (effectiveThreadId) await loadMessages(effectiveThreadId, { expectedEpoch: activeThreadEpochRef.current });
           } catch (e) { console.warn("loadMessages after institutional upload failed:", e); }
         } else {
           // B2: request institutionalization; keep accessible in this thread
-          await uploadFile(f, { token, org: tenant, threadId: effectiveThreadId, intent: "chat", institutionalRequest: true });
-          setUploadStatus("Solicitação enviada ao admin (institucional) ✅");
+          const uploadResult = await uploadFile(f, { token, org: tenant, threadId: effectiveThreadId, intent: "chat", institutionalRequest: true });
+          const realtimeBridged = bridgeUploadedFileToRealtime(uploadResult, f);
+          setUploadStatus(realtimeBridged ? "Solicitação anexada e sinalizada ao Realtime ✅" : "Solicitação enviada ao admin (institucional) ✅");
           try { await loadMessages(effectiveThreadId, { force: true, expectedEpoch: activeThreadEpochRef.current }); } catch {}
         }
       }
@@ -9688,7 +9864,7 @@ async function stopRealtime(reason = 'client_stop') {
     <>
     <PWAInstallPrompt />
     <RealtimeTimeboxOverlay
-      active={false}
+      active={realtimeOverlayActive}
       remainingSeconds={realtimeOverlayRemainingSeconds}
       maxSeconds={realtimeOverlayMaxSeconds}
       status={rtcPremiumStatus || (realtimeMode ? "listening" : null)}
