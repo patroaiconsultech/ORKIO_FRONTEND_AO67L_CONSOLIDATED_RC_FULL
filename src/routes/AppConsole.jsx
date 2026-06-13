@@ -2630,8 +2630,11 @@ const rtcLastUserActivityAtRef = useRef(0);
   const rtcLivePollSessionIdRef = useRef(null);
   // ORKIO_AO60I_REALTIME_TIMEBOX_COOLDOWN_COUNTER
   const rtcTimeboxTimerRef = useRef(null);
-  // AO66R-HF6: timer starts only after Orkio's first spoken response completes.
+  // AO72A-HF1: provider activity and timebox lifecycle are independent.
+  // rtcConversationStartedRef proves that a real user/assistant event happened.
+  // rtcTimeboxStartedRef only tracks the optional countdown lifecycle.
   const rtcConversationStartedRef = useRef(false);
+  const rtcTimeboxStartedRef = useRef(false);
   const rtcPendingTimeboxSecondsRef = useRef(null);
   const rtcCooldownTimerRef = useRef(null);
   const rtcCooldownUntilRef = useRef(0);
@@ -6069,6 +6072,7 @@ function scheduleRealtimeIdleFollowup() {
     try { clearRealtimeActivationProbe(); } catch {}
     try { clearRealtimeTimeboxTimer(); } catch {}
     try { rtcConversationStartedRef.current = false; } catch {}
+    try { rtcTimeboxStartedRef.current = false; } catch {}
     try { rtcPendingTimeboxSecondsRef.current = null; } catch {}
     try { clearRealtimeLivePoll(); } catch {}
     try {
@@ -6430,15 +6434,35 @@ function scheduleRealtimeIdleFollowup() {
     logRealtimeStep("timebox:started", { seconds: maxSeconds, marker: ORKIO_AO61A_BUILD_MARKER, hf3Marker: ORKIO_AO61A_HF3_BUILD_MARKER, hf4Marker: ORKIO_AO61A_HF4_BUILD_MARKER, source, deadline: rtcTimeboxDeadlineRef.current });
   }
 
-  function startRealtimeConversationTimeboxIfNeeded(source = "assistant_response_done", secondsOverride = null) {
+  function markRealtimeConversationActivated(source = "provider_event", meta = {}) {
     try {
       if (rtcConversationStartedRef.current) return false;
+      rtcConversationStartedRef.current = true;
+      const activationMeta = {
+        source: String(source || "provider_event"),
+        sessionId: rtcSessionIdRef.current || null,
+        sessionAgeMs: getRealtimeSessionAgeMs(),
+        ...(meta && typeof meta === "object" ? meta : {}),
+      };
+      logRealtimeStep("ao72a_hf1:conversation_activated", activationMeta);
+      queueRealtimeTelemetry("conversation_activated", activationMeta);
+      return true;
+    } catch (err) {
+      try { console.warn("REALTIME_CONVERSATION_ACTIVATION_MARK_FAILED", err); } catch {}
+      return false;
+    }
+  }
+
+  function startRealtimeConversationTimeboxIfNeeded(source = "assistant_response_done", secondsOverride = null) {
+    try {
+      markRealtimeConversationActivated(source, { timeboxCandidate: true });
+      if (rtcTimeboxStartedRef.current) return false;
       if (rtcOverlayForceClosed) return false;
       const limited = isRealtimeTimeboxLimitedUser() || rtcBackendTimeboxLimitedRef.current === true;
       if (!limited) return false;
       const pending = Number(secondsOverride || rtcPendingTimeboxSecondsRef.current || rtcTimeboxPolicyRef.current?.remainingSeconds || rtcTimeboxPolicyRef.current?.maxSeconds || REALTIME_PUBLIC_BETA_TIMEBOX_SECONDS);
       const seconds = Math.max(1, Math.ceil(pending || REALTIME_PUBLIC_BETA_TIMEBOX_SECONDS));
-      rtcConversationStartedRef.current = true;
+      rtcTimeboxStartedRef.current = true;
       rtcPendingTimeboxSecondsRef.current = null;
       console.log("REALTIME_TIMEBOX_STARTED_AFTER_ASSISTANT_INTRO", {
         marker: "AO66R_HF6_TIMEBOX_AFTER_FIRST_ASSISTANT_RESPONSE",
@@ -6704,6 +6728,7 @@ function scheduleRealtimeIdleFollowup() {
 
     rtcConnectingRef.current = true;
     try { rtcConversationStartedRef.current = false; } catch {}
+    try { rtcTimeboxStartedRef.current = false; } catch {}
     try { rtcPendingTimeboxSecondsRef.current = null; } catch {}
     try { setRtcOverlayForceClosed(false); } catch {}
     updateRealtimePremiumStatus("connecting", "Preparando microfone e sessão de voz.");
@@ -7321,6 +7346,9 @@ function scheduleRealtimeIdleFollowup() {
           // to emit the response events, while still allowing optional manual / magic-word triggers
           // when explicitly requested by the user.
           if (ev?.type === 'conversation.item.input_audio_transcription.completed') {
+            markRealtimeConversationActivated("input_audio_transcription.completed", {
+              transcriptLength: String(ev?.transcript || ev?.text || ev?.result?.transcript || "").length,
+            });
             const raw = (ev?.transcript || ev?.text || ev?.result?.transcript || '').toString();
             try {
               console.log("REALTIME_USER_FINAL_TRANSCRIPT", {
@@ -7393,6 +7421,9 @@ function scheduleRealtimeIdleFollowup() {
             rtcTextBufRef.current += ev.delta;
           }
           if (ev?.type === 'response.created') {
+            markRealtimeConversationActivated("response.created", {
+              responseId: ev?.response?.id || ev?.response_id || null,
+            });
             queueRealtimeTelemetry("session_activated", { source: "response.created", response_id: ev?.response?.id || ev?.response_id || null });
             try {
               console.log("REALTIME_ASSISTANT_RESPONSE_RECEIVED", {
@@ -7438,6 +7469,7 @@ function scheduleRealtimeIdleFollowup() {
           }
           // Audio transcript (when model outputs audio without text)
           if (ev?.type === 'response.audio.delta' || ev?.type === 'response.output_audio.delta') {
+            markRealtimeConversationActivated(ev?.type || "response.audio.delta", { assistantAudio: true });
             queueRealtimeTelemetry("assistant_audio_started", { source: ev?.type || "response.audio.delta" });
             clearRealtimeResponseTimeout();
             try { ensureRealtimeAudioOutput("response_audio_delta"); } catch {}
@@ -7471,6 +7503,12 @@ function scheduleRealtimeIdleFollowup() {
           }
 
           if (ev?.type === 'response.done') {
+            markRealtimeConversationActivated("response.done", {
+              responseId: ev?.response?.id || ev?.response_id || null,
+            });
+            queueRealtimeTelemetry("response_done", {
+              responseId: ev?.response?.id || ev?.response_id || null,
+            });
             clearRealtimeResponseTimeout();
             clearRealtimeActivationProbe();
             clearRealtimeAutoResponseFallback();
@@ -7707,10 +7745,14 @@ function scheduleRealtimeIdleFollowup() {
   function queueRealtimeEvent({ event_type, role, content = null, is_final = false, meta = null } = {}) {
     const sid = rtcSessionIdRef.current;
     if (!sid) return;
+    const normalizedEventType = String(event_type || "event").trim() || "event";
     rtcEventQueueRef.current.push({
       session_id: sid,
       client_event_id: (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : (`ce-${Date.now()}-${Math.random().toString(36).slice(2,10)}`),
-      event_type,
+      event_type: normalizedEventType,
+      // Compatibility aliases for the recovery schema and readable backend logs.
+      name: normalizedEventType,
+      type: normalizedEventType,
       role,
       content,
       created_at: Math.floor(Date.now()/1000),
@@ -7786,6 +7828,7 @@ function scheduleRealtimeIdleFollowup() {
       try { clearInterval(rtcLivePollTimerRef.current); } catch {}
       rtcLivePollTimerRef.current = null;
     }
+    rtcLivePollSessionIdRef.current = null;
   }
 
   async function getRealtimeSessionCompat(args = {}) {
@@ -7909,7 +7952,10 @@ function scheduleRealtimeIdleFollowup() {
 
     const pollOnce = async () => {
       try {
-        if (!realtimeModeRef.current || !rtcSessionIdRef.current) return;
+        if (!realtimeModeRef.current || !rtcSessionIdRef.current) {
+          clearRealtimeLivePoll();
+          return;
+        }
         if (rtcSessionIdRef.current !== sid || rtcLivePollSessionIdRef.current !== sid) {
           logRealtimeStep("hf5:live_poll_stale_session_stopped", {
             pollSid: sid,
@@ -8312,10 +8358,45 @@ async function stopRealtime(reason = 'client_stop') {
 
       try {
         if (sid) {
+          queueRealtimeEvent({
+            event_type: "lifecycle.end_requested",
+            role: "system",
+            content: "",
+            is_final: false,
+            meta: {
+              reason: reasonTextEarly,
+              allow_backend_end: Boolean(allowBackendEnd),
+              conversation_started: Boolean(rtcConversationStartedRef.current),
+              session_age_ms: sessionAgeMs,
+              ao72a_hf1: true,
+            },
+          });
           await flushRealtimeEvents();
 
           if (allowBackendEnd) {
-            await endRealtimeSession({ session_id: sid, ended_at: Math.floor(Date.now() / 1000), meta: { reason, mode: summitRuntimeModeRef.current, hf6r10_explicit_end: true } });
+            await endRealtimeSession({
+              session_id: sid,
+              ended_at: Math.floor(Date.now() / 1000),
+              meta: {
+                reason,
+                mode: summitRuntimeModeRef.current,
+                hf6r10_explicit_end: true,
+                ao72a_hf1_conversation_started: Boolean(rtcConversationStartedRef.current),
+              },
+            });
+            logRealtimeStep("ao72a_hf1:backend_end_ok", {
+              reason: reasonTextEarly,
+              sessionId: sid,
+              sessionAgeMs,
+            });
+            try {
+              console.log("REALTIME_BACKEND_END_OK", {
+                reason: reasonTextEarly,
+                sessionId: sid,
+                sessionAgeMs,
+                marker: "AO72A-HF1-REALTIME-CLEAN-END",
+              });
+            } catch {}
           } else {
             logRealtimeStep("ao68a_hf6r10:backend_end_suppressed", {
               reason: reasonTextEarly,
