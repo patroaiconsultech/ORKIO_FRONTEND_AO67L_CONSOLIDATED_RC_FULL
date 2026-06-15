@@ -1,8 +1,8 @@
 {
   "id": "/app",
-  "name": "PatroAI Orkio",
+  "name": "Patroai AI Factory — Orkio",
   "short_name": "Orkio",
-  "description": "PatroAI Orkio - agentes inteligentes e execução governada.",
+  "description": "Orkio é a inteligência da Patroai, uma AI Factory que cria agentes, plataformas e automações para empresas.",
   "start_url": "/app",
   "scope": "/",
   "display": "standalone",
