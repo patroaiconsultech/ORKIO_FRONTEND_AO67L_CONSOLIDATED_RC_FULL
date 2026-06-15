@@ -72,10 +72,10 @@ const PATROAI_PAGE_COPY = {
     navAria: "Navegação principal",
     brandAria: "Ir para PatroAI",
     nav: {
-      solutions: "Soluções",
-      verticals: "Verticais",
+      solutions: "FactoryAI",
+      verticals: "Console Tech",
       orkio: "Orkio",
-      resources: "ESG & Método",
+      resources: "Método",
       about: "Sobre",
       contact: "Contato",
     },
@@ -85,46 +85,46 @@ const PATROAI_PAGE_COPY = {
       demo: "Agendar demonstração →",
     },
     hero: {
-      kicker: "Startups • Outsourcing • IA • Integrações • ESG",
-      titleBefore: "Resolvemos as dores do seu negócio com",
-      titleHighlight: "IA e ESG.",
+      kicker: "AI Factory • Produto • Software • Automações • Orkio",
+      titleBefore: "Patroai é uma",
+      titleHighlight: "AI Factory.",
       subtitle:
-        "A PatroAI cria startups, produtos digitais, verticais inteligentes e agentes de IA para empresas em formação ou já consolidadas. Nosso foco é entender as dores reais do negócio, integrar sistemas e informações já existentes e transformar processos em operação inteligente com execução rápida, segura e eficiente e orientar um futuro sustentável com governança, rastreabilidade, visão ESG e continuidade para o negócio.",
-      primary: "Agendar demonstração →",
-      secondary: "Conhecer soluções",
+        "Unimos estratégia, produto, software e inteligência artificial para construir agentes, plataformas e automações capazes de gerar valor real para empresas.",
+      primary: "Agendar conversa →",
+      secondary: "Conhecer a FactoryAI",
       trust:
-        "Projetos conduzidos de forma rápida, segura e eficiente — da dor real à operação inteligente, com estratégia, tecnologia, integrações, IA e governança.",
+        "Empresa membro da AmCham RS.",
     },
     orkioSpeech:
-      "Olá. Eu sou Orkio. Posso mostrar como a PatroAI resolve dores do negócio com inteligência artificial, integra sistemas, aproveita informações já existentes, estrutura startups e cria verticais sob demanda com governança, rastreabilidade, ESG e visão de continuidade para o negócio.",
+      "Olá. Eu sou Orkio, a inteligência e experiência de IA da Patroai. Posso mostrar como a Patroai transforma desafios reais em agentes, plataformas e automações com estratégia, produto, software, governança e execução.",
     missionVision: {
-      label: "Missão, visão e valores",
-      title: "Tecnologia com propósito. IA aplicada à execução real.",
+      label: "Patroai AI Factory",
+      title: "Estratégia, produto, software e inteligência artificial no mesmo ciclo de execução.",
       text:
-        "A PatroAI une estratégia, governança, criatividade e inteligência artificial para transformar desafios reais em soluções práticas, seguras, escaláveis e sustentáveis.",
+        "A Patroai combina visão de negócio, arquitetura de produto, engenharia de software e IA aplicada para criar soluções digitais governáveis, úteis e prontas para evoluir com empresas.",
       cards: [
         {
-          title: "Missão",
+          title: "Patroai",
           text:
-            "Potencializar pessoas e empresas com inteligência artificial segura, estratégica e aplicada à execução real.",
+            "A marca principal: uma AI Factory para construir agentes, plataformas e automações com foco em valor real para empresas.",
         },
         {
-          title: "Visão",
+          title: "FactoryAI",
           text:
-            "Ser referência em IA operacional governável, conectando tecnologia, negócios e propósito para transformar o futuro das organizações.",
+            "A capacidade produtiva da Patroai para desenhar, desenvolver e implantar soluções com IA, integrações, dados e governança.",
         },
         {
-          title: "Valores",
+          title: "Console Tech",
           text:
-            "Construímos tecnologia com consciência, responsabilidade e foco em resultado sustentável.",
+            "O ambiente técnico e operacional para organizar execução, acompanhamento, documentação, evolução e sustentação das soluções.",
           values: [
-            "Propósito",
-            "Ética",
-            "Segurança",
-            "Execução",
-            "Inovação",
-            "Humanidade",
-            "Prosperidade compartilhada",
+            "Produto",
+            "Software",
+            "IA aplicada",
+            "Governança",
+            "Automação",
+            "Integrações",
+            "Rastreabilidade",
             "Evolução contínua",
           ],
         },
@@ -134,147 +134,147 @@ const PATROAI_PAGE_COPY = {
     processSteps: [
       {
         number: "01",
-        title: "Diagnosticar",
-        text: "Mapeamos dores, gargalos, riscos, processos, oportunidades e impacto esperado para o negócio.",
+        title: "Entender",
+        text: "Mapeamos contexto, dores, prioridades, sistemas existentes e oportunidades reais de valor para a empresa.",
         icon: "search",
       },
       {
         number: "02",
-        title: "Priorizar",
-        text: "Separarmos sintoma de causa raiz e definimos o menor caminho entre problema, tecnologia, retorno e responsabilidade ESG.",
+        title: "Arquitetar",
+        text: "Definimos produto, fluxo, dados, integrações, riscos e o menor caminho técnico para gerar resultado com IA.",
         icon: "plan",
       },
       {
         number: "03",
         title: "Construir",
-        text: "Desenvolvemos plataformas, automações, agentes de IA, produtos digitais, integrações com sistemas existentes e operações sob medida com foco em velocidade, segurança e eficiência.",
+        text: "Desenvolvemos agentes, plataformas, automações e produtos digitais com engenharia de software, segurança e governança.",
         icon: "code",
       },
       {
         number: "04",
         title: "Implantar",
-        text: "Colocamos a solução em funcionamento com implantação segura, documentação, governança, rastreabilidade, integrações bem definidas e clareza operacional.",
+        text: "Colocamos a solução em operação com documentação, rastreabilidade, acompanhamento e clareza para equipes e gestores.",
         icon: "rocket",
       },
       {
         number: "05",
         title: "Evoluir",
-        text: "Acompanhamos a operação com consultores especializados, melhoria contínua, dados, continuidade operacional, sucessão e visão sustentável de longo prazo.",
+        text: "Acompanhamos uso, aprendizados, melhorias, novas automações e expansão da solução conforme a operação amadurece.",
         icon: "growth",
       },
     ],
     servicesIntro: {
-      label: "O que fazemos",
+      label: "FactoryAI",
       title:
-        "Criamos startups, implantamos IA em empresas consolidadas, integramos sistemas e resolvemos dores do negócio com velocidade, segurança, eficiência e visão ESG.",
+        "A capacidade produtiva da Patroai para criar soluções com IA.",
       text:
-        "A PatroAI atua em duas frentes: criação de novos negócios digitais em modelo startup outsourcing e evolução de empresas já existentes com inteligência artificial aplicada. Elaboramos business plans, estudos de viabilidade econômico-financeira, arquitetura de produto, agentes personalizados, automações, SaaS, integrações com sistemas existentes, implantação, governança e acompanhamento consultivo. Nosso método prioriza execução rápida, segura e eficiente. ESG entra como critério de decisão: eficiência com responsabilidade, rastreabilidade, impacto, continuidade e clareza para stakeholders. Isso inclui aproveitar informações já existentes, apoiar processos sucessórios e planejar um futuro mais sustentável para o negócio.",
+        "FactoryAI transforma estratégia em execução: desenhamos produtos, desenvolvemos software, criamos agentes, conectamos sistemas e organizamos automações capazes de gerar valor real para empresas.",
     },
     services: [
       {
-        title: "Startup Outsourcing Premium",
+        title: "Agentes de IA",
         text:
-          "Desenvolvemos startups, produtos digitais e novas operações desde a concepção estratégica até implantação, tecnologia, governança e operação assistida.",
+          "Criamos agentes para atendimento, análise, operação, suporte e tomada de decisão, com contexto, limites e governança.",
         icon: "target",
       },
       {
-        title: "IA para Empresas Consolidadas",
+        title: "Plataformas digitais",
         text:
-          "Apoiamos empresas que já possuem operação, equipe, clientes e processos, levando IA para atendimento, vendas, gestão, documentação, análise e tomada de decisão.",
+          "Desenvolvemos produtos, portais, consoles e sistemas sob medida para organizar processos e acelerar operações.",
         icon: "brain",
       },
       {
-        title: "Dores do Negócio + ESG",
+        title: "Automações empresariais",
         text:
-          "Mapeamos gargalos reais e priorizamos soluções com impacto operacional, integrações úteis, rastreabilidade, redução de desperdícios, governança e responsabilidade social e ambiental.",
+          "Automatizamos fluxos repetitivos, documentos, triagens, comunicações e rotinas críticas com segurança e rastreabilidade.",
         icon: "leaf",
       },
       {
-        title: "Business Plan & Viabilidade",
+        title: "Integrações e dados",
         text:
-          "Estruturamos modelos de negócio, projeções financeiras e estudos de viabilidade econômico-financeira para decisões mais seguras.",
+          "Conectamos sistemas, bases e informações existentes para reduzir perda de contexto e qualificar decisões.",
         icon: "system",
       },
       {
-        title: "Integrações, Dados & Sucessão",
+        title: "Produto e estratégia",
         text:
-          "Integramos a solução aos sistemas já utilizados pela empresa, aproveitando informações existentes para qualificar decisões, preservar contexto, apoiar continuidade operacional e dar suporte a jornadas de sucessão.",
+          "Traduzimos dores de negócio em escopo, roadmap, arquitetura, prioridades e critérios de sucesso.",
         icon: "gear",
       },
       {
-        title: "Tecnologia, SaaS & Agentes de IA",
+        title: "Governança e evolução",
         text:
-          "Criamos plataformas, automações e agentes de IA personalizados, com possibilidade de comercialização da plataforma em modelo SaaS para empresas em operação.",
+          "Estruturamos documentação, controles, acompanhamento e ciclos de melhoria para sustentar a solução em operação.",
         icon: "gear",
       },
     ],
     verticalsSection: {
-      label: "Verticais PatroAI",
-      title: "Criamos verticais sob demanda a partir de dores reais de mercado.",
+      label: "Console Tech",
+      title: "O ambiente técnico e operacional da Patroai.",
       text:
-        "As verticais PatroAI são negócios digitais setoriais criados com método próprio: diagnóstico, business plan, arquitetura de produto, agentes de IA, integrações, governança e operação assistida. Desenvolvemos sob demanda quando existe dor clara, oportunidade validável e potencial de operação recorrente. Temos frentes em estudo e desenvolvimento, sempre com foco em velocidade, segurança, eficiência e sustentabilidade.",
-      primary: "Desenvolver uma vertical com a PatroAI →",
-      secondary: "Entender o método",
+        "Console Tech organiza a execução das soluções da Patroai: acompanhamento técnico, documentação, decisões, integrações, indicadores e evolução operacional em um fluxo claro para equipes e gestores.",
+      primary: "Conversar sobre Console Tech →",
+      secondary: "Ver método",
       cards: [
         {
-          eyebrow: "Modelo sob demanda",
-          title: "Da dor real ao produto setorial",
+          eyebrow: "Operação técnica",
+          title: "Execução acompanhada",
           text:
-            "Transformamos problemas específicos de um setor em plataformas, agentes e operações digitais com tese, governança, métricas e roadmap.",
-          status: "Sob demanda",
+            "Centralizamos prioridades, status, documentação e próximos passos para que a solução evolua com previsibilidade.",
+          status: "Console Tech",
           featured: true,
         },
         {
-          eyebrow: "Execução assistida",
-          title: "Rápido, seguro e eficiente",
+          eyebrow: "Governança",
+          title: "Rastreabilidade e clareza",
           text:
-            "Priorizamos implantação enxuta, integrações úteis, documentação clara, proteção de dados e evolução por ciclos curtos de validação.",
-          status: "Método PatroAI",
+            "Mantemos decisões, integrações e mudanças documentadas para reduzir risco e preservar contexto operacional.",
+          status: "Método Patroai",
           featured: false,
         },
         {
-          eyebrow: "Pipeline PatroAI",
-          title: "Novas frentes em estruturação",
+          eyebrow: "Evolução",
+          title: "Melhoria contínua",
           text:
-            "Novas verticais estão em estudo para setores com alta necessidade de IA, integração de dados, sucessão, governança, rastreabilidade e ESG.",
-          status: "Em andamento",
+            "Acompanhamos uso, feedbacks e novas oportunidades para ampliar agentes, automações e plataformas com segurança.",
+          status: "Em ciclos",
           featured: false,
         },
       ],
     },
     esgSection: {
-      label: "ESG aplicado ao negócio",
-      title: "ESG não como discurso: como critério de decisão, eficiência e confiança.",
+      label: "Governança aplicada",
+      title: "IA com responsabilidade, segurança e clareza operacional.",
       text:
-        "A PatroAI usa IA, integrações e governança para ajudar empresas a resolver problemas reais sem perder responsabilidade. Isso significa melhorar processos, reduzir desperdícios, integrar sistemas, organizar documentação, dar transparência às decisões, qualificar dados e criar operações mais conscientes para clientes, equipes, investidores e parceiros. Também significa preservar o conhecimento do negócio e apoiar sua continuidade e sucessão com mais clareza.",
+        "A Patroai trata IA como infraestrutura de negócio: cada solução precisa de contexto, limites, rastreabilidade, proteções de dados, documentação e acompanhamento para gerar valor sem perder controle.",
       items: [
-        "Eficiência operacional com redução de retrabalho, desperdício e perda de contexto",
-        "Governança, documentação, integrações e rastreabilidade das decisões",
-        "Tecnologia aplicada com responsabilidade, continuidade e clareza para stakeholders",
+        "Arquitetura orientada a valor real, segurança e continuidade operacional",
+        "Documentação, integrações e rastreabilidade de decisões relevantes",
+        "Proteção contra uso indevido de IA, vazamento de dados e perda de contexto",
       ],
     },
     orkioSection: {
       label: "Conheça Orkio",
-      title: "Conheça Orkio, a inteligência operacional da PatroAI.",
+      title: "Orkio é a inteligência e experiência de IA da Patroai.",
       text:
-        "Orkio é nossa inteligência operacional para diagnóstico, clareza executiva e próximos passos. Ele apoia fundadores, empresas e consultores na leitura do contexto, na organização das decisões, na integração de informações já existentes e na evolução da operação com IA, governança, continuidade e visão ESG.",
+        "Orkio apoia diagnóstico, clareza executiva, interação conversacional e próximos passos. Ele conecta a experiência pública da Patroai com a capacidade produtiva da FactoryAI e o ambiente operacional Console Tech.",
       primary: "Explorar Orkio OS →",
       secondary: "Conversar com Orkio",
-      avatarLabel: "Orkio — presença místico-tecnológica da PatroAI",
+      avatarLabel: "Orkio — experiência de IA da Patroai",
       avatarTitle: "Presença de Orkio",
       avatarText: "Olá, eu sou Orkio.",
     },
     orkioBenefits: [
-      ["search", "Entende as dores do negócio"],
+      ["search", "Entende contexto e prioridades"],
       ["voice", "Responde por voz e texto"],
       ["brain", "Gera insights e recomendações"],
-      ["gear", "Acompanha evolução com governança e continuidade"],
+      ["gear", "Conecta estratégia, produto e execução"],
     ],
     contact: {
       label: "Fale com a PatroAI",
-      title: "Conte o desafio. Nós ajudamos a desenhar o próximo passo.",
+      title: "Conte o desafio. A Patroai ajuda a transformar em solução.",
       text:
-        "Use o formulário para solicitar uma demonstração, apresentar uma parceria ou conversar sobre IA, integrações, agentes personalizados e novos negócios.",
+        "Use o formulário para conversar sobre agentes, plataformas, automações, integrações, Orkio, FactoryAI ou Console Tech.",
       formTitle: "Enviar uma mensagem",
       formText: "Sua solicitação será registrada e você receberá um protocolo.",
       fields: {
@@ -308,14 +308,14 @@ const PATROAI_PAGE_COPY = {
         "Não foi possível enviar agora. Revise os dados ou fale conosco pelo WhatsApp.",
       whatsappTitle: "Prefere falar agora?",
       whatsappText:
-        "Abra uma conversa direta com a equipe PatroAI pelo WhatsApp.",
+        "Abra uma conversa direta com a equipe Patroai pelo WhatsApp.",
       whatsappButton: "Falar pelo WhatsApp",
-      floatingWhatsapp: "Falar com a PatroAI no WhatsApp",
+      floatingWhatsapp: "Falar com a Patroai no WhatsApp",
     },
     footer: {
       text:
-        "PatroAI Consultech · Startups, outsourcing, IA para empresas, integrações, verticais inteligentes, ESG, governança e rastreabilidade.",
-      rights: "© 2026 PatroAI. Todos os direitos reservados.",
+        "Patroai · AI Factory. Estratégia, produto, software e inteligência artificial para empresas. Empresa membro da AmCham RS.",
+      rights: "© 2026 Patroai. Todos os direitos reservados.",
     },
   },
 
@@ -323,10 +323,10 @@ const PATROAI_PAGE_COPY = {
     navAria: "Main navigation",
     brandAria: "Go to PatroAI",
     nav: {
-      solutions: "Solutions",
-      verticals: "Verticals",
+      solutions: "FactoryAI",
+      verticals: "Console Tech",
       orkio: "Orkio",
-      resources: "ESG & Method",
+      resources: "Method",
       about: "About",
       contact: "Contact",
     },
@@ -336,46 +336,46 @@ const PATROAI_PAGE_COPY = {
       demo: "Schedule a demo →",
     },
     hero: {
-      kicker: "Startups • Outsourcing • AI • Integrations • ESG",
-      titleBefore: "We solve your business pains with",
-      titleHighlight: "AI and ESG.",
+      kicker: "AI Factory • Product • Software • Automation • Orkio",
+      titleBefore: "Patroai is an",
+      titleHighlight: "AI Factory.",
       subtitle:
-        "PatroAI creates startups, digital products, intelligent verticals and AI agents for companies that are being formed or already consolidated. Our focus is to understand real business pains, integrate existing systems and information, and transform processes into intelligent operations with fast, secure and efficient execution and guide a sustainable future with governance, traceability, an ESG perspective and business continuity.",
-      primary: "Schedule a demo →",
-      secondary: "Explore solutions",
+        "We combine strategy, product, software and artificial intelligence to build agents, platforms and automations that create real value for companies.",
+      primary: "Schedule a conversation →",
+      secondary: "Explore FactoryAI",
       trust:
-        "Projects conducted in a fast, secure and efficient way, with strategy, technology, integrations, AI and specialized consulting.",
+        "Member of AmCham RS.",
     },
     orkioSpeech:
-      "Hello. I am Orkio. I can show how PatroAI solves business pains with artificial intelligence, integrates systems, leverages existing information, structures startups and creates on-demand verticals with governance, traceability, ESG and a continuity perspective for the business.",
+      "Hello. I am Orkio, Patroai's AI intelligence and experience. I can show how Patroai turns real challenges into agents, platforms and automations with strategy, product, software, governance and execution.",
     missionVision: {
-      label: "Mission, vision and values",
-      title: "Technology with purpose. AI applied to real execution.",
+      label: "Patroai AI Factory",
+      title: "Strategy, product, software and artificial intelligence in one execution cycle.",
       text:
-        "PatroAI combines strategy, governance, creativity and artificial intelligence to transform real challenges into practical, secure, scalable and sustainable solutions.",
+        "Patroai combines business vision, product architecture, software engineering and applied AI to create governable, useful digital solutions ready to evolve with companies.",
       cards: [
         {
-          title: "Mission",
+          title: "Patroai",
           text:
-            "Empower people and companies with safe, strategic artificial intelligence applied to real execution.",
+            "The main brand: an AI Factory for building agents, platforms and automations focused on real value for companies.",
         },
         {
-          title: "Vision",
+          title: "FactoryAI",
           text:
-            "Become a reference in governable operational AI, connecting technology, business and purpose to transform the future of organizations.",
+            "Patroai's production capability to design, develop and deploy AI solutions, integrations, data flows and governance.",
         },
         {
-          title: "Values",
+          title: "Console Tech",
           text:
-            "We build technology with awareness, responsibility and focus on sustainable outcomes.",
+            "The technical and operational environment for organizing execution, monitoring, documentation, evolution and support.",
           values: [
-            "Purpose",
-            "Ethics",
-            "Security",
-            "Execution",
-            "Innovation",
-            "Humanity",
-            "Shared prosperity",
+            "Product",
+            "Software",
+            "Applied AI",
+            "Governance",
+            "Automation",
+            "Integrations",
+            "Traceability",
             "Continuous evolution",
           ],
         },
@@ -385,147 +385,147 @@ const PATROAI_PAGE_COPY = {
     processSteps: [
       {
         number: "01",
-        title: "Diagnose",
-        text: "We map pains, bottlenecks, risks, processes, opportunities and expected impact for the business.",
+        title: "Understand",
+        text: "We map context, pains, priorities, existing systems and real value opportunities for the company.",
         icon: "search",
       },
       {
         number: "02",
-        title: "Prioritize",
-        text: "We separate symptom from root cause and define the shortest path between problem, technology, return and ESG responsibility.",
+        title: "Architect",
+        text: "We define product, flows, data, integrations, risks and the shortest technical path to generate results with AI.",
         icon: "plan",
       },
       {
         number: "03",
         title: "Build",
-        text: "We develop platforms, automations, AI agents, digital products, integrations with existing systems and tailored operations with a focus on speed, security and efficiency.",
+        text: "We develop agents, platforms, automations and digital products with software engineering, security and governance.",
         icon: "code",
       },
       {
         number: "04",
         title: "Deploy",
-        text: "We put the solution into operation with secure deployment, documentation, governance, traceability, well-defined integrations and operational clarity.",
+        text: "We put the solution into operation with documentation, traceability, monitoring and clarity for teams and managers.",
         icon: "rocket",
       },
       {
         number: "05",
         title: "Evolve",
-        text: "We support the operation with specialized consultants, continuous improvement, data, operational continuity, succession and a sustainable long-term vision.",
+        text: "We monitor usage, learnings, improvements, new automations and expansion as the operation matures.",
         icon: "growth",
       },
     ],
     servicesIntro: {
-      label: "What we do",
+      label: "FactoryAI",
       title:
-        "We create startups, implement AI in established companies, integrate systems and solve business pains with speed, security, efficiency and an ESG perspective.",
+        "Patroai's production capability for building AI solutions.",
       text:
-        "PatroAI works on two fronts: creating new digital businesses through startup outsourcing and evolving existing companies with applied artificial intelligence. We build business plans, financial feasibility studies, product architecture, personalized agents, automations, SaaS, integrations with existing systems, deployment, governance and consultative support. Our method prioritizes fast, secure and efficient execution. ESG works as a decision criterion: efficiency with responsibility, traceability, impact, continuity and clarity for stakeholders. This includes leveraging existing information, supporting succession processes and planning a more sustainable future for the business.",
+        "FactoryAI turns strategy into execution: we design products, develop software, create agents, connect systems and organize automations capable of generating real value for companies.",
     },
     services: [
       {
-        title: "Premium Startup Outsourcing",
+        title: "AI agents",
         text:
-          "We develop startups, digital products and new operations from strategic conception to deployment, technology, governance and assisted operations.",
+          "We create agents for service, analysis, operations, support and decision-making, with context, boundaries and governance.",
         icon: "target",
       },
       {
-        title: "AI for Established Companies",
+        title: "Digital platforms",
         text:
-          "We support companies that already have operations, teams, clients and processes, bringing AI into service, sales, management, documentation, analysis and decision-making.",
+          "We develop products, portals, consoles and custom systems to organize processes and accelerate operations.",
         icon: "brain",
       },
       {
-        title: "Business Pains + ESG",
+        title: "Business automation",
         text:
-          "We map real bottlenecks and prioritize solutions with operational impact, useful integrations, traceability, waste reduction, governance and social and environmental responsibility.",
+          "We automate repetitive flows, documents, triage, communications and critical routines with security and traceability.",
         icon: "leaf",
       },
       {
-        title: "Business Plan & Feasibility",
+        title: "Integrations and data",
         text:
-          "We structure business models, financial projections and feasibility studies to support safer decisions.",
+          "We connect existing systems, databases and information to reduce context loss and improve decisions.",
         icon: "system",
       },
       {
-        title: "Integrations, Data & Succession",
+        title: "Product and strategy",
         text:
-          "We integrate the solution with the systems the company already uses, leveraging existing information to improve decisions, preserve context, support operational continuity and strengthen succession journeys.",
+          "We translate business pains into scope, roadmap, architecture, priorities and success criteria.",
         icon: "gear",
       },
       {
-        title: "Technology, SaaS & AI Agents",
+        title: "Governance and evolution",
         text:
-          "We create platforms, automations and personalized AI agents, with the possibility of commercializing the platform as SaaS for companies already in operation.",
+          "We structure documentation, controls, monitoring and improvement cycles to sustain the solution in operation.",
         icon: "gear",
       },
     ],
     verticalsSection: {
-      label: "PatroAI Verticals",
-      title: "We create on-demand verticals from real market pains.",
+      label: "Console Tech",
+      title: "Patroai's technical and operational environment.",
       text:
-        "PatroAI verticals are sector-specific digital businesses created with our own method: diagnosis, business plan, product architecture, AI agents, integrations, governance and assisted operations. We develop them on demand when there is a clear pain, a validatable opportunity and recurring-operation potential. New fronts are under study and development, always focused on speed, security, efficiency and sustainability.",
-      primary: "Build a vertical with PatroAI →",
-      secondary: "Understand the method",
+        "Console Tech organizes Patroai's solution execution: technical monitoring, documentation, decisions, integrations, indicators and operational evolution in a clear flow for teams and managers.",
+      primary: "Discuss Console Tech →",
+      secondary: "View method",
       cards: [
         {
-          eyebrow: "On-demand model",
-          title: "From real pain to sector product",
+          eyebrow: "Technical operation",
+          title: "Guided execution",
           text:
-            "We turn sector-specific problems into platforms, agents and digital operations with thesis, governance, metrics and roadmap.",
-          status: "On demand",
+            "We centralize priorities, status, documentation and next steps so the solution can evolve predictably.",
+          status: "Console Tech",
           featured: true,
         },
         {
-          eyebrow: "Assisted execution",
-          title: "Fast, secure and efficient",
+          eyebrow: "Governance",
+          title: "Traceability and clarity",
           text:
-            "We prioritize lean deployment, useful integrations, clear documentation, data protection and evolution through short validation cycles.",
-          status: "PatroAI method",
+            "We keep decisions, integrations and changes documented to reduce risk and preserve operational context.",
+          status: "Patroai method",
           featured: false,
         },
         {
-          eyebrow: "PatroAI pipeline",
-          title: "New fronts in structuring",
+          eyebrow: "Evolution",
+          title: "Continuous improvement",
           text:
-            "New verticals are being studied for sectors with high demand for AI, data integration, succession, governance, traceability and ESG.",
-          status: "In progress",
+            "We monitor usage, feedback and new opportunities to expand agents, automations and platforms safely.",
+          status: "In cycles",
           featured: false,
         },
       ],
     },
     esgSection: {
-      label: "ESG applied to business",
-      title: "ESG not as discourse: as a criterion for decision, efficiency and trust.",
+      label: "Applied governance",
+      title: "AI with responsibility, security and operational clarity.",
       text:
-        "PatroAI uses AI, integrations and governance to help companies solve real problems without losing responsibility. This means improving processes, reducing waste, integrating systems, organizing documentation, bringing transparency to decisions, qualifying data and creating more conscious operations for clients, teams, investors and partners. It also means preserving business knowledge and supporting continuity and succession with greater clarity.",
+        "Patroai treats AI as business infrastructure: every solution needs context, boundaries, traceability, data protection, documentation and monitoring to generate value without losing control.",
       items: [
-        "Operational efficiency with reduced rework, waste and loss of context",
-        "Governance, documentation, integrations and traceability of decisions",
-        "Responsible technology with continuity and stakeholder clarity",
+        "Architecture oriented to real value, security and operational continuity",
+        "Documentation, integrations and traceability of relevant decisions",
+        "Protection against AI misuse, data leakage and context loss",
       ],
     },
     orkioSection: {
       label: "Meet Orkio",
-      title: "Meet Orkio, PatroAI's operational intelligence.",
+      title: "Orkio is Patroai's AI intelligence and experience.",
       text:
-        "Orkio is our operational intelligence for diagnosis, executive clarity and next steps. It supports founders, companies and consultants in understanding context, organizing decisions, integrating existing information and evolving operations with AI, governance, continuity and an ESG perspective.",
+        "Orkio supports diagnosis, executive clarity, conversational interaction and next steps. It connects Patroai's public experience with FactoryAI's production capability and the Console Tech operating environment.",
       primary: "Explore Orkio OS →",
       secondary: "Talk to Orkio",
-      avatarLabel: "Orkio — PatroAI's mystic-technological presence",
+      avatarLabel: "Orkio — Patroai's AI experience",
       avatarTitle: "Orkio's presence",
       avatarText: "Hello, I am Orkio.",
     },
     orkioBenefits: [
-      ["search", "Understands business pains"],
+      ["search", "Understands context and priorities"],
       ["voice", "Responds by voice and text"],
       ["brain", "Generates insights and recommendations"],
-      ["gear", "Supports evolution with governance and continuity"],
+      ["gear", "Connects strategy, product and execution"],
     ],
     contact: {
       label: "Talk to PatroAI",
-      title: "Share the challenge. We will help design the next step.",
+      title: "Share the challenge. Patroai helps turn it into a solution.",
       text:
-        "Use the form to request a demo, propose a partnership or discuss AI, integrations, personalized agents and new ventures.",
+        "Use the form to discuss agents, platforms, automations, integrations, Orkio, FactoryAI or Console Tech.",
       formTitle: "Send a message",
       formText: "Your request will be registered and you will receive a protocol.",
       fields: {
@@ -559,14 +559,14 @@ const PATROAI_PAGE_COPY = {
         "We could not send it now. Review the information or contact us on WhatsApp.",
       whatsappTitle: "Would you rather talk now?",
       whatsappText:
-        "Open a direct conversation with the PatroAI team on WhatsApp.",
+        "Open a direct conversation with the Patroai team on WhatsApp.",
       whatsappButton: "Talk on WhatsApp",
-      floatingWhatsapp: "Talk to PatroAI on WhatsApp",
+      floatingWhatsapp: "Talk to Patroai on WhatsApp",
     },
     footer: {
       text:
-        "PatroAI Consultech · Startups, outsourcing, AI for companies, integrations, intelligent verticals, ESG, governance and traceability.",
-      rights: "© 2026 PatroAI. All rights reserved.",
+        "Patroai · AI Factory. Strategy, product, software and artificial intelligence for companies. Member of AmCham RS.",
+      rights: "© 2026 Patroai. All rights reserved.",
     },
   },
 };
@@ -603,7 +603,7 @@ function PatroaiLogo({ compact = false }) {
     <div className="patroai-logo-wrap-inner">
       <img
         src={src}
-        alt="PatroAI Consultech"
+        alt="Patroai"
         className="patroai-logo-img"
         onError={() => {
           if (src !== LOGO_FALLBACK) setSrc(LOGO_FALLBACK);
@@ -611,8 +611,8 @@ function PatroaiLogo({ compact = false }) {
       />
       {!compact ? (
         <div className="patroai-logo-text">
-          <strong>PatroAI</strong>
-          <span>Consultech</span>
+          <strong>Patroai</strong>
+          <span>AI Factory</span>
         </div>
       ) : null}
     </div>
