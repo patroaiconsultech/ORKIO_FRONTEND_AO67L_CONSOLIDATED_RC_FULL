@@ -68,32 +68,26 @@ function writeUrlLocale(locale, { replace = true } = {}) {
 export function readLandingLocale() {
   if (typeof window === "undefined") return "pt";
 
+  let normalized = "pt";
+
   try {
     const query = new URLSearchParams(window.location.search);
     const urlLang = query.get("lang");
-    if (urlLang) {
-      const normalized = normalizeLandingLocale(urlLang);
-      writeStoredLocale(normalized);
-      writeUrlLocale(normalized, { replace: true });
-      writeDocumentLocale(normalized);
-      return normalized;
-    }
-  } catch {}
 
-  try {
-    const stored =
-      window.localStorage?.getItem(LANDING_LOCALE_KEY) ||
-      window.localStorage?.getItem(LANDING_LOCALE_LEGACY_KEY);
-
-    const normalized = normalizeLandingLocale(stored);
-    writeStoredLocale(normalized);
-    writeUrlLocale(normalized, { replace: true });
-    writeDocumentLocale(normalized);
-    return normalized;
+    // The public URL is the source of truth:
+    // - no lang parameter => Portuguese
+    // - ?lang=en => English
+    // - legacy/invalid values are normalized to Portuguese
+    normalized = urlLang ? normalizeLandingLocale(urlLang) : "pt";
   } catch {
-    writeDocumentLocale("pt");
-    return "pt";
+    normalized = "pt";
   }
+
+  writeStoredLocale(normalized);
+  writeUrlLocale(normalized, { replace: true });
+  writeDocumentLocale(normalized);
+
+  return normalized;
 }
 
 export function setLandingLocaleEverywhere(locale, { replaceUrl = true } = {}) {
