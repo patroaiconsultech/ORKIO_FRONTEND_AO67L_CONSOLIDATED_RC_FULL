@@ -592,6 +592,14 @@ const CHAT_TURN_RECONCILE_ATTEMPTS = Math.max(
   1,
   Number(ORKIO_ENV.VITE_CHAT_TURN_RECONCILE_ATTEMPTS || import.meta.env.VITE_CHAT_TURN_RECONCILE_ATTEMPTS || 2) || 2
 );
+const THREAD_RESTORE_RETRY_ATTEMPTS = Math.max(
+  1,
+  Number(ORKIO_ENV.VITE_THREAD_RESTORE_RETRY_ATTEMPTS || import.meta.env.VITE_THREAD_RESTORE_RETRY_ATTEMPTS || 2) || 2
+);
+const THREAD_RESTORE_RETRY_DELAY_MS = Math.max(
+  150,
+  Number(ORKIO_ENV.VITE_THREAD_RESTORE_RETRY_DELAY_MS || import.meta.env.VITE_THREAD_RESTORE_RETRY_DELAY_MS || 650) || 650
+);
 
 // METATRON_CHAT_RECOVERY_DIRECT_FALLBACK
 // Recuperação operacional 17/05:
@@ -648,6 +656,35 @@ function withTimeout(promise, ms, label = "timeout") {
   return Promise.race([promise, timeout]).finally(() => {
     if (timer) clearTimeout(timer);
   });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms || 0))));
+}
+
+function isTemporaryLoadError(err) {
+  const status = Number(err?.status || err?.response?.status || 0);
+  const code = String(err?.code || "").toUpperCase();
+  const message = String(err?.message || "").toLowerCase();
+  return (
+    [502, 503, 504].includes(status) ||
+    code.includes("NETWORK") ||
+    code.includes("TIMEOUT") ||
+    code.includes("FETCH_ABORTED") ||
+    message.includes("failed to fetch") ||
+    message.includes("temporariamente") ||
+    message.includes("timeout")
+  );
+}
+
+function restoreErrorMessage(err, fallback = "Nao consegui carregar agora.") {
+  if ([502, 503, 504].includes(Number(err?.status || 0)) || err?.isTemporaryUnavailable) {
+    return "Serviço temporariamente indisponível. Tente novamente em instantes.";
+  }
+  if (isTemporaryLoadError(err)) {
+    return "Não consegui conectar com estabilidade. Tente novamente em instantes.";
+  }
+  return String(err?.userMessage || err?.message || fallback || "").trim() || fallback;
 }
 
 function isAbortLikeError(err) {
@@ -2198,7 +2235,13 @@ const [onboardingForm, setOnboardingForm] = useState(() => sanitizeOnboardingFor
   const [threadId, setThreadId] = useState("");
   const [messages, setMessages] = useState([]);
   const [agents, setAgents] = useState([]);
+  const [threadsLoadState, setThreadsLoadState] = useState("loading"); // loading|retrying|load_failed|empty|ready
+  const [threadsLoadError, setThreadsLoadError] = useState("");
+  const [messagesLoadState, setMessagesLoadState] = useState("empty"); // loading|retrying|load_failed|empty|ready
+  const [messagesLoadError, setMessagesLoadError] = useState("");
   const agentsByNameRef = useRef(new Map());
+  const threadsRef = useRef([]);
+  const messagesThreadIdRef = useRef("");
   const activeThreadIdRef = useRef("");
   const activeThreadEpochRef = useRef(0);
   const messagesAbortRef = useRef(null);
@@ -2210,6 +2253,17 @@ const [onboardingForm, setOnboardingForm] = useState(() => sanitizeOnboardingFor
   const storageBootstrapConsumedRef = useRef(false);
   const storageBootstrapInitializedRef = useRef(false);
   const THREAD_STORAGE_KEY = "orkio_active_thread_id";
+
+  function applyThreadsList(list) {
+    const safeList = Array.isArray(list) ? list : [];
+    threadsRef.current = safeList;
+    setThreads(safeList);
+    return safeList;
+  }
+
+  useEffect(() => {
+    threadsRef.current = Array.isArray(threads) ? threads : [];
+  }, [threads]);
 
   function readStoredThreadId() {
     if (typeof window === "undefined") return "";
@@ -3068,6 +3122,9 @@ useEffect(() => {
     }
     if (clearMessages) {
       clearTmpAssistantDrafts();
+      messagesThreadIdRef.current = "";
+      setMessagesLoadState(nextId ? "loading" : "empty");
+      setMessagesLoadError("");
       setMessages([]);
     }
     setThreadId((prev) => (String(prev || "") === nextId ? prev : nextId));
@@ -3099,6 +3156,9 @@ useEffect(() => {
   }, []);
 
   async function loadThreads(opts = {}) {
+    const manualRetry = !!opts?.manualRetry;
+    setThreadsLoadState(manualRetry ? "retrying" : (threadsRef.current.length ? "retrying" : "loading"));
+    setThreadsLoadError("");
     try {
       const currentActive = String(activeThreadIdRef.current || threadId || "").trim();
       const explicitPreserveThreadId = String(
@@ -3109,9 +3169,28 @@ useEffect(() => {
       const bootstrapThreadId = explicitPreserveThreadId ? "" : getBootstrapStoredThreadId();
       const preserveThreadId = String(explicitPreserveThreadId || bootstrapThreadId || "").trim();
 
-      const { data } = await apiFetch("/api/threads", { token, org: tenant });
+      let data = [];
+      let lastErr = null;
+      for (let attempt = 1; attempt <= THREAD_RESTORE_RETRY_ATTEMPTS; attempt += 1) {
+        try {
+          if (attempt > 1) setThreadsLoadState("retrying");
+          const response = await apiFetch("/api/threads", { token, org: tenant });
+          data = response?.data;
+          lastErr = null;
+          break;
+        } catch (err) {
+          lastErr = err;
+          if (err?.status === 401 || !isTemporaryLoadError(err) || attempt >= THREAD_RESTORE_RETRY_ATTEMPTS) {
+            throw err;
+          }
+          await sleep(THREAD_RESTORE_RETRY_DELAY_MS * attempt);
+        }
+      }
+      if (lastErr) throw lastErr;
+
       const list = Array.isArray(data) ? data : [];
-      setThreads(list);
+      applyThreadsList(list);
+      setThreadsLoadState(list.length ? "ready" : "empty");
 
       const hasPreserved = preserveThreadId && list.some((t) => String(t?.id || "") === preserveThreadId);
       const isLocked = threadSelectionLockUntilRef.current > Date.now();
@@ -3154,13 +3233,21 @@ useEffect(() => {
       if (e?.status === 401) {
         await logoutIfSessionReallyExpired("loadThreads");
       }
-      return [];
+      setThreadsLoadState("load_failed");
+      setThreadsLoadError(restoreErrorMessage(e, "Falha ao carregar conversas."));
+      return threadsRef.current;
     }
   }
 
   async function loadMessages(tid, opts = {}) {
     const targetId = String(tid || "");
-    if (!targetId) return [];
+    if (!targetId) {
+      setMessagesLoadState("empty");
+      setMessagesLoadError("");
+      return [];
+    }
+    setMessagesLoadState(opts?.manualRetry ? "retrying" : "loading");
+    setMessagesLoadError("");
     const force = !!opts?.force;
     const expectedEpoch = Number.isFinite(Number(opts?.expectedEpoch))
       ? Number(opts.expectedEpoch)
@@ -3185,10 +3272,27 @@ useEffect(() => {
       const fetchOpts = { token, org: tenant };
       if (controller?.signal) fetchOpts.signal = controller.signal;
 
-      const { data } = await apiFetch(
-        `/api/messages?thread_id=${encodeURIComponent(targetId)}&include_welcome=0`,
-        fetchOpts
-      );
+      let data = [];
+      let lastErr = null;
+      for (let attempt = 1; attempt <= THREAD_RESTORE_RETRY_ATTEMPTS; attempt += 1) {
+        try {
+          if (attempt > 1) setMessagesLoadState("retrying");
+          const response = await apiFetch(
+            `/api/messages?thread_id=${encodeURIComponent(targetId)}&include_welcome=0`,
+            fetchOpts
+          );
+          data = response?.data;
+          lastErr = null;
+          break;
+        } catch (err) {
+          lastErr = err;
+          if (err?.name === "AbortError" || err?.status === 401 || !isTemporaryLoadError(err) || attempt >= THREAD_RESTORE_RETRY_ATTEMPTS) {
+            throw err;
+          }
+          await sleep(THREAD_RESTORE_RETRY_DELAY_MS * attempt);
+        }
+      }
+      if (lastErr) throw lastErr;
 
       const normalized = orderChatMessages(
         Array.isArray(data)
@@ -3215,7 +3319,9 @@ useEffect(() => {
         );
 
       if (canApply) {
+        messagesThreadIdRef.current = targetId;
         setMessages(normalized);
+        setMessagesLoadState(normalized.length ? "ready" : "empty");
       }
       return normalized;
     } catch (e) {
@@ -3224,8 +3330,10 @@ useEffect(() => {
         if (e?.status === 401) {
           await logoutIfSessionReallyExpired("loadMessages");
         }
+        setMessagesLoadState("load_failed");
+        setMessagesLoadError(restoreErrorMessage(e, "Falha ao carregar mensagens."));
       }
-      return [];
+      return messagesThreadIdRef.current === targetId ? messages : [];
     } finally {
       if (messagesAbortRef.current === controller) {
         messagesAbortRef.current = null;
@@ -3467,14 +3575,34 @@ useEffect(() => {
   useEffect(() => {
     const currentThreadId = String(threadId || "");
     if (!currentThreadId) {
+      messagesThreadIdRef.current = "";
+      setMessagesLoadState(threadsLoadState === "load_failed" ? "load_failed" : "empty");
       setMessages([]);
       return;
     }
     const epochAtEffect = activeThreadEpochRef.current;
     clearTmpAssistantDrafts();
-    setMessages([]);
+    if (messagesThreadIdRef.current !== currentThreadId) {
+      setMessages([]);
+    }
     void loadMessages(currentThreadId, { force: true, expectedEpoch: epochAtEffect });
   }, [threadId]);
+
+  function retryConversationRestore() {
+    const currentThreadId = String(activeThreadIdRef.current || threadId || "").trim();
+    if (currentThreadId) {
+      void loadMessages(currentThreadId, {
+        force: true,
+        manualRetry: true,
+        expectedEpoch: activeThreadEpochRef.current,
+      });
+      return;
+    }
+    void loadThreads({
+      manualRetry: true,
+      preserveThreadId: readStoredThreadId(),
+    });
+  }
 
 
 
@@ -9700,7 +9828,7 @@ async function stopRealtime(reason = 'client_stop') {
         filename: f?.name || uploadFileObj?.name || null,
         message: e?.message || null,
       });
-      setUploadStatus(e?.message || "Falha no upload");
+      setUploadStatus(restoreErrorMessage(e, "Falha no upload. Tente novamente."));
       setTimeout(() => setUploadStatus(""), 2500);
     } finally {
       setUploadProgress(false);
@@ -10054,6 +10182,18 @@ async function stopRealtime(reason = 'client_stop') {
     btnPrimary: { background: "rgba(124,92,255,0.22)", border: "1px solid rgba(124,92,255,0.35)", fontWeight: 800 },
     checkGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "8px", marginTop: "10px" },
     checkItem: { display: "flex", gap: "8px", alignItems: "center", padding: "8px", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" },
+    restoreStatePanel: {
+      width: "min(640px, 100%)",
+      margin: "64px auto 0",
+      padding: "18px",
+      borderRadius: 16,
+      border: "1px solid rgba(255,255,255,0.12)",
+      background: "rgba(255,255,255,0.045)",
+      boxShadow: "0 18px 54px rgba(0,0,0,0.22)",
+    },
+    restoreStateTitle: { fontSize: 16, fontWeight: 900, marginBottom: 8 },
+    restoreStateText: { fontSize: 13, lineHeight: 1.55, color: "rgba(255,255,255,0.72)" },
+    restoreStateActions: { marginTop: 14, display: "flex", justifyContent: "flex-start" },
     hint: { fontSize: "12px", color: "rgba(255,255,255,0.6)", marginTop: "6px" },
   };
 
@@ -10121,6 +10261,32 @@ async function stopRealtime(reason = 'client_stop') {
   // During public beta, every non-admin user, including EFATAH777 and AMCHAMRSORKIO,
   // uses Orkio-only Realtime. Admin keeps full agent access for testing/release governance.
   const publicBetaOrkioOnly = !canAccessAdmin;
+  const conversationRestoreState = threadsLoadState === "load_failed"
+    ? "load_failed"
+    : (threadsLoadState === "loading" || threadsLoadState === "retrying")
+      ? threadsLoadState
+      : (threadId && messagesLoadState === "load_failed")
+        ? "load_failed"
+        : (threadId && (messagesLoadState === "loading" || messagesLoadState === "retrying"))
+          ? messagesLoadState
+          : (!threadId && threadsLoadState === "empty")
+            ? "empty"
+            : messagesLoadState;
+  const shouldShowRestorePanel = messages.length === 0 && (
+    conversationRestoreState === "loading" ||
+    conversationRestoreState === "retrying" ||
+    conversationRestoreState === "load_failed"
+  );
+  const restorePanelTitle = conversationRestoreState === "load_failed"
+    ? "Nao foi possivel carregar a conversa"
+    : conversationRestoreState === "retrying"
+      ? "Tentando restaurar a conversa"
+      : "Carregando conversas";
+  const restorePanelMessage = conversationRestoreState === "load_failed"
+    ? (threadsLoadError || messagesLoadError || "Falha temporaria ao carregar o historico. Suas mensagens nao foram apagadas.")
+    : conversationRestoreState === "retrying"
+      ? "Estamos tentando novamente antes de declarar que nao ha conversas."
+      : "Buscando a ultima thread ativa e o historico preservado.";
   const isOrkioAgent = (agent) => {
     const raw = [
       agent?.name,
@@ -10738,7 +10904,22 @@ async function stopRealtime(reason = 'client_stop') {
 
         {/* Messages */}
         <div style={{ ...styles.chatArea, padding: isMobile ? "12px 12px 18px" : styles.chatArea.padding }}>
-          {messages.length === 0 ? (
+          {shouldShowRestorePanel ? (
+            <div style={styles.restoreStatePanel}>
+              <div style={styles.restoreStateTitle}>{restorePanelTitle}</div>
+              <div style={styles.restoreStateText}>{restorePanelMessage}</div>
+              <div style={styles.restoreStateActions}>
+                <button
+                  type="button"
+                  style={{ ...styles.btn, ...styles.btnPrimary }}
+                  onClick={retryConversationRestore}
+                  disabled={threadsLoadState === "loading" || messagesLoadState === "loading"}
+                >
+                  Tentar novamente
+                </button>
+              </div>
+            </div>
+          ) : messages.length === 0 ? (
             <div style={styles.premiumEmptyShell}>
               <EmptyStatePremium
                 user={user}
