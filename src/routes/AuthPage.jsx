@@ -424,11 +424,23 @@ function normalizeAuthErrorMessage(err, fallbackMessage) {
   if (err?.name === "AbortError" || err?.code === "AUTH_REQUEST_TIMEOUT") {
     return "A solicitação demorou demais. Tente novamente em instantes.";
   }
+  if ([502, 503, 504].includes(Number(err?.status || 0)) || err?.code === "TEMPORARY_SERVICE_UNAVAILABLE") {
+    return "Autenticação temporariamente indisponível. Tente novamente em instantes.";
+  }
   const raw = String(err?.message || fallbackMessage || "Falha no acesso.").trim();
   if (!raw || raw === "[object Object]") return fallbackMessage || "Falha no acesso.";
   if (/failed to fetch|network|load failed/i.test(raw)) return "Não consegui conectar ao servidor de autenticação. Tente novamente em instantes.";
   if (/invalid session payload/i.test(raw)) return "O servidor respondeu, mas a sessão não veio completa. Tente novamente.";
   return raw;
+}
+
+function makeAuthRequestId(prefix = "auth") {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return `${prefix}_${crypto.randomUUID()}`;
+    }
+  } catch {}
+  return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
 async function apiFetchWithTimeout(path, options = {}, timeoutMs = AUTH_REQUEST_TIMEOUT_MS) {
@@ -699,6 +711,8 @@ export default function AuthPage() { usePatroaiSeo();
   }
 
   async function completeRegistration({ nameValue, emailValue, passwordValue, accessCodeValue = "" }) {
+    const registerRequestId = makeAuthRequestId("auth_register");
+    const loginRequestId = makeAuthRequestId("auth_login_after_register");
     const registerPayload = {
       tenant,
       email: emailValue,
@@ -719,6 +733,7 @@ export default function AuthPage() { usePatroaiSeo();
     await apiFetch("/api/auth/register", {
       method: "POST",
       org: tenant,
+      headers: { "X-Request-Id": registerRequestId },
       body: registerPayload,
     });
 
@@ -738,6 +753,7 @@ export default function AuthPage() { usePatroaiSeo();
         method: "POST",
         org: tenant,
         skipAuthRedirect: true,
+        headers: { "X-Request-Id": loginRequestId },
         body: { tenant, email: emailValue, password: passwordValue },
       },
       AUTH_REQUEST_TIMEOUT_MS
@@ -864,8 +880,16 @@ export default function AuthPage() { usePatroaiSeo();
       return;
     }
 
+    const loginRequestId = makeAuthRequestId("auth_login");
     setBusy(true);
-    setStatus("Validando acesso e recuperando contexto..."); try { console.info("AUTH_LOGIN_START", { email: emailNormalized, tenant }); } catch {}
+    setStatus("Validando acesso e recuperando contexto...");
+    try {
+      console.info("AUTH_LOGIN_START", {
+        request_id: loginRequestId,
+        tenant_present: !!tenant,
+        email_present: !!emailNormalized,
+      });
+    } catch {}
 
     try {
       const { data } = await apiFetchWithTimeout(
@@ -874,6 +898,7 @@ export default function AuthPage() { usePatroaiSeo();
           method: "POST",
           org: tenant,
           skipAuthRedirect: true,
+          headers: { "X-Request-Id": loginRequestId },
           body: {
             tenant,
             email: emailNormalized,
@@ -883,7 +908,14 @@ export default function AuthPage() { usePatroaiSeo();
         AUTH_REQUEST_TIMEOUT_MS
       );
 
-      try { console.info("AUTH_LOGIN_RESPONSE", { pending_otp: !!data?.pending_otp, has_token: !!data?.access_token, has_user: !!data?.user }); } catch {}
+      try {
+        console.info("AUTH_LOGIN_RESPONSE", {
+          request_id: loginRequestId,
+          pending_otp: !!data?.pending_otp,
+          has_token: !!data?.access_token,
+          has_user: !!data?.user,
+        });
+      } catch {}
     if (data?.pending_otp) {
         savePendingOtpContext({
           email: data.email || emailNormalized,
@@ -896,14 +928,21 @@ export default function AuthPage() { usePatroaiSeo();
       }
 
       if (data?.access_token && data?.user) {
-        try { console.info("AUTH_LOGIN_SUCCESS", { email: emailNormalized, tenant }); } catch {}
+        try { console.info("AUTH_LOGIN_SUCCESS", { request_id: loginRequestId, tenant_present: !!tenant }); } catch {}
       await finalizeSession(data, tenant);
         return;
       }
 
       setStatus(data?.message || "Unable to complete sign in.");
     } catch (err) {
-      try { console.error("AUTH_LOGIN_ERROR", err); } catch {}
+      try {
+        console.error("AUTH_LOGIN_ERROR", {
+          request_id: loginRequestId,
+          status: err?.status || null,
+          code: err?.code || null,
+          temporary: !!err?.isTemporaryUnavailable,
+        });
+      } catch {}
       setStatus(normalizeAuthErrorMessage(err, "Não foi possível entrar agora."));
     } finally {
       setBusy(false);
