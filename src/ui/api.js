@@ -102,6 +102,34 @@ function enrichResult(data, response) {
   return { data, response };
 }
 
+function sanitizeApiLogValue(value) {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "string") {
+    if (/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(value)) return "[email-redacted]";
+    if (/^(bearer\s+)?eyJ[A-Za-z0-9_-]+\./i.test(value)) return "[token-redacted]";
+    if (/^sk-[A-Za-z0-9_-]{12,}/i.test(value)) return "[secret-redacted]";
+    return value.length > 240 ? `${value.slice(0, 240)}...` : value;
+  }
+  if (Array.isArray(value)) return value.slice(0, 8).map((item) => sanitizeApiLogValue(item));
+  if (typeof value === "object") {
+    const out = {};
+    for (const [key, item] of Object.entries(value)) {
+      const k = String(key || "");
+      if (/password|senha|token|authorization|cookie|secret|access_token|refresh_token|jwt/i.test(k)) {
+        out[k] = "[redacted]";
+      } else if (/email/i.test(k)) {
+        out[k] = item ? "[email-redacted]" : item;
+      } else if (/content|message|document|payload|body/i.test(k) && typeof item === "string" && item.length > 180) {
+        out[k] = `${item.slice(0, 180)}...`;
+      } else {
+        out[k] = sanitizeApiLogValue(item);
+      }
+    }
+    return out;
+  }
+  return value;
+}
+
 async function parseResponseBody(response) {
   const contentType = response.headers.get("content-type") || "";
   if (response.status === 204) return null;
@@ -149,7 +177,14 @@ export async function apiFetch(path, options = {}) {
     }
   }
 
-  console.log("API_FETCH_REQUEST", { url, method: config.method, hasBody: !!config.body, org: options.org, credentials: config.credentials });
+  console.log("API_FETCH_REQUEST", {
+    url,
+    method: config.method,
+    hasBody: !!config.body,
+    org: options.org ? "[org-present]" : "",
+    credentials: config.credentials,
+    requestId: config.headers?.["X-Request-Id"] || config.headers?.["x-request-id"] || null,
+  });
   let response;
   try {
     response = await fetch(url, config);
@@ -175,7 +210,13 @@ export async function apiFetch(path, options = {}) {
     throw wrapped;
   }
   const payload = await parseResponseBody(response);
-  console.log("API_FETCH_RESPONSE", { url, status: response.status, ok: response.ok, payload });
+  console.log("API_FETCH_RESPONSE", {
+    url,
+    status: response.status,
+    ok: response.ok,
+    requestId: response.headers?.get?.("x-request-id") || config.headers?.["X-Request-Id"] || null,
+    payload: sanitizeApiLogValue(payload),
+  });
 
   if (response.status === 401) {
     const pathText = String(path || "");
@@ -213,6 +254,11 @@ export async function apiFetch(path, options = {}) {
       err.code = "RATE_LIMITED";
       err.isRateLimited = true;
       err.retryAfter = response.headers?.get?.("retry-after") || null;
+    }
+    if ([502, 503, 504].includes(response.status)) {
+      err.code = "TEMPORARY_SERVICE_UNAVAILABLE";
+      err.isTemporaryUnavailable = true;
+      err.userMessage = "Servico temporariamente indisponivel. Tente novamente em instantes.";
     }
     throw err;
   }
