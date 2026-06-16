@@ -953,18 +953,18 @@ function normalizeAgentVoiceId(raw, fallback = ORKIO_DEFAULT_VOICE_ID) {
 // - Internal agent names/roles must not be offered to AMCHAM / Efatah777 users.
 // - Future capability unlocks may be described generically through usage, needs and rewards.
 const ORKIO_PUBLIC_BETA_AGENT_EVOLUTION_NOTICE =
-  "Neste beta público, o Orkio conduz a experiência principal. " +
+  "Neste beta público, Orkio conduz a experiência principal com sobriedade, continuidade e cuidado. " +
   "Conforme a evolução das conversas, o uso correto da ferramenta e a identificação de necessidades específicas, " +
-  "novas funcionalidades e agentes especializados poderão ser liberados futuramente para apoiar análises mais profundas. " +
-  "Por enquanto, posso organizar o tema diretamente pelo chat.";
+  "novas funcionalidades poderão ser liberadas futuramente para apoiar análises mais profundas. " +
+  "Por enquanto, posso organizar o tema diretamente pelo chat — e, se algo falhar, devo reconhecer, pedir perdão e reparar a condução.";
 
 const ORKIO_PUBLIC_BETA_SHORT_EVOLUTION_NOTICE =
-  "Novos agentes especializados poderão ser liberados futuramente conforme a evolução da conversa, o uso correto da ferramenta e as necessidades identificadas.";
+  "Novas capacidades poderão ser liberadas conforme a evolução da conversa, sempre com continuidade, discrição e clareza.";
 
 const ORKIO_PUBLIC_BETA_TECH_GOVERNANCE_NOTICE =
-  "Neste beta público, o Orkio conduz a experiência principal pelo chat por texto. " +
+  "Neste beta público, Orkio conduz a experiência principal pelo chat por texto. " +
   "Posso organizar sua necessidade em diagnóstico, riscos e próximos passos, sem expor fluxos técnicos internos. " +
-  "Conforme a evolução das conversas e o uso correto da ferramenta, novas funcionalidades e agentes especializados poderão ser liberados futuramente.";
+  "Se eu falhar na condução, devo reconhecer com elegância, pedir perdão e corrigir o caminho sem transferir a culpa ao usuário.";
 
 const ORKIO_PUBLIC_INTERNAL_AGENT_NAMES = [
   "Chris",
@@ -4146,6 +4146,24 @@ async function sendMessage(presetMsg = null, opts = {}) {
       const pref = buildMessagePrefix(msg);
       const finalMsg = pref + msg;
       const destinationContract = buildDestinationContract(msg, agentIdToSend);
+      const effectiveThreadIdForSend = String(activeThreadIdRef.current || threadId || "").trim();
+
+      // AO80B — after a browser refresh, React state and the ref can briefly
+      // disagree. Send with the restored active thread id and, if messages are
+      // still loading, give restoration one bounded chance before dispatch.
+      if (
+        effectiveThreadIdForSend &&
+        messagesThreadIdRef.current !== effectiveThreadIdForSend &&
+        (messagesLoadState === "loading" || messagesLoadState === "retrying")
+      ) {
+        try {
+          await loadMessages(effectiveThreadIdForSend, {
+            force: true,
+            expectedEpoch: activeThreadEpochRef.current,
+          });
+        } catch {}
+      }
+
       void refreshOrionSquadPreview(finalMsg);
 
       const describeDirectRailError = (err) => {
@@ -4167,7 +4185,7 @@ async function sendMessage(presetMsg = null, opts = {}) {
           m.id === draftAssistantId
             ? {
                 ...m,
-                content: "Não consegui concluir a resposta pelo stream nesta tentativa. A tentativa foi encerrada com segurança; tente novamente.",
+                content: "Peço perdão. Não consegui concluir a resposta pelo stream nesta tentativa. A tentativa foi encerrada com segurança; tente novamente.",
                 agent_name: "Orkio",
               }
             : m
@@ -4190,7 +4208,7 @@ async function sendMessage(presetMsg = null, opts = {}) {
           return await chat({
             token,
             org: tenant,
-            thread_id: threadId,
+            thread_id: effectiveThreadIdForSend || threadId,
             message: finalMsg,
             agent_id: destinationContract.agent_id,
             trace_id: traceId,
@@ -4270,7 +4288,7 @@ async function sendMessage(presetMsg = null, opts = {}) {
           kind: "system",
           label: "Solicitação recebida",
           detail: publicBetaOrkioOnly
-            ? "Orkio preparado para o beta público."
+            ? "Orkio preparado para o beta público, com continuidade e tom polido."
             : destMode === "team"
             ? "Modo Team acionado."
             : destMode === "multi"
@@ -4290,7 +4308,7 @@ async function sendMessage(presetMsg = null, opts = {}) {
 
       // v4: SSE becomes the primary chat rail, with JSON fallback preserved.
       let resp = null;
-      let newThreadId = threadId;
+      let newThreadId = effectiveThreadIdForSend || threadId;
       let streamDonePayload = null;
       let streamMeta = null;
 
@@ -4303,13 +4321,13 @@ async function sendMessage(presetMsg = null, opts = {}) {
           });
 
           try {
-            console.info("ORKIO_CHAT_STREAM_DISPATCH", { traceId, threadId, destMode: destinationContract.dest_mode });
+            console.info("ORKIO_CHAT_STREAM_DISPATCH", { traceId, threadId: effectiveThreadIdForSend || threadId, destMode: destinationContract.dest_mode });
           } catch {}
 
           const streamResp = await withTimeout(chatStream({
             token,
             org: tenant,
-            thread_id: threadId,
+            thread_id: effectiveThreadIdForSend || threadId,
             message: finalMsg,
             agent_id: destinationContract.agent_id,
             trace_id: traceId,
@@ -4473,7 +4491,7 @@ async function sendMessage(presetMsg = null, opts = {}) {
                       ...m,
                       content: sanitizePublicBetaAssistantText(
                         streamErr?.draftText ||
-                        "Não consegui concluir a resposta pelo stream nesta tentativa. A tentativa foi encerrada com segurança; tente novamente."
+                        "Peço perdão. Não consegui concluir a resposta pelo stream nesta tentativa. A tentativa foi encerrada com segurança; tente novamente."
                       ),
                       agent_name: m.agent_name || "Orkio",
                     }
@@ -4522,7 +4540,7 @@ async function sendMessage(presetMsg = null, opts = {}) {
               detail: "Tentando reconciliar a resposta persistida antes de acionar a resposta direta.",
             });
 
-            const reconcileThreadId = String(newThreadId || threadId || "").trim();
+            const reconcileThreadId = String(newThreadId || effectiveThreadIdForSend || threadId || "").trim();
             let reconciledMessages = [];
             if (reconcileThreadId) {
               try {
@@ -4959,7 +4977,7 @@ async function sendMessage(presetMsg = null, opts = {}) {
                   ...m,
                   content:
                     e?.draftText ||
-                    "Não consegui concluir a resposta pelo stream nesta tentativa. A tentativa foi encerrada com segurança; tente novamente.",
+                    "Peço perdão. Não consegui concluir a resposta pelo stream nesta tentativa. A tentativa foi encerrada com segurança; tente novamente.",
                   agent_name: m.agent_name || "Orkio",
                 }
               : m
