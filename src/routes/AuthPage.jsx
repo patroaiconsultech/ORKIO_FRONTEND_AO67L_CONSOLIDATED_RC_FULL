@@ -361,10 +361,10 @@ function getAuthPresentation({ mode, otpMode, journey }) {
         badge: "Orkio iniciou o contexto",
         title: "Preserve sua conversa com Orkio",
         subtitle:
-          "Crie seu acesso para salvar o diagnóstico iniciado, manter memória contextual e continuar a jornada dentro da plataforma.",
+          "Crie seu acesso para salvar o diagnóstico iniciado, manter memória contextual e continuar a jornada com a sobriedade de um copiloto que sabe reparar falhas.",
         panelTitle: "Sua conversa não precisa recomeçar",
         panelBody:
-          "Orkio já sabe de onde você veio. Agora o cadastro cria uma sessão segura para transformar conversa em diagnóstico, plano e execução.",
+          "Orkio reconhece de onde você veio. Agora o cadastro cria uma sessão segura para transformar conversa em diagnóstico, plano e execução — com continuidade, polidez e reparação quando algo falhar.",
         steps: ["Contexto recebido", "Conta criada", "Diagnóstico continuado"],
       };
     }
@@ -387,10 +387,10 @@ function getAuthPresentation({ mode, otpMode, journey }) {
         badge: fromPatroai ? "Patroai Consultech" : "Orkio OS",
         title: "Crie seu acesso inteligente",
         subtitle:
-          "Entre na plataforma para iniciar diagnóstico, conversar com Orkio e transformar contexto em plano de evolução.",
+          "Entre na plataforma para iniciar diagnóstico, conversar com Orkio e transformar contexto em plano de evolução com clareza, elegância e continuidade.",
         panelTitle: "Uma entrada com continuidade",
         panelBody:
-          "A jornada começa antes do formulário: origem, intenção e próximo passo acompanham o usuário até o app.",
+          "A jornada começa antes do formulário: origem, intenção e próximo passo acompanham o usuário até o app. Se algo se perder, Orkio deve reconhecer, pedir perdão e reorganizar o caminho.",
         steps: ["Cadastro simples", "Diagnóstico inicial", "Acesso ao app"],
       };
     }
@@ -399,10 +399,10 @@ function getAuthPresentation({ mode, otpMode, journey }) {
       badge: "Novo acesso",
       title: "Crie sua conta",
       subtitle:
-        "Comece com um acesso gratuito para conhecer Orkio e explorar a jornada de inteligência empresarial.",
+        "Comece com um acesso gratuito para conhecer Orkio: uma inteligência que organiza, conduz com calma e preserva a dignidade da conversa.",
       panelTitle: "Comece com clareza",
       panelBody:
-        "A criação da conta prepara seu espaço para conversas, agentes, diagnósticos e evolução operacional.",
+        "A criação da conta prepara seu espaço para conversas, diagnósticos e evolução operacional — com memória, gentileza firme e próximos passos claros.",
       steps: ["Conta criada", "Contexto inicial", "Ambiente liberado"],
     };
   }
@@ -414,7 +414,7 @@ function getAuthPresentation({ mode, otpMode, journey }) {
       "Entre com e-mail e senha. Se a governança exigir, o código OTP será solicitado na próxima etapa.",
     panelTitle: "Memória e continuidade",
     panelBody:
-      "O login não é só uma porta de entrada. Ele recupera sua sessão, seu contexto e o próximo passo da jornada.",
+      "O login não é só uma porta de entrada. Ele deve recuperar sua sessão, seu contexto e o próximo passo da jornada — sem recomeçar quando há história.",
     steps: ["Sessão recuperada", "Contexto preservado", "Próximo passo retomado"],
   };
 }
@@ -422,10 +422,10 @@ function getAuthPresentation({ mode, otpMode, journey }) {
 function normalizeAuthErrorMessage(err, fallbackMessage) {
   if (!err) return fallbackMessage;
   if (err?.name === "AbortError" || err?.code === "AUTH_REQUEST_TIMEOUT") {
-    return "A solicitação demorou demais. Tente novamente em instantes.";
+    return "Peço perdão. A solicitação demorou demais. Tente novamente em instantes.";
   }
   if ([502, 503, 504].includes(Number(err?.status || 0)) || err?.code === "TEMPORARY_SERVICE_UNAVAILABLE") {
-    return "Autenticação temporariamente indisponível. Tente novamente em instantes.";
+    return "Peço perdão. A autenticação está temporariamente indisponível. Tente novamente em instantes.";
   }
   const raw = String(err?.message || fallbackMessage || "Falha no acesso.").trim();
   if (!raw || raw === "[object Object]") return fallbackMessage || "Falha no acesso.";
@@ -1575,7 +1575,7 @@ export default function AuthPage() { usePatroaiSeo();
                 : journey.fromPatroai
                 ? "landing Patroai"
                 : "landing Orkio OS"}
-              . Vamos manter essa intenção durante o acesso.
+              . Vamos manter essa intenção durante o acesso, com continuidade e cuidado.
             </div>
           ) : null}
 
@@ -1587,7 +1587,7 @@ export default function AuthPage() { usePatroaiSeo();
           <div style={{ marginTop: 18, display: "flex", gap: 12, flexWrap: "wrap", color: palette.faint, fontSize: 12 }}>
             <span>Privacidade por design</span>
             <span>•</span>
-            <span>OTP quando necessário</span>
+            <span>Continuidade com graça</span>
             <span>•</span>
             <span>Retorno seguro para /app</span>
           </div>
