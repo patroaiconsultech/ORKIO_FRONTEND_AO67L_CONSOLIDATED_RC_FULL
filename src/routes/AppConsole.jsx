@@ -2139,7 +2139,7 @@ export default function AppConsole() {
   const REALTIME_ANNOUNCEMENT_PHRASE_FALLBACK_MS = 3200;
   const REALTIME_FINAL_MESSAGE_GRACE_MS = 16000;
   const REALTIME_COOLDOWN_STORAGE_KEY = "orkio_realtime_public_cooldown_until_v1";
-  const REALTIME_FRONTEND_HARD_TIMEBOX_ENABLED = false;
+  const REALTIME_FRONTEND_HARD_TIMEBOX_ENABLED = true;
   // ORKIO_AO60K_HF5B_FRONTEND_ENDED_AT_SECONDS_TIMEBOX_VERIFY
   // Build marker used only for audit/debug so we can prove the active bundle contains HF5B.
   const ORKIO_AO60K_HF5B_BUILD_MARKER = "AO60K-HF5B_FRONTEND_ENDED_AT_SECONDS_TIMEBOX_VERIFY";
@@ -2147,6 +2147,7 @@ const ORKIO_AO61A_BUILD_MARKER = "AO61A_REALTIME_PREMIUM_UX_COOLDOWN_TRANSCRIPTI
 const ORKIO_AO61A_HF3_BUILD_MARKER = "AO61A-HF3_TIMEBOX_COUNTER_AUTOSTOP_ASSISTANT_TRANSCRIPT";
 const ORKIO_AO61A_HF4_BUILD_MARKER = "AO61A-HF4_FIXED_COUNTER_LONGEST_ASSISTANT_TRANSCRIPT";
 const ORKIO_AO66R_HF4_BUILD_MARKER = "AO66R_REALTIME_ACTIVATION_REPAIR";
+const ORKIO_HF6_2_BUILD_MARKER = "HF6.2_NON_ADMIN_PUBLIC_TIMEBOX_RESTORED";
 
   const nav = useNavigate();
 
@@ -6014,8 +6015,17 @@ function scheduleRealtimeIdleFollowup() {
   }
 
   function shouldShowRealtimeCounter() {
-    // HF6.1 — Realtime deve permanecer visualmente invisível; backend controla o ciclo de vida.
-    return false;
+    // HF6.2 — usuários públicos/não-admin devem ver o timer de 2 minutos.
+    // Admin/founder-admin permanece sem contador público.
+    return Boolean(
+      REALTIME_FRONTEND_HARD_TIMEBOX_ENABLED === true
+      && SUMMIT_VOICE_MODE === "realtime"
+      && isRealtimeTimeboxLimitedUser()
+      && (
+        rtcTimeboxRemaining !== null
+        || rtcCooldownRemaining > 0
+      )
+    );
   }
 
   function getRealtimeCounterLabel() {
@@ -7101,18 +7111,18 @@ function scheduleRealtimeIdleFollowup() {
         ? (
           limited
             ? `Hello, I am Orkio. It is a pleasure to speak with you in real time. We have ${durationLabel} of conversation starting now. Where would you like to begin?`
-            : "Hello, I am Orkio. It is a pleasure to speak with you in real time. This is an unrestricted admin session. Where would you like to begin?"
+            : "Hello, I am Orkio. It is a pleasure to speak with you in real time. Where would you like to begin?"
         )
         : lang === "es"
           ? (
             limited
               ? `Hola, soy Orkio. Es un placer hablar contigo en tiempo real. Tenemos ${durationLabel} de conversación a partir de ahora. ¿Por dónde quieres empezar?`
-              : "Hola, soy Orkio. Es un placer hablar contigo en tiempo real. Esta es una sesión de administrador sin límite público. ¿Por dónde quieres empezar?"
+              : "Hola, soy Orkio. Es un placer hablar contigo en tiempo real. ¿Por dónde quieres empezar?"
           )
           : (
             limited
               ? `Olá, eu sou Orkio. Prazer em falar com você em tempo real. Temos ${durationLabel} de conversa a partir de agora. Por onde você quer começar?`
-              : "Olá, eu sou Orkio. Prazer em falar com você em tempo real. Esta é uma sessão admin sem limite público. Por onde você quer começar?"
+              : "Olá, eu sou Orkio. Prazer em falar com você em tempo real. Por onde você quer começar?"
           );
 
     const activationInput =
@@ -7127,6 +7137,8 @@ function scheduleRealtimeIdleFollowup() {
       durationLabel,
       languageProfile: lang,
       limited,
+      hf6_2Marker: ORKIO_HF6_2_BUILD_MARKER,
+      nonAdminPublicTimebox: Boolean(limited),
       greetingBeforeTimer: true,
     });
 
@@ -7341,7 +7353,9 @@ function scheduleRealtimeIdleFollowup() {
           (Number.isFinite(maxSeconds) && maxSeconds > 0) ||
           (Number.isFinite(cooldownSeconds) && cooldownSeconds > 0)
         );
-        const effectiveAdminBypass = Boolean(canAccessAdmin || adminBypassByBackend);
+        // HF6.2: non-admin users must never inherit an admin/no-limit bypass from backend copy alone.
+        // Public/local authority wins for UI enforcement: only locally confirmed admin bypasses the 2-minute guard.
+        const effectiveAdminBypass = Boolean(canAccessAdmin);
         const effectiveLimitedByBackend = (
           REALTIME_FRONTEND_HARD_TIMEBOX_ENABLED === true
             ? (effectiveAdminBypass ? false : Boolean(limitedByBackend))
@@ -7363,7 +7377,10 @@ function scheduleRealtimeIdleFollowup() {
             maxSeconds: rtcTimeboxPolicyRef.current.maxSeconds,
             remainingSeconds: rtcTimeboxPolicyRef.current.remainingSeconds,
             cooldownSeconds: rtcTimeboxPolicyRef.current.cooldownSeconds,
+            canAccessAdmin: Boolean(canAccessAdmin),
+            backendAdminBypassIgnoredForNonAdmin: Boolean(!canAccessAdmin && adminBypassByBackend),
             hf3Marker: ORKIO_AO61A_HF3_BUILD_MARKER,
+            hf6_2Marker: ORKIO_HF6_2_BUILD_MARKER,
           });
         } else {
           rtcTimeboxPolicyRef.current = null;
@@ -7377,6 +7394,7 @@ function scheduleRealtimeIdleFollowup() {
             effectiveAdminBypass: Boolean(effectiveAdminBypass),
             limitedByBackend: Boolean(limitedByBackend),
             ttlSeconds: effectiveRealtimeTtlSeconds,
+            hf6_2Marker: ORKIO_HF6_2_BUILD_MARKER,
           });
         }
       } catch {}
@@ -7425,7 +7443,7 @@ function scheduleRealtimeIdleFollowup() {
           rtcPendingTimeboxSecondsRef.current = null;
           clearRealtimeTimeboxTimer();
           setRtcTimeboxRemaining(null);
-          updateRealtimePremiumStatus("connecting", "Realtime ao vivo sem limite público. Orkio fará a saudação inicial por voz.");
+          updateRealtimePremiumStatus("connecting", "Realtime ao vivo. Orkio fará a saudação inicial por voz.");
         }
         startRealtimeStartupWatchdog(rtcSessionIdRef.current, "after_start_200");
       } catch {}
@@ -7664,7 +7682,7 @@ function scheduleRealtimeIdleFollowup() {
           }
           setRtcTimeboxRemaining(rtcPendingTimeboxSecondsRef.current || activeTimeboxSeconds);
         } else {
-          setUploadStatus('⚡ Realtime admin ativo — sem limite público.');
+          setUploadStatus('⚡ Orkio em tempo real ativo.');
           setTimeout(() => setUploadStatus(''), 1500);
           rtcPendingTimeboxSecondsRef.current = null;
           clearRealtimeTimeboxTimer();
@@ -10362,7 +10380,7 @@ async function stopRealtime(reason = 'client_stop') {
   return (
     <>
     <PWAInstallPrompt />
-    {REALTIME_FRONTEND_HARD_TIMEBOX_ENABLED === true && (
+    {REALTIME_FRONTEND_HARD_TIMEBOX_ENABLED === true && isRealtimeTimeboxLimitedUser() && (
       <RealtimeTimeboxOverlay
       active={realtimeOverlayActive}
       remainingSeconds={realtimeOverlayRemainingSeconds}
@@ -10392,7 +10410,7 @@ async function stopRealtime(reason = 'client_stop') {
           try { setRtcOverlayForceClosed(true); } catch {}
           try { setRtcTimeboxRemaining(null); } catch {}
           try { clearRealtimeTimeboxTimer(); } catch {}
-          try { updateRealtimePremiumStatus("listening", "Realtime admin ativo, sem timebox público."); } catch {}
+          try { updateRealtimePremiumStatus("listening", "Orkio em tempo real ativo."); } catch {}
           return;
         }
 
