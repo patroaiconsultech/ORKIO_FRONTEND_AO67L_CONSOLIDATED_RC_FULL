@@ -2139,7 +2139,7 @@ export default function AppConsole() {
   const REALTIME_ANNOUNCEMENT_PHRASE_FALLBACK_MS = 3200;
   const REALTIME_FINAL_MESSAGE_GRACE_MS = 16000;
   const REALTIME_COOLDOWN_STORAGE_KEY = "orkio_realtime_public_cooldown_until_v1";
-  const REALTIME_FRONTEND_HARD_TIMEBOX_ENABLED = true;
+  const REALTIME_FRONTEND_HARD_TIMEBOX_ENABLED = false;
   // ORKIO_AO60K_HF5B_FRONTEND_ENDED_AT_SECONDS_TIMEBOX_VERIFY
   // Build marker used only for audit/debug so we can prove the active bundle contains HF5B.
   const ORKIO_AO60K_HF5B_BUILD_MARKER = "AO60K-HF5B_FRONTEND_ENDED_AT_SECONDS_TIMEBOX_VERIFY";
@@ -6014,17 +6014,8 @@ function scheduleRealtimeIdleFollowup() {
   }
 
   function shouldShowRealtimeCounter() {
-    // AO68B-HF1_NO_COUNTER_RESIDUAL_PUBLIC_SPEAKER_ORKIO
-    // Backend/frontend timebox is advisory-only. When the hard-timebox flag is off,
-    // never render the floating clock/counter, even if realtimeMode or premium status is active.
-    return Boolean(
-      REALTIME_FRONTEND_HARD_TIMEBOX_ENABLED === true
-      && SUMMIT_VOICE_MODE === "realtime"
-      && (
-        rtcTimeboxRemaining !== null
-        || rtcCooldownRemaining > 0
-      )
-    );
+    // HF6.1 — Realtime deve permanecer visualmente invisível; backend controla o ciclo de vida.
+    return false;
   }
 
   function getRealtimeCounterLabel() {
@@ -6260,15 +6251,18 @@ function scheduleRealtimeIdleFollowup() {
   }
 
   function startRealtimeCooldown(seconds = REALTIME_PUBLIC_BETA_COOLDOWN_SECONDS, reason = "cooldown") {
-    // AO64D-HF5_NO_HARD_TIMEBOX_ESG_FRONTEND
-    // Cooldown is no longer a hard client-side state. Keep cleanup only.
-    if (REALTIME_FRONTEND_HARD_TIMEBOX_ENABLED !== true) {
-      try { clearRealtimeCooldownTimer(); } catch {}
-      try { rtcCooldownUntilRef.current = 0; } catch {}
-      try { setRtcCooldownRemaining(0); } catch {}
-      try { updateRealtimePremiumStatus(null, ""); } catch {}
-      logRealtimeStep("ao64d_hf5:cooldown_suppressed_advisory_only", { reason, seconds });
-      return 0;
+    // HF6.1 — cooldown local silenciado; backend é a autoridade do limite.
+    if (
+      REALTIME_FRONTEND_HARD_TIMEBOX_ENABLED !== true
+    ) {
+
+      clearRealtimeCooldownTimer();
+
+      rtcCooldownUntilRef.current = 0;
+
+      setRtcCooldownRemaining(0);
+
+      return;
     }
 
     // ORKIO_AO60K_HF2_429_COOLDOWN_HARDENING
@@ -10368,7 +10362,8 @@ async function stopRealtime(reason = 'client_stop') {
   return (
     <>
     <PWAInstallPrompt />
-    <RealtimeTimeboxOverlay
+    {REALTIME_FRONTEND_HARD_TIMEBOX_ENABLED === true && (
+      <RealtimeTimeboxOverlay
       active={realtimeOverlayActive}
       remainingSeconds={realtimeOverlayRemainingSeconds}
       maxSeconds={realtimeOverlayMaxSeconds}
@@ -10454,6 +10449,7 @@ async function stopRealtime(reason = 'client_stop') {
         void stopRealtime("client_stop_fullscreen_clock");
       }}
     />
+    )}
     {/* AO68E-HF1: separate Realtime transcript modal removed.
         Final Realtime user/assistant turns are written directly into the main chat. */}
     {bootstrapFailOpen && (
