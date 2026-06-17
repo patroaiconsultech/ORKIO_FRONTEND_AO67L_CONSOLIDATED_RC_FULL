@@ -2138,7 +2138,7 @@ export default function AppConsole() {
   const REALTIME_PUBLIC_BETA_CLOSING_NOTICE_SECONDS = 30;
   const REALTIME_ANNOUNCEMENT_PHRASE_FALLBACK_MS = 3200;
   const REALTIME_FINAL_MESSAGE_GRACE_MS = 28000;
-  const REALTIME_FINAL_MESSAGE_POST_DONE_GRACE_MS = 5000;
+  const REALTIME_FINAL_MESSAGE_POST_DONE_GRACE_MS = 11000;
   const REALTIME_COOLDOWN_STORAGE_KEY = "orkio_realtime_public_cooldown_until_v1";
   const REALTIME_FRONTEND_HARD_TIMEBOX_ENABLED = true;
   // ORKIO_AO60K_HF5B_FRONTEND_ENDED_AT_SECONDS_TIMEBOX_VERIFY
@@ -2150,6 +2150,7 @@ const ORKIO_AO61A_HF4_BUILD_MARKER = "AO61A-HF4_FIXED_COUNTER_LONGEST_ASSISTANT_
 const ORKIO_AO66R_HF4_BUILD_MARKER = "AO66R_REALTIME_ACTIVATION_REPAIR";
 const ORKIO_HF6_2_BUILD_MARKER = "HF6.2_NON_ADMIN_PUBLIC_TIMEBOX_RESTORED";
 const ORKIO_HF6_3_BUILD_MARKER = "HF6.3_REALTIME_POLITE_CLOSING_GRACE";
+const ORKIO_HF6_4_BUILD_MARKER = "HF6.4_REALTIME_ZERO_TIMER_TAIL_GRACE";
 
   const nav = useNavigate();
 
@@ -6652,7 +6653,7 @@ function scheduleRealtimeIdleFollowup() {
           ? `${vocative}we have reached the end of our two minutes. I will close the voice session safely now. The text chat remains available, and voice returns in ${cooldownLabel}.`
           : lang === "es"
             ? `${vocative}hemos llegado al final de nuestros dos minutos. Cerraré la voz con seguridad ahora. El chat de texto sigue disponible y la voz vuelve en ${cooldownLabel}.`
-            : `${vocative}chegamos ao fim dos dois minutos. Vou encerrar a voz com segurança agora. O chat continua disponível, e a voz retorna em ${cooldownLabel}.`;
+            : `${vocative}chegamos ao fim dos dois minutos. Vou encerrar a voz agora. A conversa continua pelo chat.`;
 
       updateRealtimePremiumStatus("ending", "⏱️ Tempo concluído. Aguarde a frase final do Orkio.");
       setUploadStatus("⏱️ Dois minutos concluídos. Aguarde a frase final antes do encerramento.");
@@ -6684,7 +6685,7 @@ function scheduleRealtimeIdleFollowup() {
           const sent = requestRealtimeSpokenResponse(currentDc, {
             reason: "timebox_final_closing_notice_after_zero",
             conversationItem: false,
-            instructions: `Fale exatamente esta mensagem, em tom calmo e em até oito segundos. Não acrescente perguntas, ofertas, pitch ou continuação do assunto: ${spokenText}`,
+            instructions: `Fale exatamente esta mensagem, em tom calmo e em até cinco segundos. Não acrescente perguntas, ofertas, pitch ou continuação do assunto: ${spokenText}`,
           });
 
           rtcTimeboxClosingNoticeSentRef.current = Boolean(sent);
