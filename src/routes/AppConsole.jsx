@@ -2678,6 +2678,8 @@ const rtcLastUserActivityAtRef = useRef(0);
   const rtcSessionIdRef = useRef(null);
   const rtcThreadIdRef = useRef(null);
   const rtcEventQueueRef = useRef([]);
+  const realtimeBridgeBusyRef = useRef(false);
+  const realtimeBridgeLastKeyRef = useRef("");
   const rtcFlushTimerRef = useRef(null);
   const rtcLivePollTimerRef = useRef(null);
   const rtcSeenBackendResponseIdsRef = useRef(new Set());
@@ -6391,6 +6393,8 @@ function scheduleRealtimeIdleFollowup() {
     } catch {}
 
     try { rtcEventQueueRef.current = []; } catch {}
+    try { realtimeBridgeBusyRef.current = false; } catch {}
+    try { realtimeBridgeLastKeyRef.current = ""; } catch {}
     try { rtcSeenBackendResponseIdsRef.current = new Set(); } catch {}
     try { rtcTextBufRef.current = ""; } catch {}
     try { rtcAudioTranscriptBufRef.current = ""; } catch {}
@@ -8358,6 +8362,18 @@ function scheduleRealtimeIdleFollowup() {
     const sid = rtcSessionIdRef.current;
     if (!sid) return;
     const normalizedEventType = String(event_type || "event").trim() || "event";
+    const contentText = content == null ? "" : String(content);
+    const baseMeta = (meta && typeof meta === "object") ? meta : {};
+    const payload = {
+      event_type: normalizedEventType,
+      role,
+      is_final: Boolean(is_final),
+      text: contentText,
+      content: contentText,
+      transcript: (is_final && String(role || "").toLowerCase() === "user") ? contentText : "",
+      source: "frontend_realtime_event_queue",
+    };
+
     rtcEventQueueRef.current.push({
       session_id: sid,
       client_event_id: (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : (`ce-${Date.now()}-${Math.random().toString(36).slice(2,10)}`),
@@ -8366,10 +8382,19 @@ function scheduleRealtimeIdleFollowup() {
       name: normalizedEventType,
       type: normalizedEventType,
       role,
-      content,
+      content: contentText,
       created_at: Math.floor(Date.now()/1000),
       is_final,
-      meta,
+      payload,
+      meta: {
+        ...baseMeta,
+        event_type: normalizedEventType,
+        role,
+        is_final: Boolean(is_final),
+        text: contentText,
+        content: contentText,
+        transcript: (is_final && String(role || "").toLowerCase() === "user") ? contentText : "",
+      },
     });
     try {
       if (is_final && (content || '').toString().trim()) {
@@ -8386,6 +8411,72 @@ function scheduleRealtimeIdleFollowup() {
     } catch {}
   }
 
+  function normalizeRealtimeBridgeResponse(batchResult) {
+    return batchResult?.rtb02_bridge || batchResult?.data?.rtb02_bridge || batchResult?.payload?.rtb02_bridge || null;
+  }
+
+  function buildRealtimeOrchestrationBridgePrompt(bridge) {
+    const rawText = String(bridge?.text || "").trim();
+    if (!rawText) return "";
+
+    return [
+      "@Orkio orchestration_audit",
+      "",
+      "Origem: Realtime voice transcript.final",
+      "Modo: readonly",
+      "Regra crítica: não criar proposal_id; write_executed=false; não executar patch; não fazer deploy.",
+      "",
+      rawText,
+    ].join("\n");
+  }
+
+  async function handleRealtimeOrchestrationBridgeCandidate(batchResult) {
+    const bridge = normalizeRealtimeBridgeResponse(batchResult);
+    if (!bridge || bridge.status !== "candidate") return false;
+
+    const bridgeText = String(bridge.text || "").trim();
+    if (!bridgeText) return false;
+
+    const bridgeKey = `${bridge.session_id || rtcSessionIdRef.current || ""}:${bridgeText.toLowerCase()}`;
+    if (realtimeBridgeBusyRef.current || realtimeBridgeLastKeyRef.current === bridgeKey) return false;
+    if (sendingRef.current) return false;
+
+    realtimeBridgeBusyRef.current = true;
+    realtimeBridgeLastKeyRef.current = bridgeKey;
+
+    try {
+      const prompt = buildRealtimeOrchestrationBridgePrompt(bridge);
+      if (!prompt) return false;
+
+      try {
+        appendExecutionTrace({
+          kind: "system",
+          label: "RTB-02 Realtime Orchestration Bridge",
+          detail: "Fala técnica detectada no Realtime; encaminhando pelo chat stream governado.",
+        });
+      } catch {}
+
+      try { setUploadStatus("⌛ Encaminhando fala técnica para Orion..."); } catch {}
+
+      return await sendMessage(prompt, {
+        realtimeTurn: true,
+        voiceRequested: true,
+        explicitVoiceRequested: true,
+        source: "realtime_orchestration_bridge",
+        route_family: "orchestration_audit",
+        realtime_session_id: bridge.session_id || rtcSessionIdRef.current || null,
+      });
+    } catch (err) {
+      realtimeBridgeLastKeyRef.current = "";
+      try {
+        console.warn("[Realtime] RTB-02 bridge dispatch failed", err);
+      } catch {}
+      return false;
+    } finally {
+      realtimeBridgeBusyRef.current = false;
+    }
+  }
+
   async function flushRealtimeEvents() {
     const sid = rtcSessionIdRef.current;
     if (!sid) return;
@@ -8394,7 +8485,8 @@ function scheduleRealtimeIdleFollowup() {
     // Take a snapshot to avoid races
     rtcEventQueueRef.current = [];
     try {
-      await postRealtimeEventsBatch({ session_id: sid, events: q });
+      const batchResult = await postRealtimeEventsBatch({ session_id: sid, events: q });
+      await handleRealtimeOrchestrationBridgeCandidate(batchResult);
     } catch (err) {
       // On failure, put events back to try later (best-effort)
       rtcEventQueueRef.current = q.concat(rtcEventQueueRef.current || []);
