@@ -2135,9 +2135,10 @@ export default function AppConsole() {
   // the requested staging UX and local enforcement.
   const REALTIME_PUBLIC_BETA_TIMEBOX_SECONDS = 2 * 60;
   const REALTIME_PUBLIC_BETA_COOLDOWN_SECONDS = 60 * 60;
-  const REALTIME_PUBLIC_BETA_CLOSING_NOTICE_SECONDS = 16;
+  const REALTIME_PUBLIC_BETA_CLOSING_NOTICE_SECONDS = 30;
   const REALTIME_ANNOUNCEMENT_PHRASE_FALLBACK_MS = 3200;
-  const REALTIME_FINAL_MESSAGE_GRACE_MS = 16000;
+  const REALTIME_FINAL_MESSAGE_GRACE_MS = 28000;
+  const REALTIME_FINAL_MESSAGE_POST_DONE_GRACE_MS = 5000;
   const REALTIME_COOLDOWN_STORAGE_KEY = "orkio_realtime_public_cooldown_until_v1";
   const REALTIME_FRONTEND_HARD_TIMEBOX_ENABLED = true;
   // ORKIO_AO60K_HF5B_FRONTEND_ENDED_AT_SECONDS_TIMEBOX_VERIFY
@@ -2148,6 +2149,7 @@ const ORKIO_AO61A_HF3_BUILD_MARKER = "AO61A-HF3_TIMEBOX_COUNTER_AUTOSTOP_ASSISTA
 const ORKIO_AO61A_HF4_BUILD_MARKER = "AO61A-HF4_FIXED_COUNTER_LONGEST_ASSISTANT_TRANSCRIPT";
 const ORKIO_AO66R_HF4_BUILD_MARKER = "AO66R_REALTIME_ACTIVATION_REPAIR";
 const ORKIO_HF6_2_BUILD_MARKER = "HF6.2_NON_ADMIN_PUBLIC_TIMEBOX_RESTORED";
+const ORKIO_HF6_3_BUILD_MARKER = "HF6.3_REALTIME_POLITE_CLOSING_GRACE";
 
   const nav = useNavigate();
 
@@ -6647,13 +6649,13 @@ function scheduleRealtimeIdleFollowup() {
 
       const spokenText =
         lang === "en"
-          ? `${vocative}we have reached the end of our two minutes. I will now close the voice session. You can continue in the text chat, and in ${cooldownLabel} voice will be available again.`
+          ? `${vocative}we have reached the end of our two minutes. I will close the voice session safely now. The text chat remains available, and voice returns in ${cooldownLabel}.`
           : lang === "es"
-            ? `${vocative}hemos llegado al final de nuestros dos minutos. Ahora cerraré la sesión de voz. Puedes continuar en el chat de texto y, en ${cooldownLabel}, la voz estará disponible nuevamente.`
-            : `${vocative}chegamos ao fim dos nossos dois minutos. Vou encerrar a sessão de voz agora. Você pode continuar pelo chat e, em ${cooldownLabel}, a voz estará disponível novamente.`;
+            ? `${vocative}hemos llegado al final de nuestros dos minutos. Cerraré la voz con seguridad ahora. El chat de texto sigue disponible y la voz vuelve en ${cooldownLabel}.`
+            : `${vocative}chegamos ao fim dos dois minutos. Vou encerrar a voz com segurança agora. O chat continua disponível, e a voz retorna em ${cooldownLabel}.`;
 
-      updateRealtimePremiumStatus("ending", "⏱️ Tempo concluído. Orkio está encerrando a sessão.");
-      setUploadStatus("⏱️ Dois minutos concluídos. Finalizando a mensagem de encerramento.");
+      updateRealtimePremiumStatus("ending", "⏱️ Tempo concluído. Aguarde a frase final do Orkio.");
+      setUploadStatus("⏱️ Dois minutos concluídos. Aguarde a frase final antes do encerramento.");
 
       const scheduleSafetyStop = (reason = "closing_message_timeout") => {
         clearRealtimeFinalStopTimer();
@@ -6682,7 +6684,7 @@ function scheduleRealtimeIdleFollowup() {
           const sent = requestRealtimeSpokenResponse(currentDc, {
             reason: "timebox_final_closing_notice_after_zero",
             conversationItem: false,
-            instructions: `Fale exatamente esta mensagem, sem acrescentar perguntas, ofertas, pitch ou continuação do assunto: ${spokenText}`,
+            instructions: `Fale exatamente esta mensagem, em tom calmo e em até oito segundos. Não acrescente perguntas, ofertas, pitch ou continuação do assunto: ${spokenText}`,
           });
 
           rtcTimeboxClosingNoticeSentRef.current = Boolean(sent);
@@ -6764,11 +6766,12 @@ function scheduleRealtimeIdleFollowup() {
           }
           void stopRealtime("time_limit_frontend_hard_stop");
         } catch {}
-      }, Math.max(1, maxSeconds * 1000 + REALTIME_FINAL_MESSAGE_GRACE_MS + 2000));
+      }, Math.max(1, maxSeconds * 1000 + REALTIME_FINAL_MESSAGE_GRACE_MS + 5000));
     } catch {}
 
+    let warned30 = false;
     let warned15 = false;
-    let warned10 = false;
+    let warned5 = false;
 
     const tick = () => {
       const remaining = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
@@ -6778,18 +6781,37 @@ function scheduleRealtimeIdleFollowup() {
         updateRealtimePremiumStatus("listening", "📝 Transcrição ativa");
       }
 
-      if (remaining <= 15 && remaining > 10 && !warned15) {
-        warned15 = true;
-        updateRealtimePremiumStatus("ending", "⚠️ Restam 15 segundos.");
-        setUploadStatus("⚠️ Restam 15 segundos de conversa por voz.");
-        setTimeout(() => setUploadStatus(""), 3000);
+      if (remaining <= 30 && remaining > 15 && !warned30) {
+        warned30 = true;
+        updateRealtimePremiumStatus("ending", "⚠️ Restam 30 segundos. Vamos concluir com calma.");
+        setUploadStatus("⚠️ Restam 30 segundos de voz. Conclua a ideia principal.");
+        setTimeout(() => setUploadStatus(""), 4000);
+        logRealtimeStep("hf6_3:timebox_warning_30s", {
+          remaining,
+          marker: ORKIO_HF6_3_BUILD_MARKER,
+        });
       }
 
-      if (remaining <= 10 && remaining > 0 && !warned10) {
-        warned10 = true;
-        updateRealtimePremiumStatus("ending", "⚠️ Restam 10 segundos.");
-        setUploadStatus("⚠️ Restam 10 segundos. Conclua sua ideia.");
-        setTimeout(() => setUploadStatus(""), 2500);
+      if (remaining <= 15 && remaining > 5 && !warned15) {
+        warned15 = true;
+        updateRealtimePremiumStatus("ending", "⚠️ Restam 15 segundos. Preparando encerramento.");
+        setUploadStatus("⚠️ Restam 15 segundos. O Orkio fará uma frase final.");
+        setTimeout(() => setUploadStatus(""), 3500);
+        logRealtimeStep("hf6_3:timebox_warning_15s", {
+          remaining,
+          marker: ORKIO_HF6_3_BUILD_MARKER,
+        });
+      }
+
+      if (remaining <= 5 && remaining > 0 && !warned5) {
+        warned5 = true;
+        updateRealtimePremiumStatus("ending", "⏱️ Encerramento em instantes.");
+        setUploadStatus("⏱️ Encerrando em instantes. Aguarde a frase final.");
+        setTimeout(() => setUploadStatus(""), 3000);
+        logRealtimeStep("hf6_3:timebox_warning_5s", {
+          remaining,
+          marker: ORKIO_HF6_3_BUILD_MARKER,
+        });
       }
 
       if (remaining <= 0) {
@@ -6806,8 +6828,8 @@ function scheduleRealtimeIdleFollowup() {
           closingNoticeDone: Boolean(rtcTimeboxClosingNoticeDoneRef.current),
         });
 
-        updateRealtimePremiumStatus("ending", "⏱️ Tempo concluído. Orkio está encerrando a sessão.");
-        setUploadStatus("⏱️ Dois minutos concluídos. Aguarde a mensagem final do Orkio.");
+        updateRealtimePremiumStatus("ending", "⏱️ Tempo concluído. Aguarde a frase final do Orkio.");
+        setUploadStatus("⏱️ Dois minutos concluídos. Aguarde a frase final antes do encerramento.");
 
         const closingStarted = announceRealtimeTimeboxEnding(0);
         if (!closingStarted) {
@@ -6818,7 +6840,7 @@ function scheduleRealtimeIdleFollowup() {
                 void stopRealtime("time_limit_frontend_hard_stop");
               }
             } catch {}
-          }, 1800);
+          }, REALTIME_FINAL_MESSAGE_POST_DONE_GRACE_MS);
         }
       }
     };
@@ -8058,7 +8080,7 @@ function scheduleRealtimeIdleFollowup() {
                         void stopRealtime("time_limit_frontend");
                       }
                     } catch {}
-                  }, 320);
+                  }, REALTIME_FINAL_MESSAGE_POST_DONE_GRACE_MS);
                 }
               } else {
                 logRealtimeStep("ao72d_hf1:non_closing_response_done_ignored_during_closing", {
