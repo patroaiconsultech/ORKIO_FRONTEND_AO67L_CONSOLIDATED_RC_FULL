@@ -1,18 +1,17 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
-
 import "./index.css";
 import "./ui/api.js";
 import "./lib/auth.js";
 import "./lib/voices.js";
+import { registerServiceWorker } from "./lib/pwa/registerServiceWorker.js";
 
 if (typeof window !== "undefined") {
   import("./lib/sessionHeartbeat.js").catch((e) => {
     console.warn("sessionHeartbeat init skipped:", e);
   });
 }
-
 
 const ROOT_ID = "root";
 
@@ -36,3 +35,4 @@ function mountApp() {
 }
 
 mountApp();
+registerServiceWorker();
