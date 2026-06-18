@@ -5,6 +5,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
+    <!-- PWA-02 — Executive install polish -->
+    <meta name="theme-color" content="#030713" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Orkio" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
     <title>Patroai — AI Factory para agentes, plataformas e automações</title>
     <meta
       name="description"
@@ -20,6 +28,7 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192x192.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
 
     <meta property="og:title" content="Patroai — AI Factory para agentes, plataformas e automações" />
     <meta
@@ -76,10 +85,11 @@
         },
       };
     </script>
-    <link rel="manifest" href="/manifest.webmanifest" />
   </head>
+
   <body class="bg-[#070910] text-white antialiased">
     <div id="root"></div>
+
     <!-- @vite-ignore -->
     <script src="/env.js"></script>
     <script type="module" src="/src/main.jsx"></script>
