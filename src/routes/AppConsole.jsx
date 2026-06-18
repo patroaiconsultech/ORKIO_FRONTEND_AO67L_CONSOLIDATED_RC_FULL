@@ -2258,6 +2258,14 @@ const [onboardingForm, setOnboardingForm] = useState(() => sanitizeOnboardingFor
   const storageBootstrapConsumedRef = useRef(false);
   const storageBootstrapInitializedRef = useRef(false);
   const THREAD_STORAGE_KEY = "orkio_active_thread_id";
+  // PWA-M01_MOBILE_THREAD_RESTORE_STORAGE_FALLBACK
+  // Mobile/PWA WebViews can restore with a different storage surface after app resume.
+  // Keep the canonical key, but mirror it to sessionStorage and a PWA alias.
+  const THREAD_STORAGE_KEYS = [
+    THREAD_STORAGE_KEY,
+    "orkio_pwa_active_thread_id",
+    "orkio_last_active_thread_id",
+  ];
 
   function applyThreadsList(list) {
     const safeList = Array.isArray(list) ? list : [];
@@ -2272,16 +2280,30 @@ const [onboardingForm, setOnboardingForm] = useState(() => sanitizeOnboardingFor
 
   function readStoredThreadId() {
     if (typeof window === "undefined") return "";
-    try { return String(window.localStorage?.getItem(THREAD_STORAGE_KEY) || "").trim(); } catch { return ""; }
+    const stores = [window.localStorage, window.sessionStorage].filter(Boolean);
+    for (const store of stores) {
+      for (const key of THREAD_STORAGE_KEYS) {
+        try {
+          const value = String(store?.getItem?.(key) || "").trim();
+          if (value) return value;
+        } catch {}
+      }
+    }
+    return "";
   }
 
   function persistActiveThreadId(nextId) {
     const safeId = String(nextId || "").trim();
     if (typeof window === "undefined") return;
-    try {
-      if (safeId) window.localStorage?.setItem(THREAD_STORAGE_KEY, safeId);
-      else window.localStorage?.removeItem(THREAD_STORAGE_KEY);
-    } catch {}
+    const stores = [window.localStorage, window.sessionStorage].filter(Boolean);
+    for (const store of stores) {
+      for (const key of THREAD_STORAGE_KEYS) {
+        try {
+          if (safeId) store?.setItem?.(key, safeId);
+          else store?.removeItem?.(key);
+        } catch {}
+      }
+    }
   }
 
   function getBootstrapStoredThreadId() {
@@ -3578,6 +3600,70 @@ useEffect(() => {
     loadThreads();
     loadAgents();
   }, [token, tenant, onboardingChecked, onboardingOpen]);
+
+  // PWA-M01_MOBILE_HISTORY_RESUME_RESTORE
+  // When the installed PWA returns from background, explicitly refresh the
+  // thread list and reload the active/stored conversation without stealing focus.
+  useEffect(() => {
+    if (!token || !onboardingChecked || onboardingOpen) return undefined;
+
+    let lastRestoreAt = 0;
+    const restoreFromPwaResume = (source = "pwa_resume") => {
+      try {
+        const now = Date.now();
+        if (now - lastRestoreAt < 1200) return;
+        lastRestoreAt = now;
+
+        const preservedId = String(
+          activeThreadIdRef.current ||
+          threadId ||
+          readStoredThreadId() ||
+          ""
+        ).trim();
+
+        void loadThreads({
+          preserveThreadId: preservedId,
+          keepMessages: true,
+        }).then(() => {
+          const activeId = String(activeThreadIdRef.current || threadId || preservedId || "").trim();
+          if (activeId) {
+            void loadMessages(activeId, {
+              force: true,
+              manualRetry: true,
+              expectedEpoch: activeThreadEpochRef.current,
+            });
+          }
+        });
+
+        try {
+          logRealtimeStep("pwa:conversation_restore", {
+            source,
+            preserved_thread_id: preservedId || null,
+          });
+        } catch {}
+      } catch {}
+    };
+
+    const handleVisibility = () => {
+      try {
+        if (typeof document === "undefined") return;
+        if (document.visibilityState === "visible") restoreFromPwaResume("visibility_visible");
+      } catch {}
+    };
+
+    const handlePageShow = () => restoreFromPwaResume("pageshow");
+    const handleFocus = () => restoreFromPwaResume("focus");
+
+    try { window.addEventListener("pageshow", handlePageShow); } catch {}
+    try { window.addEventListener("focus", handleFocus); } catch {}
+    try { document.addEventListener("visibilitychange", handleVisibility); } catch {}
+
+    return () => {
+      try { window.removeEventListener("pageshow", handlePageShow); } catch {}
+      try { window.removeEventListener("focus", handleFocus); } catch {}
+      try { document.removeEventListener("visibilitychange", handleVisibility); } catch {}
+    };
+  }, [token, tenant, onboardingChecked, onboardingOpen, threadId]);
 
   useEffect(() => {
     const currentThreadId = String(threadId || "");
@@ -10391,6 +10477,23 @@ async function stopRealtime(reason = 'client_stop') {
       color: "#fff",
       fontSize: "12px",
     },
+    // PWA-M01_MOBILE_AGENT_SELECTOR_TOUCH_TARGET
+    // Mobile/PWA WebViews can compress selects inside the topbar flex row.
+    // Keep a readable minimum tap target and visible text.
+    selectMobile: {
+      minHeight: 44,
+      minWidth: 144,
+      maxWidth: "100%",
+      flex: "1 1 144px",
+      padding: "10px 12px",
+      fontSize: 14,
+      fontWeight: 800,
+      lineHeight: 1.2,
+      color: "#fff",
+      background: "rgba(15,23,42,0.94)",
+      WebkitAppearance: "menulist",
+      appearance: "menulist",
+    },
     modalBack: {
       position: "fixed",
       inset: 0,
@@ -10575,6 +10678,7 @@ async function stopRealtime(reason = 'client_stop') {
     : realtimeOverlayMaxSeconds;
   const realtimeOverlayStatusLabel = getRealtimePremiumStatusLabel();
   const realtimeOverlayDetail = rtcPremiumStatusDetail || (realtimeMode ? "Conversa em tempo real ativa." : "");
+  const mobileAgentSelectStyle = isMobile ? { ...styles.select, ...styles.selectMobile } : styles.select;
 
   if (!onboardingChecked && !bootstrapFailOpen) {
     return <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#0f1115", color: "#fff", fontFamily: "system-ui" }}>Carregando sua experiência...</div>;
@@ -10854,6 +10958,7 @@ async function stopRealtime(reason = 'client_stop') {
                   gap: 10,
                   alignItems: "center",
                   flexWrap: "wrap",
+                  width: "100%",
                 }}
               >
                 <button
@@ -10973,7 +11078,7 @@ async function stopRealtime(reason = 'client_stop') {
             {!publicBetaOrkioOnly ? (
               <>
                 <select
-                  style={styles.select}
+                  style={mobileAgentSelectStyle}
                   value={destMode}
                   onChange={(e) => {
                     const nextMode = String(e.target.value || "team").trim().toLowerCase();
@@ -10986,13 +11091,13 @@ async function stopRealtime(reason = 'client_stop') {
                 </select>
 
                 {effectiveDestMode === "single" ? (
-                  <select style={styles.select} value={destSingle} onChange={(e) => setDestSingle(e.target.value)}>
+                  <select style={mobileAgentSelectStyle} value={destSingle} onChange={(e) => setDestSingle(e.target.value)}>
                     {visibleAgents.map(a => <option key={a.id} value={a.id}>{formatAgentOptionLabel(a)}</option>)}
                   </select>
                 ) : null}
 
                 {effectiveDestMode === "multi" && !isMobile ? (
-                  <select style={styles.select} value={String(destMulti.length || 0)} onChange={() => {}}>
+                  <select style={mobileAgentSelectStyle} value={String(destMulti.length || 0)} onChange={() => {}}>
                     <option value={String(destMulti.length || 0)}>
                       {destMulti.length ? `${destMulti.length} agentes selecionados` : "Selecionar no envio..."}
                     </option>
@@ -11750,8 +11855,14 @@ async function stopRealtime(reason = 'client_stop') {
                     position: "relative",
                     opacity: 1,
                     cursor: "pointer",
+                    touchAction: "manipulation",
+                    WebkitTapHighlightColor: "transparent",
                   }}
-                  onClick={toggleRealtimeMode}
+                  onClick={(event) => {
+                    try { event?.preventDefault?.(); } catch {}
+                    try { event?.stopPropagation?.(); } catch {}
+                    toggleRealtimeMode();
+                  }}
                   disabled={false}
                   title={realtimeMode ? "Encerrar voz em tempo real" : "Iniciar voz em tempo real"}
                 >
