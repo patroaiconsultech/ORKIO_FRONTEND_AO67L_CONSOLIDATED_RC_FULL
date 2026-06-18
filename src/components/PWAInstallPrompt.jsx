@@ -1,111 +1,140 @@
-import React, { useEffect, useMemo, useState } from "react";
-import OrkioSphereMark from "../ui/OrkioSphereMark.jsx";
+import React, { useEffect, useState } from "react";
+
+function detectPreferredLanguage() {
+  try {
+    const raw =
+      document?.documentElement?.lang ||
+      navigator?.language ||
+      navigator?.languages?.[0] ||
+      "pt-BR";
+    return String(raw || "pt-BR").toLowerCase();
+  } catch {
+    return "pt-br";
+  }
+}
+
+function isPortuguese() {
+  const lang = detectPreferredLanguage();
+  return lang.startsWith("pt");
+}
 
 export default function PWAInstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
-  const [dismissed, setDismissed] = useState(false);
-
-  const isIOS = useMemo(() => {
-    if (typeof navigator === "undefined") return false;
-    return /iphone|ipad|ipod/i.test(navigator.userAgent || "");
-  }, []);
+  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    if (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) return;
-    if (localStorage.getItem("orkio_pwa_dismissed") === "1") {
-      setDismissed(true);
-      return;
-    }
-    const onPrompt = (e) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
+    if (typeof window === "undefined") return undefined;
+
+    const onBeforeInstallPrompt = (event) => {
+      try { event.preventDefault?.(); } catch {}
+      setDeferredPrompt(event);
+      setVisible(true);
     };
-    window.addEventListener("beforeinstallprompt", onPrompt);
-    return () => window.removeEventListener("beforeinstallprompt", onPrompt);
+
+    const onAppInstalled = () => {
+      setVisible(false);
+      setDeferredPrompt(null);
+    };
+
+    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+    window.addEventListener("appinstalled", onAppInstalled);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", onAppInstalled);
+    };
   }, []);
 
-  if (dismissed) return null;
-  if (!deferredPrompt && !isIOS) return null;
+  if (!visible || !deferredPrompt) return null;
 
-  const install = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    await deferredPrompt.userChoice;
+  const pt = isPortuguese();
+  const title = pt ? "Instalar Orkio" : "Install Orkio";
+  const body = pt
+    ? "Adicione o Orkio à tela inicial para acessar mais rápido."
+    : "Add Orkio to your home screen for faster access.";
+  const installLabel = pt ? "Instalar" : "Install";
+  const dismissLabel = pt ? "Agora não" : "Not now";
+
+  async function handleInstall() {
+    const prompt = deferredPrompt;
+    if (!prompt) return;
+
+    try {
+      await prompt.prompt?.();
+      await prompt.userChoice;
+    } catch {}
+    setVisible(false);
     setDeferredPrompt(null);
-  };
+  }
 
-  const dismiss = () => {
-    localStorage.setItem("orkio_pwa_dismissed", "1");
-    setDismissed(true);
-  };
+  function handleDismiss() {
+    setVisible(false);
+  }
 
   return (
     <div
+      role="status"
+      aria-live="polite"
       style={{
         position: "fixed",
         left: 16,
         right: 16,
-        bottom: 92,
-        zIndex: 60,
-        margin: "0 auto",
-        maxWidth: 780,
-        padding: 14,
-        borderRadius: 22,
-        border: "1px solid rgba(255,255,255,0.10)",
-        background:
-          "linear-gradient(135deg, rgba(9,12,24,0.95), rgba(13,18,36,0.96))",
+        bottom: 16,
+        zIndex: 9999,
+        display: "grid",
+        gap: 10,
+        padding: "14px",
+        borderRadius: 18,
+        border: "1px solid rgba(255,255,255,0.14)",
+        background: "rgba(15,23,42,0.94)",
         color: "#fff",
-        display: "flex",
-        gap: 14,
-        alignItems: "center",
-        justifyContent: "space-between",
-        boxShadow: "0 18px 54px rgba(0,0,0,.42)",
-        backdropFilter: "blur(18px)",
+        boxShadow: "0 22px 70px rgba(0,0,0,0.38)",
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
+        maxWidth: 460,
+        margin: "0 auto",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <OrkioSphereMark size={34} badge={false} />
-        <div style={{ fontSize: 12 }}>
-          <div style={{ fontWeight: 800, fontSize: 13 }}>Install Orkio</div>
-          <div style={{ opacity: 0.78, maxWidth: 420 }}>
-            {isIOS && !deferredPrompt
-              ? "Tap Share and then Add to Home Screen."
-              : "Keep Orkio one tap away with the full-screen PWA experience."}
-          </div>
+      <div style={{ display: "grid", gap: 3 }}>
+        <div style={{ fontWeight: 950, fontSize: 15 }}>{title}</div>
+        <div style={{ color: "rgba(255,255,255,0.72)", fontSize: 13, lineHeight: 1.45 }}>
+          {body}
         </div>
       </div>
-      <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
         <button
           type="button"
-          onClick={dismiss}
+          onClick={handleDismiss}
           style={{
-            padding: "10px 12px",
-            borderRadius: 12,
-            border: "1px solid rgba(255,255,255,0.1)",
-            background: "transparent",
+            border: "1px solid rgba(255,255,255,0.12)",
+            background: "rgba(255,255,255,0.06)",
             color: "#fff",
-            fontWeight: 700,
+            borderRadius: 12,
+            padding: "10px 12px",
+            fontWeight: 800,
+            cursor: "pointer",
+            touchAction: "manipulation",
           }}
         >
-          Later
+          {dismissLabel}
         </button>
-        {!isIOS || deferredPrompt ? (
-          <button
-            type="button"
-            onClick={install}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 12,
-              border: 0,
-              background: "linear-gradient(135deg,#67e8f9,#60a5fa,#8b5cf6)",
-              color: "#08111f",
-              fontWeight: 900,
-              boxShadow: "0 14px 30px rgba(96,165,250,0.25)",
-            }}
-          >
-            Install now
-          </button>
-        ) : null}
+        <button
+          type="button"
+          onClick={handleInstall}
+          style={{
+            border: 0,
+            background: "linear-gradient(135deg, #67e8f9, #a78bfa)",
+            color: "#04111d",
+            borderRadius: 12,
+            padding: "10px 14px",
+            fontWeight: 950,
+            cursor: "pointer",
+            touchAction: "manipulation",
+          }}
+        >
+          {installLabel}
+        </button>
       </div>
     </div>
   );
