@@ -15,6 +15,27 @@ import ExecutionTimeline from "../components/ExecutionTimeline.jsx";
 import MessageBubble, { isSmartNextActionsEligible } from "../components/chat/MessageBubble.jsx";
 import RealtimeTimeboxOverlay from "../components/realtime/RealtimeTimeboxOverlay.jsx";
 import { useRealtimeTranscriptSummary } from "../hooks/realtime/useRealtimeTranscriptSummary.js";
+import AgentSelectorMobileSafe from "../components/agents/AgentSelectorMobileSafe.jsx";
+import {
+  bindPwaConsoleResumeRestore,
+  isInternalAgentVisibleFromList,
+  normalizeAgentsResponse,
+  normalizeThreadsResponse,
+  readCachedAgents,
+  readCachedThreads,
+  readPwaSelectedAgentId,
+  readPwaStoredThreadId,
+  writeCachedAgents,
+  writeCachedThreads,
+  writePwaSelectedAgentId,
+  writePwaStoredThreadId,
+} from "../lib/pwa/pwaConsoleRecovery.js";
+import {
+  buildRealtimeActivationProbeForAgent,
+  buildRealtimeOpeningGreetingForAgent,
+  buildSelectedRealtimeInstructions,
+  resolveSelectedRealtimeAgentIdentity,
+} from "../lib/realtime/realtimeAgentIdentity.js";
 
 // AO64D-HF6C_PUBLIC_BETA_GUARDRAILS_EFATAH777 — public beta copy, rewards narrative and internal-agent sanitation
 // AO64D-HF6E_PUBLIC_BETA_SANITIZER_SAFE_AND_TECH_BLOCK — full file generated for AppConsole + MessageBubble
@@ -2074,28 +2095,8 @@ function buildRealtimeVoiceInstruction(languageProfile, messageText = "") {
   return msg ? `${base} Mensagem do usuário: ${msg}` : base;
 }
 
-function buildRealtimeActivationProbeInstruction(languageProfile, agentName = "Orkio") {
-  const lang = normalizeRealtimeLanguageProfile(languageProfile);
-  const safeAgentName = String(agentName || "Orkio").trim() || "Orkio";
-
-  if (lang === "en") {
-    return {
-      inputText: `Say only: Hello, I am ${safeAgentName} in real time.`,
-      instructions: `Answer by audio in English, saying only: Hello, I am ${safeAgentName} in real time.`,
-    };
-  }
-
-  if (lang === "es") {
-    return {
-      inputText: `Di solamente: Hola, soy ${safeAgentName} en tiempo real.`,
-      instructions: `Responde en audio en español, diciendo solamente: Hola, soy ${safeAgentName} en tiempo real.`,
-    };
-  }
-
-  return {
-    inputText: `Diga apenas: Olá, eu sou ${safeAgentName} em tempo real.`,
-    instructions: `Responda em áudio em português, dizendo apenas: Olá, eu sou ${safeAgentName} em tempo real.`,
-  };
+function buildRealtimeActivationProbeInstruction(languageProfile, agentIdentity = null) {
+  return buildRealtimeActivationProbeForAgent(languageProfile, agentIdentity || { name: "Orkio" });
 }
 
 function normalizeWhatsapp(value) {
@@ -2240,6 +2241,8 @@ const [onboardingForm, setOnboardingForm] = useState(() => sanitizeOnboardingFor
   const [threadId, setThreadId] = useState("");
   const [messages, setMessages] = useState([]);
   const [agents, setAgents] = useState([]);
+  const [agentsLoadState, setAgentsLoadState] = useState("loading"); // loading|retrying|load_failed|empty|ready
+  const [agentsLoadError, setAgentsLoadError] = useState("");
   const [threadsLoadState, setThreadsLoadState] = useState("loading"); // loading|retrying|load_failed|empty|ready
   const [threadsLoadError, setThreadsLoadError] = useState("");
   const [messagesLoadState, setMessagesLoadState] = useState("empty"); // loading|retrying|load_failed|empty|ready
@@ -2258,14 +2261,6 @@ const [onboardingForm, setOnboardingForm] = useState(() => sanitizeOnboardingFor
   const storageBootstrapConsumedRef = useRef(false);
   const storageBootstrapInitializedRef = useRef(false);
   const THREAD_STORAGE_KEY = "orkio_active_thread_id";
-  // PWA-M01_MOBILE_THREAD_RESTORE_STORAGE_FALLBACK
-  // Mobile/PWA WebViews can restore with a different storage surface after app resume.
-  // Keep the canonical key, but mirror it to sessionStorage and a PWA alias.
-  const THREAD_STORAGE_KEYS = [
-    THREAD_STORAGE_KEY,
-    "orkio_pwa_active_thread_id",
-    "orkio_last_active_thread_id",
-  ];
 
   function applyThreadsList(list) {
     const safeList = Array.isArray(list) ? list : [];
@@ -2279,31 +2274,11 @@ const [onboardingForm, setOnboardingForm] = useState(() => sanitizeOnboardingFor
   }, [threads]);
 
   function readStoredThreadId() {
-    if (typeof window === "undefined") return "";
-    const stores = [window.localStorage, window.sessionStorage].filter(Boolean);
-    for (const store of stores) {
-      for (const key of THREAD_STORAGE_KEYS) {
-        try {
-          const value = String(store?.getItem?.(key) || "").trim();
-          if (value) return value;
-        } catch {}
-      }
-    }
-    return "";
+    return readPwaStoredThreadId();
   }
 
   function persistActiveThreadId(nextId) {
-    const safeId = String(nextId || "").trim();
-    if (typeof window === "undefined") return;
-    const stores = [window.localStorage, window.sessionStorage].filter(Boolean);
-    for (const store of stores) {
-      for (const key of THREAD_STORAGE_KEYS) {
-        try {
-          if (safeId) store?.setItem?.(key, safeId);
-          else store?.removeItem?.(key);
-        } catch {}
-      }
-    }
+    writePwaStoredThreadId(nextId);
   }
 
   function getBootstrapStoredThreadId() {
@@ -3204,7 +3179,7 @@ useEffect(() => {
         try {
           if (attempt > 1) setThreadsLoadState("retrying");
           const response = await apiFetch("/api/threads", { token, org: tenant });
-          data = response?.data;
+          data = normalizeThreadsResponse(response);
           lastErr = null;
           break;
         } catch (err) {
@@ -3217,7 +3192,9 @@ useEffect(() => {
       }
       if (lastErr) throw lastErr;
 
-      const list = Array.isArray(data) ? data : [];
+      let list = normalizeThreadsResponse({ data });
+      if (!list.length) list = readCachedThreads();
+      if (list.length) writeCachedThreads(list);
       applyThreadsList(list);
       setThreadsLoadState(list.length ? "ready" : "empty");
 
@@ -3543,31 +3520,36 @@ useEffect(() => {
 
 
   async function loadAgents() {
+    setAgentsLoadState(agents.length ? "retrying" : "loading");
+    setAgentsLoadError("");
     try {
-      const { data } = await apiFetch("/api/agents", { token, org: tenant });
-      setAgents(data || []);
+      const response = await apiFetch("/api/agents", { token, org: tenant });
+      let list = normalizeAgentsResponse(response);
+      if (!list.length) list = readCachedAgents();
+
+      setAgents(list || []);
+      if (list.length) writeCachedAgents(list);
+
       try {
         const m = new Map();
-        (data || []).forEach(a => { if (a?.name) m.set(String(a.name).trim(), a.id); });
+        (list || []).forEach(a => { if (a?.name) m.set(String(a.name).trim(), a.id); });
         agentsByNameRef.current = m;
       } catch {}
 
-      // Preserve the last manually selected agent when it still exists.
-      // Do not force the console back to single-agent mode during agent reloads.
-      if (Array.isArray(data) && data.length) {
-        const orkio = data.find(a => (a.name || "").toLowerCase() === "orkio") || data.find(a => a.is_default) || data[0] || null;
+      if (Array.isArray(list) && list.length) {
+        const orkio = list.find(a => (a.name || "").toLowerCase() === "orkio") || list.find(a => a.is_default) || list[0] || null;
+        const remembered = readPwaSelectedAgentId();
+        const rememberedAgent = remembered ? list.find((a) => String(a.id) === String(remembered)) : null;
 
-        const currentExists = destSingle && data.some((a) => String(a.id) === String(destSingle));
+        const currentExists = destSingle && list.some((a) => String(a.id) === String(destSingle));
         if (!currentExists) {
-          const remembered = (typeof window !== "undefined" && window.localStorage?.getItem("orkio_last_dest_single")) || "";
-          const rememberedAgent = remembered ? data.find((a) => String(a.id) === String(remembered)) : null;
           const nextAgent = rememberedAgent || orkio || null;
           if (nextAgent) setDestSingle(nextAgent.id);
         }
 
         setDestMulti((prev) => {
           const cleanPrev = Array.isArray(prev) ? prev.map((v) => String(v || "").trim()).filter(Boolean) : [];
-          const valid = cleanPrev.filter((id) => data.some((a) => String(a.id) === String(id)));
+          const valid = cleanPrev.filter((id) => list.some((a) => String(a.id) === String(id)));
           if (valid.length) return Array.from(new Set(valid));
           try {
             const raw = (typeof window !== "undefined" && window.localStorage?.getItem("orkio_last_dest_multi")) || "[]";
@@ -3575,7 +3557,7 @@ useEffect(() => {
             if (Array.isArray(parsed)) {
               const restored = parsed
                 .map((v) => String(v || "").trim())
-                .filter((id) => id && data.some((a) => String(a.id) === String(id)));
+                .filter((id) => id && list.some((a) => String(a.id) === String(id)));
               if (restored.length) return Array.from(new Set(restored));
             }
           } catch {}
@@ -3590,8 +3572,18 @@ useEffect(() => {
           return normalized;
         });
       }
+
+      setAgentsLoadState(list.length ? "ready" : "empty");
     } catch (e) {
       console.error("loadAgents error:", e);
+      const cached = readCachedAgents();
+      if (cached.length) {
+        setAgents(cached);
+        setAgentsLoadState("ready");
+      } else {
+        setAgentsLoadState("load_failed");
+        setAgentsLoadError(restoreErrorMessage(e, "Falha ao carregar agentes."));
+      }
     }
   }
 
@@ -3601,68 +3593,21 @@ useEffect(() => {
     loadAgents();
   }, [token, tenant, onboardingChecked, onboardingOpen]);
 
-  // PWA-M01_MOBILE_HISTORY_RESUME_RESTORE
-  // When the installed PWA returns from background, explicitly refresh the
-  // thread list and reload the active/stored conversation without stealing focus.
   useEffect(() => {
-    if (!token || !onboardingChecked || onboardingOpen) return undefined;
+    if (!destSingle) return;
+    writePwaSelectedAgentId(destSingle);
+  }, [destSingle]);
 
-    let lastRestoreAt = 0;
-    const restoreFromPwaResume = (source = "pwa_resume") => {
-      try {
-        const now = Date.now();
-        if (now - lastRestoreAt < 1200) return;
-        lastRestoreAt = now;
-
-        const preservedId = String(
-          activeThreadIdRef.current ||
-          threadId ||
-          readStoredThreadId() ||
-          ""
-        ).trim();
-
-        void loadThreads({
-          preserveThreadId: preservedId,
-          keepMessages: true,
-        }).then(() => {
-          const activeId = String(activeThreadIdRef.current || threadId || preservedId || "").trim();
-          if (activeId) {
-            void loadMessages(activeId, {
-              force: true,
-              manualRetry: true,
-              expectedEpoch: activeThreadEpochRef.current,
-            });
-          }
-        });
-
-        try {
-          logRealtimeStep("pwa:conversation_restore", {
-            source,
-            preserved_thread_id: preservedId || null,
-          });
-        } catch {}
-      } catch {}
-    };
-
-    const handleVisibility = () => {
-      try {
-        if (typeof document === "undefined") return;
-        if (document.visibilityState === "visible") restoreFromPwaResume("visibility_visible");
-      } catch {}
-    };
-
-    const handlePageShow = () => restoreFromPwaResume("pageshow");
-    const handleFocus = () => restoreFromPwaResume("focus");
-
-    try { window.addEventListener("pageshow", handlePageShow); } catch {}
-    try { window.addEventListener("focus", handleFocus); } catch {}
-    try { document.addEventListener("visibilitychange", handleVisibility); } catch {}
-
-    return () => {
-      try { window.removeEventListener("pageshow", handlePageShow); } catch {}
-      try { window.removeEventListener("focus", handleFocus); } catch {}
-      try { document.removeEventListener("visibilitychange", handleVisibility); } catch {}
-    };
+  useEffect(() => {
+    return bindPwaConsoleResumeRestore({
+      enabled: Boolean(token && onboardingChecked && !onboardingOpen),
+      getActiveThreadId: () => String(activeThreadIdRef.current || threadId || readStoredThreadId() || ""),
+      loadThreads: (opts) => loadThreads(opts),
+      loadMessages: (tid, opts) => loadMessages(tid, { ...(opts || {}), expectedEpoch: activeThreadEpochRef.current }),
+      log: (event, payload) => {
+        try { logRealtimeStep(event, payload); } catch {}
+      },
+    });
   }, [token, tenant, onboardingChecked, onboardingOpen, threadId]);
 
   useEffect(() => {
@@ -3917,79 +3862,19 @@ function formatAgentOptionLabel(agent) {
     return fallbackAgent?.id || null;
   }
 
-  // ASP-01A_REALTIME_SELECTED_AGENT_PARITY
-  // Minimal parity bridge: Realtime must speak as the agent selected in the console.
-  // This intentionally does not touch thread loading, layout, context carryover, DB, or backend routing.
   function resolveRealtimeSelectedAgentIdentity(agentIdOverride = null) {
-    const resolvedId = agentIdOverride || resolveHostAgentId();
-    const agent =
-      (agents || []).find((a) => String(a?.id || "") === String(resolvedId || "")) ||
-      (agents || []).find((a) => String(a?.name || "").trim().toLowerCase() === "orkio") ||
-      (agents || []).find((a) => a?.is_default) ||
-      (agents || [])[0] ||
-      null;
-
-    const rawName =
-      agent?.name ||
-      agent?.agent_name ||
-      agent?.display_name ||
-      agent?.slug ||
-      "Orkio";
-    const name = canonicalizeSpeakerLabel(rawName) || String(rawName || "Orkio").trim() || "Orkio";
-    const role =
-      String(
-        agent?.role ||
-        agent?.title ||
-        agent?.specialty ||
-        agent?.description ||
-        ""
-      ).trim();
-
-    return {
-      id: agent?.id || resolvedId || null,
-      slug: String(agent?.slug || agent?.key || name || "").trim().toLowerCase(),
-      name,
-      role,
-      agent,
-    };
+    return resolveSelectedRealtimeAgentIdentity({
+      agents,
+      selectedAgentId: agentIdOverride || resolveHostAgentId(),
+      destMode,
+      destSingle,
+      destMulti,
+      publicBetaOrkioOnly,
+    });
   }
 
   function buildRealtimeSelectedAgentInstructions(agentIdentity, preferredLang = "auto") {
-    const identity = agentIdentity || resolveRealtimeSelectedAgentIdentity();
-    const agentName = String(identity?.name || "Orkio").trim() || "Orkio";
-    const role = String(identity?.role || "").trim();
-    const roleHint = role ? ` Papel/função do agente selecionado: ${role}.` : "";
-
-    if (preferredLang === "pt") {
-      return (
-        `Você é ${agentName} em tempo real. Responda como ${agentName}, o agente selecionado no console.` +
-        roleHint +
-        ` Não se apresente como Orkio quando o agente selecionado for ${agentName}.` +
-        " Comece falando primeiro. Mantenha a conversa focada na última resposta clara do usuário." +
-        " Faça uma pergunta curta por vez. Se o áudio estiver confuso, peça para o usuário repetir." +
-        " Não use saudações privadas ou marcadores internos."
-      );
-    }
-
-    if (preferredLang === "es") {
-      return (
-        `Eres ${agentName} en tiempo real. Responde como ${agentName}, el agente seleccionado en la consola.` +
-        roleHint +
-        ` No te presentes como Orkio cuando el agente seleccionado sea ${agentName}.` +
-        " Empieza hablando primero. Mantén la conversación enfocada en la última respuesta clara del usuario." +
-        " Haz una pregunta corta por vez. Si el audio no está claro, pide que el usuario repita." +
-        " No uses saludos privados ni marcadores internos."
-      );
-    }
-
-    return (
-      `You are ${agentName} in real time. Respond as ${agentName}, the agent selected in the console.` +
-      (role ? ` Selected agent role: ${role}.` : "") +
-      ` Do not introduce yourself as Orkio when the selected agent is ${agentName}.` +
-      " Start by speaking first. Keep the conversation focused on the user's last clear answer." +
-      " Ask one short question at a time. If the audio is unclear, ask the user to repeat." +
-      " Do not use private greetings or internal markers."
-    );
+    return buildSelectedRealtimeInstructions(agentIdentity, preferredLang);
   }
 
 
@@ -7268,7 +7153,7 @@ function scheduleRealtimeIdleFollowup() {
 
         const probe = buildRealtimeActivationProbeInstruction(
           rtcLanguageProfileRef.current,
-          resolveRealtimeSelectedAgentIdentity()?.name || "Orkio"
+          resolveRealtimeSelectedAgentIdentity()
         );
         requestRealtimeSpokenResponse(currentDc, {
           reason: "activation_probe",
@@ -7296,28 +7181,15 @@ function scheduleRealtimeIdleFollowup() {
     const lang = normalizeRealtimeLanguageProfile(rtcLanguageProfileRef.current);
     const limited = Boolean(isRealtimeTimeboxLimitedUser());
     const realtimeAgentIdentity = resolveRealtimeSelectedAgentIdentity();
-    const realtimeAgentName = String(realtimeAgentIdentity?.name || "Orkio").trim() || "Orkio";
 
     // AO72D-HF1: greeting first, timer phrase second. The countdown starts only
     // when the assistant transcript reaches "two minutes", after the greeting.
-    const announcement =
-      lang === "en"
-        ? (
-          limited
-            ? `Hello, I am ${realtimeAgentName}. It is a pleasure to speak with you in real time. We have ${durationLabel} of conversation starting now. Where would you like to begin?`
-            : `Hello, I am ${realtimeAgentName}. It is a pleasure to speak with you in real time. Where would you like to begin?`
-        )
-        : lang === "es"
-          ? (
-            limited
-              ? `Hola, soy ${realtimeAgentName}. Es un placer hablar contigo en tiempo real. Tenemos ${durationLabel} de conversación a partir de ahora. ¿Por dónde quieres empezar?`
-              : `Hola, soy ${realtimeAgentName}. Es un placer hablar contigo en tiempo real. ¿Por dónde quieres empezar?`
-          )
-          : (
-            limited
-              ? `Olá, eu sou ${realtimeAgentName}. Prazer em falar com você em tempo real. Temos ${durationLabel} de conversa a partir de agora. Por onde você quer começar?`
-              : `Olá, eu sou ${realtimeAgentName}. Prazer em falar com você em tempo real. Por onde você quer começar?`
-          );
+    const announcement = buildRealtimeOpeningGreetingForAgent({
+      languageProfile: lang,
+      agentIdentity: realtimeAgentIdentity,
+      limited,
+      durationLabel,
+    });
 
     const activationInput =
       lang === "en"
@@ -7334,7 +7206,7 @@ function scheduleRealtimeIdleFollowup() {
       hf6_2Marker: ORKIO_HF6_2_BUILD_MARKER,
       nonAdminPublicTimebox: Boolean(limited),
       greetingBeforeTimer: true,
-      selectedAgentName: realtimeAgentName,
+      selectedAgentName: realtimeAgentIdentity?.name || null,
       selectedAgentId: realtimeAgentIdentity?.id || null,
     });
 
@@ -7470,7 +7342,7 @@ function scheduleRealtimeIdleFollowup() {
 
       // Voice priority: selected agent voice_id (Admin) > env default > fallback voice preset
       const realtimeAgentIdentity = resolveRealtimeSelectedAgentIdentity(agentIdToSend);
-      const selectedAgentObj = realtimeAgentIdentity?.agent || null;
+      const selectedAgentObj = realtimeAgentIdentity?.agent || (agents || []).find(a => String(a.id) === String(agentIdToSend));
       const agentVoice = ((selectedAgentObj?.voice_id || selectedAgentObj?.voice || selectedAgentObj?.tts_voice || selectedAgentObj?.voiceId || "")).toString().trim();
       const rtVoice = coerceVoiceId(agentVoice || envVoice || ORKIO_DEFAULT_VOICE_ID);
       rtcVoiceRef.current = rtVoice;
@@ -7488,6 +7360,9 @@ function scheduleRealtimeIdleFollowup() {
 
       const realtimeStartPayload = {
         agent_id: agentIdToSend,
+        selected_agent_id: realtimeAgentIdentity?.id || agentIdToSend || null,
+        agent_name: realtimeAgentIdentity?.name || null,
+        visible_agent: realtimeAgentIdentity?.name || null,
         thread_id: threadId || null,
         voice: rtVoice,
         model: rtModel,
@@ -9004,9 +8879,8 @@ function scheduleRealtimeIdleFollowup() {
     try {
       const agentIdentity2 = resolveRealtimeSelectedAgentIdentity();
       const selectedAgentObj2 = agentIdentity2?.agent || (agents || []).find(a => String(a.id) === String(destSingle || ""));
-      // ASP-01A_REALTIME_SELECTED_AGENT_PARITY:
+      // DEF-01_REALTIME_SELECTED_AGENT_SPEAKER_PARITY:
       // Runtime source labels like "response.done:longest" are telemetry, not public speaker names.
-      // The visible assistant speaker must follow the selected console agent.
       const agentName2 = agentIdentity2?.name || selectedAgentObj2?.name || "Orkio";
       const agentId2 = selectedAgentObj2?.id || agentIdentity2?.id || (destSingle || null);
 
@@ -10477,23 +10351,6 @@ async function stopRealtime(reason = 'client_stop') {
       color: "#fff",
       fontSize: "12px",
     },
-    // PWA-M01_MOBILE_AGENT_SELECTOR_TOUCH_TARGET
-    // Mobile/PWA WebViews can compress selects inside the topbar flex row.
-    // Keep a readable minimum tap target and visible text.
-    selectMobile: {
-      minHeight: 44,
-      minWidth: 144,
-      maxWidth: "100%",
-      flex: "1 1 144px",
-      padding: "10px 12px",
-      fontSize: 14,
-      fontWeight: 800,
-      lineHeight: 1.2,
-      color: "#fff",
-      background: "rgba(15,23,42,0.94)",
-      WebkitAppearance: "menulist",
-      appearance: "menulist",
-    },
     modalBack: {
       position: "fixed",
       inset: 0,
@@ -10596,7 +10453,11 @@ async function stopRealtime(reason = 'client_stop') {
   // ORKIO_AO60F_HF4_NON_ADMIN_REALTIME_ORKIO_ONLY
   // During public beta, every non-admin user, including EFATAH777 and AMCHAMRSORKIO,
   // uses Orkio-only Realtime. Admin keeps full agent access for testing/release governance.
-  const publicBetaOrkioOnly = !canAccessAdmin;
+  // DEF-01_PWA_ADMIN_PARITY:
+  // If the backend returns internal agents to this session, the frontend must not
+  // collapse the selector to Orkio-only just because the PWA restored a stale user
+  // object. Backend visibility remains the authority.
+  const publicBetaOrkioOnly = !(canAccessAdmin || isInternalAgentVisibleFromList(agents));
   const conversationRestoreState = threadsLoadState === "load_failed"
     ? "load_failed"
     : (threadsLoadState === "loading" || threadsLoadState === "retrying")
@@ -10678,7 +10539,6 @@ async function stopRealtime(reason = 'client_stop') {
     : realtimeOverlayMaxSeconds;
   const realtimeOverlayStatusLabel = getRealtimePremiumStatusLabel();
   const realtimeOverlayDetail = rtcPremiumStatusDetail || (realtimeMode ? "Conversa em tempo real ativa." : "");
-  const mobileAgentSelectStyle = isMobile ? { ...styles.select, ...styles.selectMobile } : styles.select;
 
   if (!onboardingChecked && !bootstrapFailOpen) {
     return <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#0f1115", color: "#fff", fontFamily: "system-ui" }}>Carregando sua experiência...</div>;
@@ -10958,7 +10818,6 @@ async function stopRealtime(reason = 'client_stop') {
                   gap: 10,
                   alignItems: "center",
                   flexWrap: "wrap",
-                  width: "100%",
                 }}
               >
                 <button
@@ -11075,50 +10934,23 @@ async function stopRealtime(reason = 'client_stop') {
                 Sair
               </button>
             ) : null}
-            {!publicBetaOrkioOnly ? (
-              <>
-                <select
-                  style={mobileAgentSelectStyle}
-                  value={destMode}
-                  onChange={(e) => {
-                    const nextMode = String(e.target.value || "team").trim().toLowerCase();
-                    setDestMode(["team", "single", "multi"].includes(nextMode) ? nextMode : "team");
-                  }}
-                >
-                  <option value="team">Team</option>
-                  <option value="single">1 agente</option>
-                  <option value="multi">Multi Agentes</option>
-                </select>
-
-                {effectiveDestMode === "single" ? (
-                  <select style={mobileAgentSelectStyle} value={destSingle} onChange={(e) => setDestSingle(e.target.value)}>
-                    {visibleAgents.map(a => <option key={a.id} value={a.id}>{formatAgentOptionLabel(a)}</option>)}
-                  </select>
-                ) : null}
-
-                {effectiveDestMode === "multi" && !isMobile ? (
-                  <select style={mobileAgentSelectStyle} value={String(destMulti.length || 0)} onChange={() => {}}>
-                    <option value={String(destMulti.length || 0)}>
-                      {destMulti.length ? `${destMulti.length} agentes selecionados` : "Selecionar no envio..."}
-                    </option>
-                  </select>
-                ) : null}
-              </>
-            ) : (
-              <div
-                style={{
-                  ...styles.select,
-                  minHeight: 34,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  fontWeight: 900,
-                  color: "rgba(255,255,255,0.88)",
-                }}
-                title="Beta público: Orkio-only"
-              >
-                Orkio
-              </div>
-            )}
+            <AgentSelectorMobileSafe
+              isMobile={isMobile}
+              publicBetaOrkioOnly={publicBetaOrkioOnly}
+              destMode={destMode}
+              setDestMode={setDestMode}
+              effectiveDestMode={effectiveDestMode}
+              destSingle={destSingle}
+              setDestSingle={setDestSingle}
+              destMulti={destMulti}
+              agents={agents}
+              visibleAgents={visibleAgents}
+              styles={styles}
+              formatAgentOptionLabel={formatAgentOptionLabel}
+              onRetryAgents={() => { void loadAgents(); }}
+              loading={agentsLoadState === "loading" || agentsLoadState === "retrying"}
+              error={agentsLoadError}
+            />
           </div>
         </div>
 
@@ -11855,14 +11687,8 @@ async function stopRealtime(reason = 'client_stop') {
                     position: "relative",
                     opacity: 1,
                     cursor: "pointer",
-                    touchAction: "manipulation",
-                    WebkitTapHighlightColor: "transparent",
                   }}
-                  onClick={(event) => {
-                    try { event?.preventDefault?.(); } catch {}
-                    try { event?.stopPropagation?.(); } catch {}
-                    toggleRealtimeMode();
-                  }}
+                  onClick={toggleRealtimeMode}
                   disabled={false}
                   title={realtimeMode ? "Encerrar voz em tempo real" : "Iniciar voz em tempo real"}
                 >
