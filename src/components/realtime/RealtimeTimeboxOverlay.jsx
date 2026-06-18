@@ -74,8 +74,15 @@ export default function RealtimeTimeboxOverlay({
       });
     } catch {}
 
-    const cb = onStop || onEnd || onClose;
-    if (typeof cb === "function") cb();
+    const callbacks = [onStop, onEnd, onClose].filter((cb, index, arr) => (
+      typeof cb === "function" && arr.indexOf(cb) === index
+    ));
+
+    for (const cb of callbacks) {
+      try { cb(); } catch (err) {
+        try { console.warn("REALTIME_OVERLAY_STOP_CALLBACK_FAILED", err); } catch {}
+      }
+    }
   }
 
   return (
@@ -234,6 +241,8 @@ export default function RealtimeTimeboxOverlay({
               padding: "13px 20px",
               fontWeight: 900,
               cursor: "pointer",
+              touchAction: "manipulation",
+              WebkitTapHighlightColor: "transparent",
               boxShadow: "0 14px 32px rgba(248,113,113,0.10)",
             }}
           >
