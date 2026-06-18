@@ -1054,33 +1054,18 @@ function canSeeInternalAdminSurfaces() {
   return false;
 }
 
-function stripForbiddenConversationalGreeting(value) {
-  if (value === null || value === undefined) return value;
-  if (typeof value !== "string") return value;
-
-  let text = String(value || "");
-
-  // ASP-01 / NO-EFATA-RUNTIME:
-  // "Efatà" is a private/internal invocation marker, not a user-facing
-  // assistant greeting. Keep it out of chat bubbles and Realtime transcripts.
-  text = text.replace(/^\s*(?:Efat[àa]|Efatah)\s*(?:777)?\s*[.!:—-]?\s*/iu, "");
-  text = text.replace(/\b(?:Efat[àa]|Efatah)\s*777\b/giu, "");
-  text = text.replace(/\b(?:Efat[àa]|Efatah)\b/giu, "");
-  return text.replace(/^\s+/, "");
-}
-
 function sanitizePublicBetaAssistantText(value) {
   if (value === null || value === undefined) return value;
   if (typeof value !== "string") return value;
 
-  let text = stripForbiddenConversationalGreeting(value);
+  let text = value;
   if (!text.trim()) return text;
 
   // AO68E-HF1_ADMIN_INTERNAL_CONTENT_PARITY:
   // Public beta users still get internal-agent names sanitized.
   // Admin/super-admin must see the actual delegated agent text so @Orion/@Chris
   // orchestration can be validated in staging without "novos agentes especializados".
-  if (canSeeInternalAdminSurfaces()) return stripForbiddenConversationalGreeting(text);
+  if (canSeeInternalAdminSurfaces()) return text;
 
   if (isPublicBetaTechnicalGovernanceLeak(text)) {
     return ORKIO_PUBLIC_BETA_TECH_GOVERNANCE_NOTICE;
@@ -2073,44 +2058,42 @@ function getUserOnboardingLanguage(userObj, formObj) {
   return "auto";
 }
 
-function buildRealtimeVoiceInstruction(languageProfile, messageText = "", agentName = "Orkio") {
+function buildRealtimeVoiceInstruction(languageProfile, messageText = "") {
   const lang = normalizeRealtimeLanguageProfile(languageProfile);
   const msg = String(messageText || "").trim();
-  const speaker = String(agentName || "Orkio").trim() || "Orkio";
 
   const base =
     lang === "en"
-      ? `Answer the user by voice in English as ${speaker}, briefly, naturally and helpfully. Never use the private internal invocation greeting.`
+      ? "Answer the user by voice in English, briefly, naturally and helpfully."
       : lang === "es"
-        ? `Responde al usuario por voz en español como ${speaker}, de forma breve, natural y útil. Nunca uses el saludo interno privado.`
+        ? "Responde al usuario por voz en español, de forma breve, natural y útil."
         : lang === "pt"
-          ? `Responda ao usuário por voz em português como ${speaker}, de forma curta, natural, útil e humana. Nunca use a saudação interna privada.`
-          : `Answer as ${speaker} in the same language the user is using. Be brief, natural, useful and human. Never use the private internal invocation greeting.`;
+          ? "Responda ao usuário por voz em português, de forma curta, natural, útil e humana."
+          : "Answer in the same language the user is using. Be brief, natural, useful and human.";
 
   return msg ? `${base} Mensagem do usuário: ${msg}` : base;
 }
 
-function buildRealtimeActivationProbeInstruction(languageProfile, agentName = "Orkio") {
+function buildRealtimeActivationProbeInstruction(languageProfile) {
   const lang = normalizeRealtimeLanguageProfile(languageProfile);
-  const speaker = String(agentName || "Orkio").trim() || "Orkio";
 
   if (lang === "en") {
     return {
-      inputText: `Say only: Hello, I am ${speaker} in real time.`,
-      instructions: `Answer by audio in English, saying only: Hello, I am ${speaker} in real time. Do not use the private internal greeting.`,
+      inputText: "Say only: Hello, I am Orkio in real time.",
+      instructions: "Answer by audio in English, saying only: Hello, I am Orkio in real time.",
     };
   }
 
   if (lang === "es") {
     return {
-      inputText: `Di solamente: Hola, soy ${speaker} en tiempo real.`,
-      instructions: `Responde en audio en español, diciendo solamente: Hola, soy ${speaker} en tiempo real. No uses el saludo interno privado.`,
+      inputText: "Di solamente: Hola, soy Orkio en tiempo real.",
+      instructions: "Responde en audio en español, diciendo solamente: Hola, soy Orkio en tiempo real.",
     };
   }
 
   return {
-    inputText: `Diga apenas: Olá, eu sou ${speaker} em tempo real.`,
-    instructions: `Responda em áudio em português, dizendo apenas: Olá, eu sou ${speaker} em tempo real. Não use a saudação interna privada.`,
+    inputText: "Diga apenas: Olá, eu sou o Orkio em tempo real.",
+    instructions: "Responda em áudio em português, dizendo apenas: Olá, eu sou o Orkio em tempo real.",
   };
 }
 
@@ -2697,9 +2680,6 @@ const rtcLastUserActivityAtRef = useRef(0);
   const rtcEventQueueRef = useRef([]);
   const realtimeBridgeBusyRef = useRef(false);
   const realtimeBridgeLastKeyRef = useRef("");
-  const rtcSelectedAgentIdentityRef = useRef(null);
-  const rtcSelectedAgentInstructionsRef = useRef("");
-  const rtcConversationContextCarryoverRef = useRef(null);
   const rtcFlushTimerRef = useRef(null);
   const rtcLivePollTimerRef = useRef(null);
   const rtcSeenBackendResponseIdsRef = useRef(new Set());
@@ -3848,142 +3828,6 @@ function formatAgentOptionLabel(agent) {
     }
 
     return fallbackAgent?.id || null;
-  }
-
-
-  function normalizeAgentSlugForRealtime(value) {
-    return String(value || "")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "");
-  }
-
-  function resolveRealtimeSelectedAgentIdentity(agentId = null) {
-    const safeAgentId = String(agentId || "").trim();
-    const byId = safeAgentId
-      ? (agents || []).find((a) => String(a?.id || "") === safeAgentId)
-      : null;
-    const byDestSingle = destSingle
-      ? (agents || []).find((a) => String(a?.id || "") === String(destSingle || ""))
-      : null;
-    const namedOrkio =
-      (agents || []).find((a) => normalizeAgentSlugForRealtime(a?.slug || a?.key || a?.name) === "orkio") ||
-      null;
-    const fallbackAgent = namedOrkio || (agents || []).find((a) => a?.is_default) || (agents || [])[0] || null;
-    const agent = byId || byDestSingle || fallbackAgent || null;
-    const rawName = String(agent?.name || agent?.agent_name || agent?.title || "").trim();
-    const slug = normalizeAgentSlugForRealtime(agent?.slug || agent?.key || rawName || agent?.id || "orkio") || "orkio";
-    const displayName =
-      rawName ||
-      (slug === "orion" ? "Orion" : slug === "chris" ? "Chris" : slug === "warren" ? "Warren" : "Orkio");
-
-    return {
-      id: agent?.id ? String(agent.id) : (safeAgentId || null),
-      name: displayName,
-      slug,
-      voice_id: agent?.voice_id || agent?.voice || agent?.tts_voice || agent?.voiceId || "",
-      role_label:
-        slug === "orion"
-          ? "CTO técnico interno"
-          : slug === "chris"
-            ? "CFO/estratégia"
-            : slug === "warren"
-              ? "investimentos e mercado"
-              : "copiloto executivo",
-      raw: agent || null,
-    };
-  }
-
-  function buildRealtimeConversationContextCarryover(maxMessages = 8) {
-    try {
-      const ordered = orderChatMessages(Array.isArray(messages) ? messages : []);
-      const relevant = ordered
-        .filter((m) => {
-          const role = String(m?.role || "").toLowerCase();
-          return role === "user" || role === "assistant" || role === "agent";
-        })
-        .map((m) => {
-          const role = String(m?.role || "").toLowerCase() === "user" ? "Usuário" : resolveAssistantDisplayName(m, "Agente");
-          const content = stripForbiddenConversationalGreeting(
-            stripEventMarker(String(m?.content || m?.text || m?.message || ""))
-          )
-            .replace(/\s+/g, " ")
-            .trim();
-          if (!content) return null;
-          return `${role}: ${content.slice(0, 650)}`;
-        })
-        .filter(Boolean);
-
-      const recent = relevant.slice(-Math.max(1, Number(maxMessages || 8)));
-      const text = recent.join("\n").slice(-3600);
-      const lastUser = [...ordered]
-        .reverse()
-        .find((m) => String(m?.role || "").toLowerCase() === "user");
-
-      return {
-        message_count: relevant.length,
-        included_count: recent.length,
-        text,
-        last_user_message: stripForbiddenConversationalGreeting(
-          stripEventMarker(String(lastUser?.content || lastUser?.text || lastUser?.message || ""))
-        ).slice(0, 900),
-      };
-    } catch {
-      return { message_count: 0, included_count: 0, text: "", last_user_message: "" };
-    }
-  }
-
-  function buildRealtimeSelectedAgentInstructions({ identity = null, languageProfile = "pt", contextText = "" } = {}) {
-    const agent = identity || rtcSelectedAgentIdentityRef.current || { name: "Orkio", slug: "orkio", role_label: "copiloto executivo" };
-    const name = String(agent?.name || "Orkio").trim() || "Orkio";
-    const slug = normalizeAgentSlugForRealtime(agent?.slug || name);
-    const lang = normalizeRealtimeLanguageProfile(languageProfile);
-    const context = String(contextText || "").trim();
-
-    const languageRule =
-      lang === "en"
-        ? "Answer primarily in English unless the user switches language."
-        : lang === "es"
-          ? "Responde principalmente en español salvo que el usuario cambie de idioma."
-          : lang === "pt"
-            ? "Responda principalmente em português do Brasil."
-            : "Responda no idioma do usuário.";
-
-    const roleRule =
-      slug === "orion"
-        ? "Você é Orion, agente CTO técnico interno da plataforma. Foque em arquitetura, backend, frontend, realtime, router, governança, risco, deploy seguro e auditoria readonly."
-        : slug === "chris"
-          ? "Você é Chris, agente de estratégia/finanças. Foque em contexto de negócio, viabilidade, prioridades e leitura executiva."
-          : slug === "warren"
-            ? "Você é Warren, agente de mercado/investimentos. Foque em tese, cenário, risco e leitura de oportunidade."
-            : "Você é Orkio, copiloto executivo da PatroAI. Foque em clareza, continuidade e próximos passos.";
-
-    return [
-      "IDENTIDADE OBRIGATÓRIA DO REALTIME",
-      roleRule,
-      `Agente selecionado no console: ${name}.`,
-      `agent_slug=${slug}.`,
-      languageRule,
-      "Nunca diga, escreva ou use a saudação interna privada em respostas ao usuário.",
-      "Não diga que não consegue chamar/agregar agentes internos quando o usuário já selecionou um agente interno; assuma a identidade selecionada e prossiga em modo seguro.",
-      "Preserve governança: por padrão, readonly; não declare escrita, commit, PR, deploy, migration ou execução sem evidência confirmada.",
-      "Use o contexto anterior do chat abaixo como memória de curto prazo da sessão Realtime. Não diga que não sabe o contexto se ele estiver abaixo.",
-      context ? `CONTEXTO RECENTE DO CHAT:\n${context}` : "CONTEXTO RECENTE DO CHAT: nenhum contexto textual carregado.",
-    ].join("\n");
-  }
-
-  function buildRealtimeTurnInstruction(messageText = "") {
-    const identity = rtcSelectedAgentIdentityRef.current || resolveRealtimeSelectedAgentIdentity(resolveHostAgentId());
-    const base = rtcSelectedAgentInstructionsRef.current ||
-      buildRealtimeSelectedAgentInstructions({
-        identity,
-        languageProfile: rtcLanguageProfileRef.current,
-        contextText: rtcConversationContextCarryoverRef.current?.text || "",
-      });
-    const msg = String(messageText || "").trim();
-    return msg ? `${base}\n\nMensagem atual do usuário: ${msg}` : base;
   }
 
 
@@ -7164,8 +7008,8 @@ function scheduleRealtimeIdleFollowup() {
     conversationItem = false,
   } = {}) {
     const cleanInstructions = String(instructions || "").trim();
+    const responseInstructions = cleanInstructions || buildRealtimeVoiceInstruction(rtcLanguageProfileRef.current);
     const cleanInput = String(inputText || "").trim();
-    const responseInstructions = cleanInstructions || buildRealtimeTurnInstruction(cleanInput);
     const voice = coerceVoiceId(rtcVoiceRef.current || ORKIO_CANONICAL_VOICE_ID || ORKIO_DEFAULT_VOICE_ID);
 
     if (conversationItem && cleanInput) {
@@ -7260,7 +7104,7 @@ function scheduleRealtimeIdleFollowup() {
           marker: ORKIO_AO66R_HF4_BUILD_MARKER,
         });
 
-        const probe = buildRealtimeActivationProbeInstruction(rtcLanguageProfileRef.current, rtcSelectedAgentIdentityRef.current?.name || "Orkio");
+        const probe = buildRealtimeActivationProbeInstruction(rtcLanguageProfileRef.current);
         requestRealtimeSpokenResponse(currentDc, {
           reason: "activation_probe",
           conversationItem: true,
@@ -7289,24 +7133,23 @@ function scheduleRealtimeIdleFollowup() {
 
     // AO72D-HF1: greeting first, timer phrase second. The countdown starts only
     // when the assistant transcript reaches "two minutes", after the greeting.
-    const speakerName = String(rtcSelectedAgentIdentityRef.current?.name || "Orkio").trim() || "Orkio";
     const announcement =
       lang === "en"
         ? (
           limited
-            ? `Hello, I am ${speakerName}. It is a pleasure to speak with you in real time. We have ${durationLabel} of conversation starting now. Where would you like to begin?`
-            : `Hello, I am ${speakerName}. It is a pleasure to speak with you in real time. Where would you like to begin?`
+            ? `Hello, I am Orkio. It is a pleasure to speak with you in real time. We have ${durationLabel} of conversation starting now. Where would you like to begin?`
+            : "Hello, I am Orkio. It is a pleasure to speak with you in real time. Where would you like to begin?"
         )
         : lang === "es"
           ? (
             limited
-              ? `Hola, soy ${speakerName}. Es un placer hablar contigo en tiempo real. Tenemos ${durationLabel} de conversación a partir de ahora. ¿Por dónde quieres empezar?`
-              : `Hola, soy ${speakerName}. Es un placer hablar contigo en tiempo real. ¿Por dónde quieres empezar?`
+              ? `Hola, soy Orkio. Es un placer hablar contigo en tiempo real. Tenemos ${durationLabel} de conversación a partir de ahora. ¿Por dónde quieres empezar?`
+              : "Hola, soy Orkio. Es un placer hablar contigo en tiempo real. ¿Por dónde quieres empezar?"
           )
           : (
             limited
-              ? `Olá, eu sou ${speakerName}. Prazer em falar com você em tempo real. Temos ${durationLabel} de conversa a partir de agora. Por onde você quer começar?`
-              : `Olá, eu sou ${speakerName}. Prazer em falar com você em tempo real. Por onde você quer começar?`
+              ? `Olá, eu sou Orkio. Prazer em falar com você em tempo real. Temos ${durationLabel} de conversa a partir de agora. Por onde você quer começar?`
+              : "Olá, eu sou Orkio. Prazer em falar com você em tempo real. Por onde você quer começar?"
           );
 
     const activationInput =
@@ -7456,12 +7299,9 @@ function scheduleRealtimeIdleFollowup() {
       const magicEnabled = (ORKIO_ENV.VITE_REALTIME_MAGICWORDS || import.meta.env.VITE_REALTIME_MAGICWORDS || "true").toString().trim().toLowerCase() !== "false";
       rtcMagicEnabledRef.current = magicEnabled;
 
-      // ASP-01: Realtime identity follows the agent selected in the console.
-      // Voice priority: selected agent voice (Admin) > env default > fallback preset.
-      const realtimeAgentIdentity = resolveRealtimeSelectedAgentIdentity(agentIdToSend);
-      rtcSelectedAgentIdentityRef.current = realtimeAgentIdentity;
-      const selectedAgentObj = realtimeAgentIdentity?.raw || (agents || []).find(a => String(a.id) === String(agentIdToSend));
-      const agentVoice = ((realtimeAgentIdentity?.voice_id || selectedAgentObj?.voice_id || selectedAgentObj?.voice || selectedAgentObj?.tts_voice || selectedAgentObj?.voiceId || "")).toString().trim();
+      // Voice priority: agent.voice_id (Admin) > env default > fallback Orkio warmth preset
+      const selectedAgentObj = (agents || []).find(a => String(a.id) === String(agentIdToSend));
+      const agentVoice = ((selectedAgentObj?.voice_id || selectedAgentObj?.voice || selectedAgentObj?.tts_voice || selectedAgentObj?.voiceId || "")).toString().trim();
       const rtVoice = coerceVoiceId(agentVoice || envVoice || ORKIO_DEFAULT_VOICE_ID);
       rtcVoiceRef.current = rtVoice;
 
@@ -7476,25 +7316,9 @@ function scheduleRealtimeIdleFollowup() {
       );
       rtcLanguageProfileRef.current = languageProfile;
 
-      const realtimeContextCarryover = buildRealtimeConversationContextCarryover(8);
-      rtcConversationContextCarryoverRef.current = realtimeContextCarryover;
-      const selectedAgentRealtimeInstructions = buildRealtimeSelectedAgentInstructions({
-        identity: realtimeAgentIdentity,
-        languageProfile,
-        contextText: realtimeContextCarryover?.text || "",
-      });
-      rtcSelectedAgentInstructionsRef.current = selectedAgentRealtimeInstructions;
-
       const realtimeStartPayload = {
         agent_id: agentIdToSend,
-        agent_slug: realtimeAgentIdentity?.slug || null,
-        agent_name: realtimeAgentIdentity?.name || null,
-        target_agent_slug: realtimeAgentIdentity?.slug || null,
-        visible_agent: realtimeAgentIdentity?.name || null,
         thread_id: threadId || null,
-        conversation_context: realtimeContextCarryover,
-        context_summary: realtimeContextCarryover?.text || "",
-        no_efata_runtime_rule: true,
         voice: rtVoice,
         model: rtModel,
         ttl_seconds: effectiveRealtimeTtlSeconds,
@@ -7878,14 +7702,14 @@ function scheduleRealtimeIdleFollowup() {
             Math.ceil(Number(rtcTimeboxPolicyRef.current?.cooldownSeconds || REALTIME_PUBLIC_BETA_COOLDOWN_SECONDS))
           );
           const cooldownLabel = formatRealtimeDurationLabel(cooldownSeconds);
-          setUploadStatus(`⚡ ${rtcSelectedAgentIdentityRef.current?.name || "Agente"} em tempo real — até ${durationLabel}. Depois, nova voz em ${cooldownLabel}. Texto liberado.`);
+          setUploadStatus(`⚡ Orkio em tempo real — até ${durationLabel}. Depois, nova voz em ${cooldownLabel}. Texto liberado.`);
           setTimeout(() => setUploadStatus(''), 3500);
           if (!rtcPendingTimeboxSecondsRef.current) {
             rtcPendingTimeboxSecondsRef.current = resolveRealtimeStartTimeboxSeconds({ timebox: rtcTimeboxPolicyRef.current });
           }
           setRtcTimeboxRemaining(rtcPendingTimeboxSecondsRef.current || activeTimeboxSeconds);
         } else {
-          setUploadStatus(`⚡ ${rtcSelectedAgentIdentityRef.current?.name || "Agente"} em tempo real ativo.`);
+          setUploadStatus('⚡ Orkio em tempo real ativo.');
           setTimeout(() => setUploadStatus(''), 1500);
           rtcPendingTimeboxSecondsRef.current = null;
           clearRealtimeTimeboxTimer();
@@ -7922,12 +7746,14 @@ function scheduleRealtimeIdleFollowup() {
           const transcription = { model: transcriptionModel };
           if (langHint) transcription.language = langHint;
 
-          const realtimeInstructions = rtcSelectedAgentInstructionsRef.current ||
-            buildRealtimeSelectedAgentInstructions({
-              identity: rtcSelectedAgentIdentityRef.current,
-              languageProfile: preferredLang,
-              contextText: rtcConversationContextCarryoverRef.current?.text || "",
-            });
+          const realtimeInstructions =
+            preferredLang === "en"
+              ? "You are Orkio in real time. Start by speaking first. Keep the conversation focused on the user's last clear answer. Ask one short question at a time. If the audio is unclear, ask the user to repeat."
+              : preferredLang === "es"
+                ? "Eres Orkio en tiempo real. Empieza hablando primero. Mantén la conversación enfocada en la última respuesta clara del usuario. Haz una pregunta corta por vez. Si el audio no está claro, pide que el usuario repita."
+                : preferredLang === "pt"
+                  ? "Você é Orkio em tempo real. Comece falando primeiro. Mantenha a conversa focada na última resposta clara do usuário. Faça uma pergunta curta por vez. Se o áudio estiver confuso, peça para o usuário repetir."
+                  : "You are Orkio in real time. Start by speaking first. Answer in the same language the user is using. Keep the conversation focused and ask one short question at a time.";
 
           try {
             console.log("REALTIME_TRANSCRIPTION_LANGUAGE", {
@@ -8505,7 +8331,10 @@ function scheduleRealtimeIdleFollowup() {
         reason,
         conversationItem: true,
         inputText: lastTranscript,
-        instructions: buildRealtimeTurnInstruction(lastTranscript),
+        instructions: buildRealtimeVoiceInstruction(
+          rtcLanguageProfileRef.current,
+          lastTranscript
+        ),
       });
       setRtcReadyToRespond(false);
       setV2vPhase("responding");
@@ -8894,7 +8723,7 @@ function scheduleRealtimeIdleFollowup() {
   }
 
   function normalizeRealtimeAssistantText(rawText) {
-    return stripForbiddenConversationalGreeting((rawText || "").toString()).replace(/\s+/g, " ").trim();
+    return (rawText || "").toString().replace(/\s+/g, " ").trim();
   }
 
   function pickLongerRealtimeAssistantText(...texts) {
@@ -9001,9 +8830,11 @@ function scheduleRealtimeIdleFollowup() {
     queueRealtimeEvent({ event_type: 'response.final', role: 'assistant', content: finalText, is_final: true, meta: { source, hf4: true, upgraded: isMeaningfulUpgrade } });
 
     try {
-      const realtimeIdentity2 = rtcSelectedAgentIdentityRef.current || resolveRealtimeSelectedAgentIdentity(destSingle || "");
-      const agentName2 = realtimeIdentity2?.name || "Orkio";
-      const agentId2 = realtimeIdentity2?.id || (destSingle || null);
+      const selectedAgentObj2 = (agents || []).find(a => String(a.id) === String(destSingle || ""));
+      // AO64D-HF5_PUBLIC_REALTIME_SPEAKER_ORKIO
+      // Runtime source labels like "response.done:longest" are telemetry, not public speaker names.
+      const agentName2 = "Orkio";
+      const agentId2 = selectedAgentObj2?.id || (destSingle || null);
 
       if (isMeaningfulUpgrade && existingMessageId) {
         setMessages((prev) => (prev || []).map((m) => (
@@ -9038,8 +8869,8 @@ function scheduleRealtimeIdleFollowup() {
     // AO66R-HF4: if native Realtime audio does not play but assistant text arrived,
     // use the already validated classic TTS pipeline as a safe voice fallback.
     try {
-      const realtimeIdentity3 = rtcSelectedAgentIdentityRef.current || resolveRealtimeSelectedAgentIdentity(destSingle || "");
-      const agentId3 = realtimeIdentity3?.id || (destSingle || null);
+      const selectedAgentObj3 = (agents || []).find(a => String(a.id) === String(destSingle || ""));
+      const agentId3 = selectedAgentObj3?.id || (destSingle || null);
       console.log("REALTIME_TTS_FALLBACK_REQUESTED", {
         marker: ORKIO_AO66R_HF4_BUILD_MARKER,
         source,
