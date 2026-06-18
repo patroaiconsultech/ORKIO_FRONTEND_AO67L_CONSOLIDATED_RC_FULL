@@ -698,6 +698,80 @@ function isAbortLikeError(err) {
 }
 
 
+function isLowValueAssistantTextCandidate(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return true;
+  const normalized = raw.toLowerCase();
+  if (["completed", "complete", "done", "success", "ok", "true", "false", "null", "undefined"].includes(normalized)) return true;
+  if (/^\{\s*\}$/.test(raw) || /^\[\s*\]$/.test(raw)) return true;
+  return false;
+}
+
+function extractAssistantVisibleTextFromPayload(value, depth = 0, seen = new Set()) {
+  if (value === null || value === undefined) return "";
+  if (depth > 5) return "";
+
+  if (typeof value === "string" || typeof value === "number") {
+    const raw = String(value || "").trim();
+    return isLowValueAssistantTextCandidate(raw) ? "" : raw;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const extracted = extractAssistantVisibleTextFromPayload(item, depth + 1, seen);
+      if (extracted) return extracted;
+    }
+    return "";
+  }
+
+  if (typeof value !== "object") return "";
+  if (seen.has(value)) return "";
+  seen.add(value);
+
+  const directKeys = [
+    "content",
+    "final_text",
+    "finalText",
+    "text",
+    "body",
+    "message",
+    "answer",
+    "output_text",
+    "response_text",
+    "assistant_response",
+    "assistant_text",
+    "summary",
+    "result_text",
+  ];
+
+  for (const key of directKeys) {
+    const extracted = extractAssistantVisibleTextFromPayload(value?.[key], depth + 1, seen);
+    if (extracted) return extracted;
+  }
+
+  const nestedKeys = [
+    "response",
+    "data",
+    "result",
+    "payload",
+    "message_payload",
+    "assistant",
+    "agent",
+    "completion",
+    "output",
+    "outputs",
+    "choices",
+  ];
+
+  for (const key of nestedKeys) {
+    const extracted = extractAssistantVisibleTextFromPayload(value?.[key], depth + 1, seen);
+    if (extracted) return extracted;
+  }
+
+  return "";
+}
+
+
 
 async function consumeChatStream(
   response,
@@ -813,7 +887,15 @@ async function consumeChatStream(
       }
       onChunk?.(payload, draftText);
     }
-    if (ev === "agent_done") onAgentDone?.(payload, draftText);
+    if (ev === "agent_done") {
+      const agentDoneText = extractAssistantVisibleTextFromPayload(payload);
+      if (agentDoneText && (!draftText || agentDoneText.length > draftText.length)) {
+        draftText = agentDoneText;
+        firstUsefulChunkAt = firstUsefulChunkAt || Date.now();
+      }
+      onAgentDone?.(payload, draftText);
+      onExecution?.({ ...(payload || {}), event: ev, step: ev });
+    }
     if (ev === "keepalive") {
       onKeepalive?.(payload);
       assertStreamActivityProgress();
@@ -1132,6 +1214,47 @@ function sanitizePublicBetaAssistantMessage(messageLike) {
     if (typeof next[key] === "string") {
       next[key] = sanitizePublicBetaAssistantText(next[key]);
     }
+  }
+
+  return next;
+}
+
+function normalizeVisibleAssistantMessage(messageLike) {
+  if (!messageLike || typeof messageLike !== "object") return messageLike;
+
+  const role = String(messageLike?.role || "").toLowerCase();
+  if (role !== "assistant" && role !== "agent") return messageLike;
+
+  const next = sanitizePublicBetaAssistantMessage({ ...messageLike });
+  const currentContent = String(next?.content || "").trim();
+  if (currentContent && currentContent !== "⌛ Preparando resposta...") {
+    return next;
+  }
+
+  const visibleText = sanitizePublicBetaAssistantText(extractAssistantVisibleTextFromPayload(next));
+  if (visibleText) {
+    return {
+      ...next,
+      content: visibleText,
+      content_recovered_from_alt_field: !currentContent,
+    };
+  }
+
+  const completed = String(
+    next?.status ||
+    next?.state ||
+    next?.lifecycle ||
+    next?.trace_status ||
+    next?.execution_status ||
+    ""
+  ).toLowerCase();
+
+  if (completed.includes("completed") || completed.includes("done") || completed.includes("success")) {
+    return {
+      ...next,
+      content: currentContent || "Resposta concluída. O corpo da resposta não veio no campo esperado; atualize o histórico ou tente reenviar se precisar do texto completo.",
+      content_recovery_warning: true,
+    };
   }
 
   return next;
@@ -2247,6 +2370,7 @@ const [onboardingForm, setOnboardingForm] = useState(() => sanitizeOnboardingFor
   const agentsByNameRef = useRef(new Map());
   const threadsRef = useRef([]);
   const messagesThreadIdRef = useRef("");
+  const cleanNewThreadIdRef = useRef("");
   const activeThreadIdRef = useRef("");
   const activeThreadEpochRef = useRef(0);
   const messagesAbortRef = useRef(null);
@@ -3294,7 +3418,8 @@ useEffect(() => {
       setMessagesLoadError("");
       return [];
     }
-    setMessagesLoadState(opts?.manualRetry ? "retrying" : "loading");
+    const isCleanNewThreadLoad = String(cleanNewThreadIdRef.current || "") === targetId && !opts?.finalizeTurn;
+    setMessagesLoadState(isCleanNewThreadLoad ? "empty" : (opts?.manualRetry ? "retrying" : "loading"));
     setMessagesLoadError("");
     const force = !!opts?.force;
     const expectedEpoch = Number.isFinite(Number(opts?.expectedEpoch))
@@ -3344,7 +3469,7 @@ useEffect(() => {
 
       const normalized = orderChatMessages(
         Array.isArray(data)
-          ? data.map((item) => normalizeMessageSpeaker(item))
+          ? data.map((item) => normalizeVisibleAssistantMessage(normalizeMessageSpeaker(item)))
           : []
       );
       const sameRequest = requestSeq === messagesLoadRequestRef.current;
@@ -3370,6 +3495,9 @@ useEffect(() => {
         messagesThreadIdRef.current = targetId;
         setMessages(normalized);
         setMessagesLoadState(normalized.length ? "ready" : "empty");
+        if (String(cleanNewThreadIdRef.current || "") === targetId) {
+          cleanNewThreadIdRef.current = "";
+        }
       }
       return normalized;
     } catch (e) {
@@ -3675,6 +3803,7 @@ useEffect(() => {
       });
       if (data?.id) {
         const newId = String(data.id || "");
+        cleanNewThreadIdRef.current = newId;
         consumeStoredThreadBootstrap(newId);
         activateThread(newId, { clearMessages: true, persist: true, lockMs: 20000 });
         setThreads((prev) => {
@@ -3938,9 +4067,7 @@ function formatAgentOptionLabel(agent) {
 
   function resolveDoneFinalText(payload = {}, draftText = "") {
     const finalText = String(
-      payload?.final_text ||
-      payload?.message ||
-      payload?.content ||
+      extractAssistantVisibleTextFromPayload(payload) ||
       draftText ||
       ""
     ).trim();
@@ -4447,19 +4574,26 @@ async function sendMessage(presetMsg = null, opts = {}) {
             onAgentDone: (payload) => {
               if (isStale()) return;
               if (payload?.agent_name || payload?.final_speaker || payload?.visible_agent) setActiveRuntimeAgent(resolveAssistantDisplayName(payload, activeRuntimeAgent || "Orkio"));
+              const agentDoneVisibleText = sanitizePublicBetaAssistantText(
+                String(extractAssistantVisibleTextFromPayload(payload) || draftText || "").trim()
+              );
               appendExecutionTrace({
                 kind: "agent",
                 label: `${resolveAssistantDisplayName(payload, payload?.agent_id || "Orkio")} concluiu uma etapa`,
-                detail: sanitizePublicBetaAssistantText(payload?.message || payload?.status || "Resposta parcial pronta."),
+                detail: agentDoneVisibleText || sanitizePublicBetaAssistantText(payload?.message || payload?.status || "Resposta parcial pronta."),
                 agentName: resolveAssistantDisplayName(payload, "Orkio"),
               });
               setMessages((prev) => prev.map((m) => (
                 m.id === draftAssistantId
                   ? {
                       ...m,
-                      content: sanitizePublicBetaAssistantText((m.content || "").replace(/^⌛\s*/, "") || "Resposta concluída."),
+                      content: sanitizePublicBetaAssistantText(
+                        agentDoneVisibleText ||
+                        (m.content || "").replace(/^⌛\s*/, "") ||
+                        "Resposta concluída."
+                      ),
                       agent_name: resolveAssistantDisplayName(
-                        { ...(m || {}), ...(payload || {}), content: m?.content || payload?.content || "" },
+                        { ...(m || {}), ...(payload || {}), content: agentDoneVisibleText || m?.content || payload?.content || "" },
                         m?.agent_name || "Agent"
                       ),
                       agent_id: payload?.agent_id || m.agent_id || null,
@@ -4787,12 +4921,8 @@ async function sendMessage(presetMsg = null, opts = {}) {
       const effectiveTidForLoad = String(newThreadId || threadId || "");
 
       const finalTextCandidate = sanitizePublicBetaAssistantText(String(
-        streamDonePayload?.final_text ||
-        streamDonePayload?.message ||
-        streamDonePayload?.content ||
-        streamMeta?.done_payload?.final_text ||
-        streamMeta?.done_payload?.message ||
-        streamMeta?.done_payload?.content ||
+        extractAssistantVisibleTextFromPayload(streamDonePayload) ||
+        extractAssistantVisibleTextFromPayload(streamMeta?.done_payload) ||
         streamMeta?.draft_text ||
         ""
       ).trim());
@@ -7641,12 +7771,22 @@ function scheduleRealtimeIdleFollowup() {
             message: micFallbackErr?.message || null,
             permissionState: realtimeMicPermissionState,
           });
-          const denied = String(micFallbackErr?.name || micPrimaryErr?.name || "").toLowerCase().includes("notallowed");
+          const micFailureName = String(micFallbackErr?.name || micPrimaryErr?.name || "").toLowerCase();
+          const micFailureMessage = String(micFallbackErr?.message || micPrimaryErr?.message || "").toLowerCase();
+          const denied = micFailureName.includes("notallowed") || micFailureName.includes("permission");
+          const deviceMissing = (
+            micFailureName.includes("notfound") ||
+            micFailureMessage.includes("requested device not found") ||
+            micFailureMessage.includes("device not found") ||
+            micFailureMessage.includes("microphone not found")
+          );
           throw buildRealtimeDiagnosticError(
-            denied ? "MIC_PERMISSION_DENIED" : "MIC_GET_USER_MEDIA_FAILED",
+            denied ? "MIC_PERMISSION_DENIED" : (deviceMissing ? "MIC_DEVICE_NOT_FOUND" : "MIC_GET_USER_MEDIA_FAILED"),
             denied
               ? "O microfone está bloqueado para este PWA. Libere a permissão de microfone nas configurações do navegador/app e tente novamente."
-              : "Não consegui capturar o áudio do microfone neste dispositivo. Tente novamente, revise as permissões ou continue por texto.",
+              : deviceMissing
+                ? "Microfone não encontrado. Verifique permissões ou continue por texto."
+                : "Não consegui capturar o áudio do microfone neste dispositivo. Tente novamente, revise as permissões ou continue por texto.",
             {
               primaryName: micPrimaryErr?.name || null,
               primaryMessage: micPrimaryErr?.message || null,
@@ -10467,7 +10607,12 @@ async function stopRealtime(reason = 'client_stop') {
           : (!threadId && threadsLoadState === "empty")
             ? "empty"
             : messagesLoadState;
-  const shouldShowRestorePanel = messages.length === 0 && (
+  const isCleanNewThreadActive = Boolean(
+    threadId &&
+    String(cleanNewThreadIdRef.current || "") === String(threadId || "") &&
+    messages.length === 0
+  );
+  const shouldShowRestorePanel = !isCleanNewThreadActive && messages.length === 0 && (
     conversationRestoreState === "loading" ||
     conversationRestoreState === "retrying" ||
     conversationRestoreState === "load_failed"
@@ -10555,81 +10700,46 @@ async function stopRealtime(reason = 'client_stop') {
       detail={realtimeOverlayDetail}
       voiceLabel="Orkio em tempo real"
       onStop={() => {
-        // AO01-HF6R15_REALTIME_OVERLAY_TAP_SHIELD:
-        // The fullscreen/timebox overlay can appear immediately after /api/realtime/start.
-        // On mobile/PWA, the same tap used to start Realtime may hit the overlay stop control
-        // before DataChannel/audio activation. That produced:
-        //   client_stop_fullscreen_clock -> transcript_summary_forced_empty -> dc:close
-        // Guard early warmup from destructive stop. Real manual stop still works after activation
-        // or after the first warmup seconds.
+        // UX-FIX-01/P0.2:
+        // The explicit "Encerrar voz agora" action must always release the user,
+        // even when Realtime is still connecting, failed to find a microphone, or
+        // the peer/data channel never reached the normal listening state.
         const sessionAgeMs = getRealtimeSessionAgeMs();
 
-        if (canAccessAdmin || rtcAdminTimeboxBypassRef.current === true || rtcAdminTimeboxBypass === true) {
-          try {
-            logRealtimeStep("ao01_hf6r16:overlay_stop_ignored_admin_bypass", {
-              sessionId: rtcSessionIdRef.current || null,
-              sessionAgeMs,
-              reason: "client_stop_fullscreen_clock",
-            });
-          } catch {}
-          try { setRtcOverlayForceClosed(true); } catch {}
-          try { setRtcTimeboxRemaining(null); } catch {}
-          try { clearRealtimeTimeboxTimer(); } catch {}
-          try { updateRealtimePremiumStatus("listening", "Orkio em tempo real ativo."); } catch {}
-          return;
-        }
-
-        const earlyWarmupOverlayStop = Boolean(
-          rtcSessionIdRef.current &&
-          !rtcConversationStartedRef.current &&
-          Number.isFinite(Number(sessionAgeMs)) &&
-          Number(sessionAgeMs) >= 0 &&
-          Number(sessionAgeMs) < 12000
-        );
-
         try {
-          console.log("REALTIME_MANUAL_END_CLICK", {
-            marker: ORKIO_AO66R_HF4_BUILD_MARKER,
+          console.log("REALTIME_MANUAL_END_FORCED", {
+            marker: "UX_FIX_01_REALTIME_OVERLAY_FORCE_CLOSE",
             sessionId: rtcSessionIdRef.current || null,
             sessionAgeMs,
-            earlyWarmupOverlayStop,
+            status: rtcPremiumStatus || null,
+            phase: v2vPhase || null,
           });
         } catch {}
 
-        if (earlyWarmupOverlayStop) {
-          try {
-            logRealtimeStep("ao01_hf6r15:overlay_stop_ignored_warmup", {
-              sessionId: rtcSessionIdRef.current || null,
-              sessionAgeMs,
-              reason: "client_stop_fullscreen_clock",
-            });
-          } catch {}
-          try {
-            queueRealtimeTelemetry("overlay_stop_ignored_warmup", {
-              sessionAgeMs,
-              reason: "client_stop_fullscreen_clock",
-            });
-          } catch {}
-          try { setRtcOverlayForceClosed(false); } catch {}
-          try { setRealtimeMode(true); } catch {}
-          try { realtimeModeRef.current = true; } catch {}
-          try { setV2vPhase("connecting"); } catch {}
-          try { updateRealtimePremiumStatus("connecting", "Realtime conectando. Mantive a sessão aberta para concluir o áudio."); } catch {}
-          try {
-            setUploadStatus("⚡ Mantive o Realtime aberto. Aguarde a conexão de voz concluir.");
-            setTimeout(() => setUploadStatus(""), 2500);
-          } catch {}
-          return;
-        }
-
         try { setRtcOverlayForceClosed(true); } catch {}
-        try { setRealtimeMode(false); } catch {}
-        try { realtimeModeRef.current = false; } catch {}
+        try { clearRealtimeTimeboxTimer(); } catch {}
         try { setRtcTimeboxRemaining(null); } catch {}
         try { setRtcReadyToRespond(false); } catch {}
+        try { setRealtimeMode(false); } catch {}
+        try { realtimeModeRef.current = false; } catch {}
         try { setV2vPhase(null); } catch {}
+        try { setV2vError(null); } catch {}
+        try { setRtcPremiumStatus(null); } catch {}
+        try { setRtcPremiumStatusDetail(""); } catch {}
         try { updateRealtimePremiumStatus(null, ""); } catch {}
-        void stopRealtime("client_stop_fullscreen_clock");
+        try { setUploadStatus("Voz encerrada. O chat por texto continua disponível."); } catch {}
+        try { setTimeout(() => setUploadStatus(""), 1800); } catch {}
+
+        try {
+          const maybePromise = stopRealtime("client_stop_overlay_forced");
+          if (maybePromise && typeof maybePromise.catch === "function") {
+            maybePromise.catch((err) => {
+              try { console.warn("REALTIME_FORCE_STOP_CLEANUP_FAILED", err); } catch {}
+            });
+          }
+        } catch (err) {
+          try { console.warn("REALTIME_FORCE_STOP_THROWN", err); } catch {}
+        }
       }}
     />
     )}
