@@ -2371,6 +2371,8 @@ const [onboardingForm, setOnboardingForm] = useState(() => sanitizeOnboardingFor
   const threadsRef = useRef([]);
   const messagesThreadIdRef = useRef("");
   const cleanNewThreadIdRef = useRef("");
+  const newConversationQuietUntilRef = useRef(0);
+  const createThreadBusyRef = useRef(false);
   const activeThreadIdRef = useRef("");
   const activeThreadEpochRef = useRef(0);
   const messagesAbortRef = useRef(null);
@@ -3315,9 +3317,24 @@ useEffect(() => {
     };
   }, []);
 
+  function isCleanNewConversationTransitionActive(targetThreadId = "") {
+    const target = String(targetThreadId || activeThreadIdRef.current || threadId || "").trim();
+    if (!target) return false;
+    return (
+      String(cleanNewThreadIdRef.current || "") === target &&
+      Date.now() < Number(newConversationQuietUntilRef.current || 0)
+    );
+  }
+
   async function loadThreads(opts = {}) {
     const manualRetry = !!opts?.manualRetry;
-    setThreadsLoadState(manualRetry ? "retrying" : (threadsRef.current.length ? "retrying" : "loading"));
+    const quietNewThreadRefresh = Boolean(
+      opts?.quietNewThread ||
+      (opts?.preserveThreadId && isCleanNewConversationTransitionActive(opts.preserveThreadId))
+    );
+    if (!quietNewThreadRefresh) {
+      setThreadsLoadState(manualRetry ? "retrying" : (threadsRef.current.length ? "retrying" : "loading"));
+    }
     setThreadsLoadError("");
     try {
       const currentActive = String(activeThreadIdRef.current || threadId || "").trim();
@@ -3333,7 +3350,7 @@ useEffect(() => {
       let lastErr = null;
       for (let attempt = 1; attempt <= THREAD_RESTORE_RETRY_ATTEMPTS; attempt += 1) {
         try {
-          if (attempt > 1) setThreadsLoadState("retrying");
+          if (attempt > 1 && !quietNewThreadRefresh) setThreadsLoadState("retrying");
           const response = await apiFetch("/api/threads", { token, org: tenant });
           data = response?.data;
           lastErr = null;
@@ -3405,6 +3422,12 @@ useEffect(() => {
       if (e?.status === 401) {
         await logoutIfSessionReallyExpired("loadThreads");
       }
+      if (quietNewThreadRefresh && e?.status !== 401) {
+        // POLISH-DIR-01:
+        // Criar uma conversa nova nao deve exibir painel de recuperacao/erro.
+        // Mantemos a UI limpa e deixamos o proximo refresh regular reconciliar a lista.
+        return threadsRef.current;
+      }
       setThreadsLoadState("load_failed");
       setThreadsLoadError(restoreErrorMessage(e, "Falha ao carregar conversas."));
       return threadsRef.current;
@@ -3419,7 +3442,17 @@ useEffect(() => {
       return [];
     }
     const isCleanNewThreadLoad = String(cleanNewThreadIdRef.current || "") === targetId && !opts?.finalizeTurn;
-    setMessagesLoadState(isCleanNewThreadLoad ? "empty" : (opts?.manualRetry ? "retrying" : "loading"));
+    if (isCleanNewThreadLoad && !opts?.forceServerForCleanThread) {
+      // POLISH-DIR-01:
+      // Uma thread recem-criada e limpa nao precisa buscar /api/messages imediatamente.
+      // Isso evita o flash executivo ruim de "Carregando conversas" / "Tentando restaurar".
+      messagesThreadIdRef.current = targetId;
+      setMessages([]);
+      setMessagesLoadState("empty");
+      setMessagesLoadError("");
+      return [];
+    }
+    setMessagesLoadState(opts?.manualRetry ? "retrying" : "loading");
     setMessagesLoadError("");
     const force = !!opts?.force;
     const expectedEpoch = Number.isFinite(Number(opts?.expectedEpoch))
@@ -3794,6 +3827,8 @@ useEffect(() => {
 
 
   async function createThread() {
+    if (createThreadBusyRef.current) return;
+    createThreadBusyRef.current = true;
     try {
       const { data } = await apiFetch("/api/threads", {
         method: "POST",
@@ -3803,20 +3838,35 @@ useEffect(() => {
       });
       if (data?.id) {
         const newId = String(data.id || "");
+        const quietUntil = Date.now() + 30000;
         cleanNewThreadIdRef.current = newId;
+        newConversationQuietUntilRef.current = quietUntil;
         consumeStoredThreadBootstrap(newId);
-        activateThread(newId, { clearMessages: true, persist: true, lockMs: 20000 });
+        clearTmpAssistantDrafts();
+        messagesThreadIdRef.current = newId;
+        requestedThreadIdRef.current = newId;
+        setMessages([]);
+        setMessagesLoadState("empty");
+        setMessagesLoadError("");
+        setThreadsLoadState("ready");
+        setThreadsLoadError("");
+        activateThread(newId, { clearMessages: true, persist: true, lockMs: 30000 });
         setThreads((prev) => {
           const list = Array.isArray(prev) ? prev.filter((t) => String(t?.id || "") !== newId) : [];
-          return [{ ...(data || {}), id: newId }, ...list];
+          const next = [{ ...(data || {}), id: newId }, ...list];
+          threadsRef.current = next;
+          return next;
         });
-        await loadThreads({ preserveThreadId: newId, keepMessages: true });
-        if (String(activeThreadIdRef.current || "") === newId) {
-          await loadMessages(newId, { force: true, expectedEpoch: activeThreadEpochRef.current });
-        }
+
+        // POLISH-DIR-01:
+        // Reconciliacao silenciosa da lista. Nao bloquear a criacao nem exibir painel
+        // de "Carregando conversas" quando a intencao do usuario foi iniciar do zero.
+        void loadThreads({ preserveThreadId: newId, keepMessages: true, quietNewThread: true });
       }
     } catch (e) {
       alert(e?.message || "Falha ao criar conversa");
+    } finally {
+      createThreadBusyRef.current = false;
     }
   }
 
@@ -4269,6 +4319,13 @@ async function sendMessage(presetMsg = null, opts = {}) {
     clearRealtimeIdleFollowup();
     const msg = ((presetMsg ?? text) || "").trim();
     if (!msg || sendingRef.current) return false;
+    if (
+      threadId &&
+      String(cleanNewThreadIdRef.current || "") === String(threadId || "")
+    ) {
+      cleanNewThreadIdRef.current = "";
+      newConversationQuietUntilRef.current = 0;
+    }
 
     const pendingApprovedExecution = findPendingApprovedPatchExecution(messagesRef.current || messages);
     if (pendingApprovedExecution) {
@@ -10618,15 +10675,15 @@ async function stopRealtime(reason = 'client_stop') {
     conversationRestoreState === "load_failed"
   );
   const restorePanelTitle = conversationRestoreState === "load_failed"
-    ? "Nao foi possivel carregar a conversa"
+    ? "Não foi possível carregar a conversa"
     : conversationRestoreState === "retrying"
       ? "Tentando restaurar a conversa"
       : "Carregando conversas";
   const restorePanelMessage = conversationRestoreState === "load_failed"
-    ? (threadsLoadError || messagesLoadError || "Falha temporaria ao carregar o historico. Suas mensagens nao foram apagadas.")
+    ? (threadsLoadError || messagesLoadError || "Falha temporária ao carregar o histórico. Suas mensagens não foram apagadas.")
     : conversationRestoreState === "retrying"
-      ? "Estamos tentando novamente antes de declarar que nao ha conversas."
-      : "Buscando a ultima thread ativa e o historico preservado.";
+      ? "Estamos tentando novamente antes de declarar que não há conversas."
+      : "Buscando a última conversa ativa e o histórico preservado.";
   const isOrkioAgent = (agent) => {
     const raw = [
       agent?.name,
