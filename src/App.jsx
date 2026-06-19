@@ -2,6 +2,7 @@ import React from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import PatroaiLanding from "./routes/PatroaiLanding.jsx";
+import PatroaiBlog from "./routes/PatroaiBlog.jsx";
 import AuthPage from "./routes/AuthPage.jsx";
 import AppConsole from "./routes/AppConsole.jsx";
 import AdminConsole from "./routes/AdminConsole.jsx";
@@ -29,14 +30,13 @@ export default function App() {
         <Route path="/empresas" element={<PatroaiLanding />} />
         <Route path="/investidores" element={<PatroaiLanding />} />
         <Route path="/consultores" element={<PatroaiLanding />} />
-        <Route path="/orkio" element={<Navigate to="/" replace />} />
+        <Route path="/blog" element={<PatroaiBlog />} />
+        <Route path="/insights" element={<PatroaiBlog />} />
         <Route path="/beta" element={<BetaAccessGate />} />
         <Route path="/auth" element={<BetaAccessGate><AuthPage /></BetaAccessGate>} />
         <Route path="/app" element={<BetaAccessGate><AppConsole /></BetaAccessGate>} />
-        <Route path="/orkio/app" element={<BetaAccessGate><AppConsole /></BetaAccessGate>} />
 
         <Route path="/admin" element={<BetaAccessGate><AdminConsole /></BetaAccessGate>} />
-        <Route path="/orkio/admin" element={<BetaAccessGate><AdminConsole /></BetaAccessGate>} />
         <Route path="/admin/escalations" element={<AdminEscalations />} />
         <Route path="/admin/intake" element={<BetaAccessGate><AdminIntakeCenter /></BetaAccessGate>} />
         <Route path="/admin/cadastros" element={<BetaAccessGate><AdminIntakeCenter /></BetaAccessGate>} />
@@ -46,7 +46,6 @@ export default function App() {
         {/* AO-14B — Admin Evolution Console / PTE entrypoints.
             These routes are governance-only. They must not execute patches. */}
         <Route path="/admin/evolution" element={<AdminEvolutionCenter />} />
-        <Route path="/orkio/admin/evolution" element={<AdminEvolutionCenter />} />
         <Route path="/admin/pte" element={<AdminEvolutionCenter />} />
         <Route path="/admin/autoevolucao" element={<AdminEvolutionCenter />} />
 
