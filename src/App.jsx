@@ -26,12 +26,15 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<PatroaiLanding />} />
+        <Route path="/en" element={<PatroaiLanding />} />
         <Route path="/patroai" element={<PatroaiLanding />} />
         <Route path="/empresas" element={<PatroaiLanding />} />
         <Route path="/investidores" element={<PatroaiLanding />} />
         <Route path="/consultores" element={<PatroaiLanding />} />
         <Route path="/blog" element={<PatroaiBlog />} />
         <Route path="/insights" element={<PatroaiBlog />} />
+        <Route path="/en/blog" element={<PatroaiBlog />} />
+        <Route path="/en/insights" element={<PatroaiBlog />} />
         <Route path="/beta" element={<BetaAccessGate />} />
         <Route path="/auth" element={<BetaAccessGate><AuthPage /></BetaAccessGate>} />
         <Route path="/app" element={<BetaAccessGate><AppConsole /></BetaAccessGate>} />
