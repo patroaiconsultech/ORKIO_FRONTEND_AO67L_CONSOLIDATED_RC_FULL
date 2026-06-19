@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import usePatroaiSeo from "../lib/usePatroaiSeo.js";
-import { useLandingLocale } from "../lib/landingLocale.js";
 import { submitStrategicIntake } from "../ui/api.js";
 
 const PATROAI_WHATSAPP_URL = "https://wa.me/5551989697605?text=Ol%C3%A1%2C%20Grupo%20Patroai.%20Gostaria%20de%20falar%20sobre%20uma%20oportunidade%20estrat%C3%A9gica.";
@@ -27,6 +26,7 @@ const TEXT = {
     auth: {
       login: "Login",
       signup: "Cadastro com código",
+      signupShort: "Código",
       signupTitle: "Cadastro somente mediante código especial fornecido pelo Grupo Patroai",
       whatsapp: "WhatsApp",
       whatsappTitle: "Falar com o Grupo Patroai no WhatsApp",
@@ -173,76 +173,6 @@ const TEXT = {
         },
       ],
     },
-    mission: {
-      eyebrow: "Mission, vision and values",
-      title: "Technology, strategy and purpose for business continuity.",
-      intro:
-        "Patroai was created to combine strategic intelligence, applied technology and responsible business design in projects capable of generating sustainable value.",
-      cards: [
-        {
-          title: "Mission",
-          text:
-            "To support companies, investors, consultants and partners in structuring smarter, governed and sustainable businesses, turning complex information into clarity, decision and execution.",
-        },
-        {
-          title: "Vision",
-          text:
-            "To become a Brazilian reference in consultech, AI Factory and new venture development, building a proprietary category of governed AI systems for management, growth and business continuity.",
-        },
-        {
-          title: "Values",
-          text:
-            "Operational truth, governance, sustainability, responsibility, excellence, discretion, partnership, applied innovation, long-term vision and faith expressed through service.",
-        },
-      ],
-    },
-    market: {
-      eyebrow: "Market thesis",
-      title: "Where we are and where we want to go.",
-      text:
-        "The enterprise market has entered a new cycle: artificial intelligence is no longer just a tool. It requires governance, integration, security, qualified people and strategic clarity.",
-      cards: [
-        {
-          title: "Market",
-          text:
-            "Companies are pursuing applied AI, but many still struggle to turn technology into decision-making, operations, risk control and measurable business outcomes.",
-        },
-        {
-          title: "Where we are",
-          text:
-            "We are in a controlled traction stage, with validated public positioning, qualified intake, a protected private environment and focus on high-value strategic projects.",
-        },
-        {
-          title: "Where we want to go",
-          text:
-            "We aim to build a proprietary category: a consultech with an AI Factory and holding perspective, supporting companies in continuity, expansion and long-term business value.",
-        },
-      ],
-    },
-    insights: {
-      eyebrow: "Blog and market intelligence",
-      title: "Insights for leaders, investors and consultants.",
-      text:
-        "We will publish perspectives on applied AI, governance, ESG, new ventures, valuation, business transformation and continuity, without exposing sensitive details of the private platform.",
-      cta: "Visit blog",
-      posts: [
-        {
-          title: "The new cycle of enterprise AI requires governance",
-          text:
-            "The next stage of artificial intelligence will not be won only by those adopting tools, but by those building reliable, auditable and business-aligned processes.",
-        },
-        {
-          title: "ESG and continuity: technology with a long-term perspective",
-          text:
-            "Sustainability, governance and applied intelligence now belong to the same agenda: protecting business continuity and preparing new generations of value.",
-        },
-        {
-          title: "Consultech, Holding and AI Factory: a category in construction",
-          text:
-            "Patroai combines strategy, technology and relational capital to structure businesses, support decisions and develop opportunities with control and responsibility.",
-        },
-      ],
-    },
     audiences: {
       companies: {
         title: "Para empresas",
@@ -363,6 +293,7 @@ const TEXT = {
     auth: {
       login: "Login",
       signup: "Sign up with code",
+      signupShort: "Code",
       signupTitle: "Registration is available only with a special code provided by Grupo Patroai",
       whatsapp: "WhatsApp",
       whatsappTitle: "Talk to Grupo Patroai on WhatsApp",
@@ -671,8 +602,11 @@ function ConsentBox({ checked, onChange, children, required = false }) {
 
 export default function PatroaiLanding() {
   usePatroaiSeo();
-  const { locale, setLocale, isEnglish } = useLandingLocale();
-  const t = TEXT[isEnglish ? "en" : "pt"];
+  const location = useLocation();
+  const isEnglish = location.pathname === "/en" || location.pathname.startsWith("/en/");
+  const locale = isEnglish ? "en" : "pt";
+  const t = TEXT[locale];
+  const languageHref = isEnglish ? "/" : "/en";
 
   const [form, setForm] = useState(INITIAL_FORM);
   const [sending, setSending] = useState(false);
@@ -770,16 +704,16 @@ export default function PatroaiLanding() {
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(52,211,153,0.16),transparent_34%),radial-gradient(circle_at_80%_0%,rgba(125,92,255,0.15),transparent_30%),linear-gradient(180deg,#060813,#090d16_45%,#05060b)]" />
 
       <header className="sticky top-0 z-40 border-b border-white/10 bg-[#060813]/78 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
-          <a href="#top" className="flex items-center gap-3">
-            <img src="/patroai-assets/logo-patroai-novo.png" alt="Grupo Patroai" className="h-9 w-auto" />
-            <div>
-              <div className="text-xs font-black uppercase tracking-[0.28em] text-white">{t.brand}</div>
-              <div className="text-[11px] font-semibold text-white/45">{t.pillars}</div>
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 md:py-4 xl:flex-nowrap">
+          <a href="#top" className="flex min-w-0 items-center gap-3">
+            <img src="/patroai-assets/logo-patroai-novo.png" alt="Grupo Patroai" className="h-12 w-auto shrink-0 md:h-14" />
+            <div className="min-w-0">
+              <div className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.22em] text-white sm:text-xs">{t.brand}</div>
+              <div className="hidden text-[11px] font-semibold text-white/45 sm:block">{t.pillars}</div>
             </div>
           </a>
 
-          <nav className="hidden items-center gap-6 text-xs font-bold uppercase tracking-[0.16em] text-white/54 lg:flex">
+          <nav className="hidden items-center gap-4 text-[11px] font-bold uppercase tracking-[0.12em] text-white/54 xl:flex">
             <a href="#scope" className="hover:text-white">{t.nav.about}</a>
             <a href="#consultech" className="hover:text-white">{t.nav.consultech}</a>
             <a href="#holding" className="hover:text-white">{t.nav.holding}</a>
@@ -790,42 +724,42 @@ export default function PatroaiLanding() {
             <a href="#strategic-intake" className="hover:text-white">{t.nav.contact}</a>
           </nav>
 
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
             <a
               href={PATROAI_WHATSAPP_URL}
               target="_blank"
               rel="noreferrer noopener"
               title={t.auth.whatsappTitle}
-              className="hidden rounded-full border border-emerald-300/25 bg-emerald-300/10 px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-emerald-100 transition hover:border-emerald-200/55 hover:bg-emerald-300/16 md:inline-flex"
+              className="hidden whitespace-nowrap rounded-full border border-emerald-300/25 bg-emerald-300/10 px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-emerald-100 transition hover:border-emerald-200/55 hover:bg-emerald-300/16 md:inline-flex"
             >
               {t.auth.whatsapp}
             </a>
             <Link
               to="/auth?mode=login"
-              className="rounded-full border border-white/12 bg-white/[0.055] px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-white/78 transition hover:border-white/24 hover:text-white"
+              className="whitespace-nowrap rounded-full border border-white/12 bg-white/[0.055] px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-white/78 transition hover:border-white/24 hover:text-white"
             >
               {t.auth.login}
             </Link>
             <Link
               to="/auth?mode=register"
               title={t.auth.signupTitle}
-              className="hidden rounded-full border border-cyan-200/25 bg-cyan-200/10 px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-cyan-100 transition hover:border-cyan-200/55 hover:bg-cyan-200/16 sm:inline-flex"
+              className="inline-flex whitespace-nowrap rounded-full border border-cyan-200/25 bg-cyan-200/10 px-3 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-cyan-100 transition hover:border-cyan-200/55 hover:bg-cyan-200/16"
             >
-              {t.auth.signup}
+              <span className="hidden md:inline">{t.auth.signup}</span>
+              <span className="md:hidden">{t.auth.signupShort}</span>
             </Link>
-            <button
-              type="button"
-              onClick={() => setLocale(isEnglish ? "pt" : "en")}
+            <Link
+              to={languageHref}
               title={t.langTitle}
-              className="rounded-full border border-white/12 bg-white/[0.055] px-3 py-2 text-[11px] font-black tracking-[0.18em] text-white/80 transition hover:border-emerald-300/40 hover:text-white"
+              className="whitespace-nowrap rounded-full border border-white/12 bg-white/[0.055] px-3 py-2 text-[11px] font-black tracking-[0.18em] text-white/80 transition hover:border-emerald-300/40 hover:text-white"
             >
               {t.langToggle}
-            </button>
+            </Link>
           </div>
         </div>
       </header>
 
-      <section id="top" className="relative mx-auto grid max-w-7xl gap-12 px-4 pb-20 pt-20 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:pt-28">
+      <section id="top" className="relative mx-auto grid max-w-7xl gap-12 px-4 pb-20 pt-20 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:pt-24">
         <div>
           <div className="inline-flex rounded-full border border-emerald-300/25 bg-emerald-300/10 px-4 py-2 text-xs font-black uppercase tracking-[0.22em] text-emerald-100">
             {t.hero.badge}
