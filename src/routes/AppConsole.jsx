@@ -1,3 +1,4 @@
+// RTB05_REALTIME_CHAT_PERSISTENCE_AND_DOC_CONTEXT
 // AO69C-HF1_SMART_ACTIONS_INTERACTION_GOVERNANCE
 // AO69B-HF1_SMART_NEXT_ACTIONS_PREMIUM
 // AO68E-HF1_REALTIME_INLINE_CHAT_NO_TRANSCRIPT_MODAL_ADMIN_ORCH_VISUAL_PARITY
@@ -2886,6 +2887,7 @@ const messagesEndRef = useRef(null);
   const rtcAssistantFinalMessageIdRef = useRef(null);
   const rtcRealtimeInlineUserKeyRef = useRef("");
   const rtcRealtimeInlineAssistantKeyRef = useRef("");
+  const rtcRealtimeDocumentBridgeKeyRef = useRef("");
   const rtcAssistantFinalTextRef = useRef("");
   const rtcAssistantPendingFinalTextRef = useRef("");
   const rtcAssistantPendingFinalSourceRef = useRef("");
@@ -3581,11 +3583,12 @@ useEffect(() => {
       }
       if (lastErr) throw lastErr;
 
-      const normalized = orderChatMessages(
+      const normalizedFromServer = orderChatMessages(
         Array.isArray(data)
           ? data.map((item) => normalizeVisibleAssistantMessage(normalizeMessageSpeaker(item)))
           : []
       );
+      const normalized = mergeRealtimeInlineCachedTurns(normalizedFromServer, targetId);
       const sameRequest = requestSeq === messagesLoadRequestRef.current;
       const sameRequestedThread = requestedThreadIdRef.current === targetId;
       const sameActiveThread =
@@ -6412,6 +6415,147 @@ function scheduleRealtimeIdleFollowup() {
     return realtimeSummary.publish(reason, { ...(extra || {}), forceOpen: false });
   }
 
+
+  // RTB-05_REALTIME_CHAT_PERSISTENCE_AND_DOC_CONTEXT
+  // Mantém turnos finais do Realtime visíveis no chat após reload/reconciliação
+  // e cria uma ponte documental local para documentos anexados à thread.
+  function getRealtimeInlineCacheKey(targetThreadId = "") {
+    const tid = String(targetThreadId || threadId || activeThreadIdRef.current || "").trim();
+    return tid ? `orkio_realtime_inline_turns_v1:${tid}` : "";
+  }
+
+  function normalizeRealtimeCacheText(value = "") {
+    return normalizeRealtimeTranscriptText(value)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+  }
+
+  function readRealtimeInlineCachedTurns(targetThreadId = "") {
+    try {
+      const key = getRealtimeInlineCacheKey(targetThreadId);
+      if (!key || typeof window === "undefined" || !window.localStorage) return [];
+      const parsed = JSON.parse(window.localStorage.getItem(key) || "[]");
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .filter((item) => item && typeof item === "object")
+        .map((item) => ({
+          ...item,
+          role: String(item.role || "").toLowerCase() === "assistant" ? "assistant" : "user",
+          content: normalizeRealtimeTranscriptText(item.content || ""),
+          created_at: Number(item.created_at || 0) || Math.floor(Date.now() / 1000),
+          meta: {
+            ...(item.meta && typeof item.meta === "object" ? item.meta : {}),
+            realtime_inline_turn: true,
+            realtime_cache_restored: true,
+          },
+        }))
+        .filter((item) => item.content);
+    } catch {
+      return [];
+    }
+  }
+
+  function messageEquivalentForRealtimeCache(a, b) {
+    const roleA = String(a?.role || "").toLowerCase() === "assistant" ? "assistant" : "user";
+    const roleB = String(b?.role || "").toLowerCase() === "assistant" ? "assistant" : "user";
+    if (roleA !== roleB) return false;
+    return normalizeRealtimeCacheText(a?.content || "") === normalizeRealtimeCacheText(b?.content || "");
+  }
+
+  function mergeRealtimeInlineCachedTurns(messagesLike = [], targetThreadId = "") {
+    const base = Array.isArray(messagesLike) ? messagesLike : [];
+    const cached = readRealtimeInlineCachedTurns(targetThreadId);
+    if (!cached.length) return base;
+
+    const merged = [...base];
+    for (const turn of cached) {
+      const exists = merged.some((item) => messageEquivalentForRealtimeCache(item, turn));
+      if (!exists) merged.push(turn);
+    }
+    return orderChatMessages(merged);
+  }
+
+  function cacheRealtimeInlineChatTurn(messageLike, targetThreadId = "") {
+    try {
+      const tid = String(targetThreadId || threadId || activeThreadIdRef.current || "").trim();
+      const key = getRealtimeInlineCacheKey(tid);
+      if (!key || typeof window === "undefined" || !window.localStorage) return false;
+
+      const cleanText = normalizeRealtimeTranscriptText(messageLike?.content || "");
+      if (!cleanText) return false;
+
+      const item = {
+        id: String(messageLike?.id || `rtc_cache_${Date.now()}`),
+        role: String(messageLike?.role || "").toLowerCase() === "assistant" ? "assistant" : "user",
+        content: cleanText,
+        agent_id: messageLike?.agent_id || null,
+        agent_name: messageLike?.agent_name || (String(messageLike?.role || "").toLowerCase() === "assistant" ? "Orkio" : "Você"),
+        final_speaker: messageLike?.final_speaker || messageLike?.agent_name || null,
+        visible_agent: messageLike?.visible_agent || messageLike?.agent_name || null,
+        created_at: Number(messageLike?.created_at || 0) || Math.floor(Date.now() / 1000),
+        meta: {
+          ...(messageLike?.meta && typeof messageLike.meta === "object" ? messageLike.meta : {}),
+          realtime_inline_turn: true,
+          realtime_cached_locally: true,
+          realtime_session_id: rtcSessionIdRef.current || lastRealtimeSessionId || null,
+        },
+      };
+
+      const current = readRealtimeInlineCachedTurns(tid);
+      const exists = current.some((existing) => messageEquivalentForRealtimeCache(existing, item));
+      const next = exists ? current : current.concat([item]);
+      const trimmed = next.slice(-80);
+      window.localStorage.setItem(key, JSON.stringify(trimmed));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function persistRealtimeInlineChatTurnToThread(messageLike, targetThreadId = "") {
+    try {
+      const tid = String(targetThreadId || threadId || activeThreadIdRef.current || "").trim();
+      const cleanText = normalizeRealtimeTranscriptText(messageLike?.content || "");
+      if (!tid || !cleanText) return false;
+
+      // Best-effort: se o backend aceitar POST /api/messages, a transcrição
+      // passa a sobreviver também em outro navegador/dispositivo. Se não aceitar,
+      // o cache local acima preserva a UX sem quebrar a sessão.
+      await apiFetch("/api/messages", {
+        method: "POST",
+        token,
+        org: tenant,
+        skipAuthRedirect: true,
+        body: {
+          thread_id: tid,
+          role: String(messageLike?.role || "").toLowerCase() === "assistant" ? "assistant" : "user",
+          content: cleanText,
+          agent_id: messageLike?.agent_id || null,
+          agent_name: messageLike?.agent_name || null,
+          source: "realtime_inline_transcript",
+          meta: {
+            ...(messageLike?.meta && typeof messageLike.meta === "object" ? messageLike.meta : {}),
+            realtime_inline_turn: true,
+            realtime_session_id: rtcSessionIdRef.current || lastRealtimeSessionId || null,
+            client_generated_id: messageLike?.id || null,
+            marker: "RTB-05_REALTIME_CHAT_PERSISTENCE",
+          },
+        },
+      });
+      return true;
+    } catch (err) {
+      try {
+        console.info("RTB05_REALTIME_INLINE_PERSIST_BEST_EFFORT_SKIPPED", {
+          status: err?.status || null,
+          message: err?.message || null,
+        });
+      } catch {}
+      return false;
+    }
+  }
+
   function buildRealtimeInlineDedupeKey(role, content) {
     const safeRole = String(role || "").trim().toLowerCase() === "assistant" ? "assistant" : "user";
     const safeContent = normalizeRealtimeTranscriptText(content)
@@ -6450,7 +6594,7 @@ function scheduleRealtimeIdleFollowup() {
 
       if (lastKey && lastKey === dedupeKey) return list;
 
-      return list.concat([{
+      const realtimeMessage = {
         id: `rtc_${safeRole}_${Date.now()}_${Math.random().toString(16).slice(2)}`,
         role: safeRole,
         content: cleanText,
@@ -6466,7 +6610,12 @@ function scheduleRealtimeIdleFollowup() {
           source: meta?.source || "realtime_final_transcript",
           marker: "AO68E-HF1_REALTIME_INLINE_CHAT",
         },
-      }]);
+      };
+
+      try { cacheRealtimeInlineChatTurn(realtimeMessage, threadId || activeThreadIdRef.current || ""); } catch {}
+      try { void persistRealtimeInlineChatTurnToThread(realtimeMessage, threadId || activeThreadIdRef.current || ""); } catch {}
+
+      return list.concat([realtimeMessage]);
     });
 
     try {
@@ -6718,6 +6867,7 @@ function scheduleRealtimeIdleFollowup() {
     try { rtcAudioTranscriptBufRef.current = ""; } catch {}
     try { rtcLastFinalTranscriptRef.current = ""; } catch {}
     try { rtcLastAssistantFinalRef.current = ""; } catch {}
+    try { rtcRealtimeDocumentBridgeKeyRef.current = ""; } catch {}
     try { rtcAssistantFinalCommittedRef.current = false; } catch {}
     try { rtcAssistantFinalMessageIdRef.current = null; } catch {}
     try { rtcAssistantFinalTextRef.current = ""; } catch {}
@@ -8125,6 +8275,8 @@ function scheduleRealtimeIdleFollowup() {
           logRealtimeStep("runtime:transcription_language_update_failed", { message: err?.message || null });
         }
 
+        try { bridgeCachedThreadDocumentsToRealtime("data_channel_open"); } catch {}
+
         // AO66R: send a proof-of-audio greeting and, if the provider does not emit
         // response.created quickly, send one fallback conversation item + response.create.
         // This separates "session/call opened" from "audio response actually activated".
@@ -8947,7 +9099,7 @@ function scheduleRealtimeIdleFollowup() {
       setMessages((prev) => {
         const exists = (prev || []).some((m) => String(m?.id || "") === evId);
         if (exists) return prev;
-        return (prev || []).concat([{
+        const backendRealtimeMessage = {
           id: evId,
           role: "assistant",
           content,
@@ -8955,7 +9107,11 @@ function scheduleRealtimeIdleFollowup() {
           agent_name: agentName,
           voice_id: resolvedVoice,
           created_at: Math.floor(Date.now() / 1000),
-        }]);
+          meta: { realtime_assistant_transcript: true, realtime_inline_turn: true, source: "backend_realtime_session" },
+        };
+        try { cacheRealtimeInlineChatTurn(backendRealtimeMessage, threadId || activeThreadIdRef.current || ""); } catch {}
+        try { void persistRealtimeInlineChatTurnToThread(backendRealtimeMessage, threadId || activeThreadIdRef.current || ""); } catch {}
+        return (prev || []).concat([backendRealtimeMessage]);
       });
 
       setUploadStatus(`📝 ${agentName}: ${content.slice(0, 80)}${content.length > 80 ? '…' : ''}`);
@@ -9172,15 +9328,20 @@ function scheduleRealtimeIdleFollowup() {
       } else {
         const mid = `rtc_ass_${Date.now()}_${Math.random().toString(16).slice(2)}`;
         rtcAssistantFinalMessageIdRef.current = mid;
-        setMessages((prev) => prev.concat([{
+        const assistantRealtimeMessage = {
           id: mid,
           role: "assistant",
           content: finalText,
           agent_id: agentId2 ? String(agentId2) : null,
           agent_name: agentName2,
+          final_speaker: agentName2,
+          visible_agent: agentName2,
           created_at: Math.floor(Date.now()/1000),
-          meta: { realtime_assistant_transcript: true, source },
-        }]));
+          meta: { realtime_assistant_transcript: true, realtime_inline_turn: true, source },
+        };
+        try { cacheRealtimeInlineChatTurn(assistantRealtimeMessage, threadId || activeThreadIdRef.current || ""); } catch {}
+        try { void persistRealtimeInlineChatTurnToThread(assistantRealtimeMessage, threadId || activeThreadIdRef.current || ""); } catch {}
+        setMessages((prev) => prev.concat([assistantRealtimeMessage]));
       }
     } catch {}
 
@@ -10167,7 +10328,256 @@ async function stopRealtime(reason = 'client_stop') {
     setUploadOpen(true);
   }
 
-  function bridgeUploadedFileToRealtime(uploadResult, file) {
+
+  const RTB05_REALTIME_DOCUMENT_TEXT_LIMIT = 16000;
+  const RTB05_REALTIME_DOCUMENT_CACHE_LIMIT = 5;
+
+  function getRealtimeDocumentCacheKey(targetThreadId = "") {
+    const tid = String(targetThreadId || threadId || activeThreadIdRef.current || "").trim();
+    return tid ? `orkio_realtime_documents_v1:${tid}` : "";
+  }
+
+  function extractTextCandidateFromUploadPayload(payloadLike) {
+    try {
+      const payload = payloadLike?.data && typeof payloadLike.data === "object"
+        ? payloadLike.data
+        : (payloadLike || {});
+
+      const directCandidates = [
+        payload?.extracted_text,
+        payload?.extractedText,
+        payload?.text,
+        payload?.content,
+        payload?.document_text,
+        payload?.documentText,
+        payload?.preview_text,
+        payload?.previewText,
+        payload?.summary,
+      ];
+
+      for (const candidate of directCandidates) {
+        const value = String(candidate || "").trim();
+        if (value) return value;
+      }
+
+      const chunkCandidates = [
+        payload?.chunks,
+        payload?.document_chunks,
+        payload?.documentChunks,
+        payload?.excerpts,
+        payload?.snippets,
+      ];
+
+      for (const arr of chunkCandidates) {
+        if (!Array.isArray(arr) || !arr.length) continue;
+        const joined = arr
+          .map((item) => {
+            if (typeof item === "string") return item;
+            if (!item || typeof item !== "object") return "";
+            return item.text || item.content || item.excerpt || item.snippet || item.body || "";
+          })
+          .map((item) => String(item || "").trim())
+          .filter(Boolean)
+          .join("\n\n");
+        if (joined.trim()) return joined.trim();
+      }
+    } catch {}
+    return "";
+  }
+
+  function isClientReadableTextFile(file) {
+    try {
+      const name = String(file?.name || "").toLowerCase();
+      const type = String(file?.type || "").toLowerCase();
+      if (type.startsWith("text/")) return true;
+      if (type.includes("json") || type.includes("csv") || type.includes("xml") || type.includes("markdown")) return true;
+      return /\.(txt|md|markdown|csv|json|xml|html|css|js|jsx|ts|tsx|py|rb|php|java|go|rs|sql|yml|yaml|toml|ini|log)$/i.test(name);
+    } catch {
+      return false;
+    }
+  }
+
+  async function readClientSideDocumentExcerpt(file) {
+    try {
+      if (!file || !isClientReadableTextFile(file)) return "";
+      if (typeof file.text !== "function") return "";
+      const raw = await file.text();
+      return String(raw || "").trim();
+    } catch {
+      return "";
+    }
+  }
+
+  async function resolveRealtimeDocumentText(uploadResult, file) {
+    const fromBackend = extractTextCandidateFromUploadPayload(uploadResult);
+    if (fromBackend) return { text: fromBackend, source: "backend_upload_payload" };
+
+    const fromClient = await readClientSideDocumentExcerpt(file);
+    if (fromClient) return { text: fromClient, source: "client_file_text" };
+
+    return { text: "", source: "" };
+  }
+
+  function buildRealtimeDocumentCacheItem(uploadResult, file, documentText = "", source = "") {
+    const payload = uploadResult?.data && typeof uploadResult.data === "object"
+      ? uploadResult.data
+      : (uploadResult || {});
+    const filename = String(payload?.filename || file?.name || "arquivo").trim() || "arquivo";
+    const fileId = String(payload?.file_id || payload?.id || payload?.document_id || "").trim();
+    const size = Number(file?.size || payload?.size || 0) || 0;
+    const lastModified = Number(file?.lastModified || 0) || 0;
+    const cacheId = `${fileId || filename}:${size}:${lastModified}`;
+    const textValue = String(documentText || "").trim();
+    const excerpt = textValue.slice(0, RTB05_REALTIME_DOCUMENT_TEXT_LIMIT);
+
+    return {
+      id: cacheId,
+      file_id: fileId || null,
+      filename,
+      size,
+      last_modified: lastModified,
+      text: excerpt,
+      truncated: textValue.length > excerpt.length,
+      source: source || "",
+      cached_at: Math.floor(Date.now() / 1000),
+      extracted_chars: Number(payload?.extracted_chars || textValue.length || 0) || 0,
+      chunks_created: Number(payload?.chunks_created || 0) || 0,
+      extraction_failed: payload?.extraction_failed === true,
+    };
+  }
+
+  function cacheRealtimeDocumentContext(targetThreadId, uploadResult, file, documentText = "", source = "") {
+    try {
+      const tid = String(targetThreadId || threadId || activeThreadIdRef.current || "").trim();
+      const key = getRealtimeDocumentCacheKey(tid);
+      if (!key || typeof window === "undefined" || !window.localStorage) return null;
+
+      const item = buildRealtimeDocumentCacheItem(uploadResult, file, documentText, source);
+      if (!item.filename) return null;
+
+      const current = JSON.parse(window.localStorage.getItem(key) || "[]");
+      const list = Array.isArray(current) ? current : [];
+      const filtered = list.filter((existing) => String(existing?.id || "") !== String(item.id || ""));
+      const next = filtered.concat([item]).slice(-RTB05_REALTIME_DOCUMENT_CACHE_LIMIT);
+      window.localStorage.setItem(key, JSON.stringify(next));
+      return item;
+    } catch {
+      return null;
+    }
+  }
+
+  function readRealtimeDocumentContextCache(targetThreadId = "") {
+    try {
+      const key = getRealtimeDocumentCacheKey(targetThreadId);
+      if (!key || typeof window === "undefined" || !window.localStorage) return [];
+      const parsed = JSON.parse(window.localStorage.getItem(key) || "[]");
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .filter((item) => item && typeof item === "object")
+        .map((item) => ({
+          ...item,
+          filename: String(item.filename || "arquivo").trim() || "arquivo",
+          text: String(item.text || "").trim(),
+          id: String(item.id || item.filename || "").trim(),
+        }))
+        .filter((item) => item.filename);
+    } catch {
+      return [];
+    }
+  }
+
+  function sendRealtimeDocumentContextItem(documentItem, reason = "document_context") {
+    try {
+      if (!documentItem || !realtimeModeRef.current || !rtcSessionIdRef.current) return false;
+      const dc = rtcDcRef.current;
+      if (!dc || dc.readyState !== "open") return false;
+
+      const filename = String(documentItem.filename || "arquivo").trim() || "arquivo";
+      const docText = String(documentItem.text || "").trim();
+      const source = String(documentItem.source || "").trim();
+      const truncated = Boolean(documentItem.truncated);
+      const extractedChars = Number(documentItem.extracted_chars || docText.length || 0) || 0;
+      const chunksCreated = Number(documentItem.chunks_created || 0) || 0;
+      const extractionFailed = documentItem.extraction_failed === true;
+
+      const documentBlock = docText
+        ? [
+            `CONTEÚDO DISPONÍVEL DO DOCUMENTO "${filename}":`,
+            docText,
+            truncated ? "[Trecho truncado para caber no contexto da sessão Realtime. Use o chat textual para análise integral se necessário.]" : "",
+          ].filter(Boolean).join("\n\n")
+        : "O conteúdo integral do documento ainda não foi fornecido ao Realtime; apenas os metadados do upload estão disponíveis.";
+
+      const contextText = [
+        "CONTEXTO DOCUMENTAL DA THREAD:",
+        `O usuário anexou o arquivo "${filename}" à conversa atual.`,
+        extractionFailed
+          ? "O upload foi concluído, mas a extração de texto falhou."
+          : extractedChars > 0 || chunksCreated > 0
+            ? `O backend registrou indexação ou extração (${extractedChars || 0} caracteres; ${chunksCreated || 0} trechos).`
+            : "Não há confirmação completa de indexação pelo backend.",
+        source ? `Fonte do contexto enviado ao Realtime: ${source}.` : "",
+        documentBlock,
+        "Regra: use o conteúdo acima quando o usuário perguntar sobre o documento. Não diga que não recebeu o arquivo se este contexto estiver presente. Não invente conteúdo ausente.",
+      ].filter(Boolean).join("\n\n");
+
+      const sent = sendRealtimeClientEvent(dc, {
+        type: "conversation.item.create",
+        item: {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: contextText }],
+        },
+      }, `rtb05:${reason}`);
+
+      if (sent) {
+        queueRealtimeTelemetry("document_context_attached", {
+          filename,
+          hasText: Boolean(docText),
+          textLength: docText.length,
+          source,
+          reason,
+        });
+        return true;
+      }
+    } catch (err) {
+      logRealtimeStep("rtb05:document_context_send_failed", {
+        filename: documentItem?.filename || null,
+        message: err?.message || null,
+      });
+    }
+    return false;
+  }
+
+  function bridgeCachedThreadDocumentsToRealtime(reason = "data_channel_open") {
+    try {
+      const tid = String(threadId || activeThreadIdRef.current || "").trim();
+      if (!tid || !realtimeModeRef.current || !rtcSessionIdRef.current) return false;
+      const docs = readRealtimeDocumentContextCache(tid).filter((item) => String(item.text || "").trim());
+      if (!docs.length) return false;
+
+      const bridgeKey = `${rtcSessionIdRef.current}:${docs.map((item) => item.id).join("|")}`;
+      if (rtcRealtimeDocumentBridgeKeyRef.current === bridgeKey) return false;
+
+      let sentCount = 0;
+      for (const doc of docs.slice(-RTB05_REALTIME_DOCUMENT_CACHE_LIMIT)) {
+        if (sendRealtimeDocumentContextItem(doc, reason)) sentCount += 1;
+      }
+      if (sentCount > 0) {
+        rtcRealtimeDocumentBridgeKeyRef.current = bridgeKey;
+        logRealtimeStep("rtb05:cached_documents_bridged", {
+          reason,
+          count: sentCount,
+          threadId: tid,
+        });
+      }
+      return sentCount > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  async function bridgeUploadedFileToRealtime(uploadResult, file, options = {}) {
     try {
       if (!realtimeModeRef.current || !rtcSessionIdRef.current) return false;
       const dc = rtcDcRef.current;
@@ -10180,21 +10590,37 @@ async function stopRealtime(reason = 'client_stop') {
       const extractedChars = Number(payload?.extracted_chars || 0);
       const chunksCreated = Number(payload?.chunks_created || 0);
       const extractionFailed = payload?.extraction_failed === true;
+      const { text: documentText, source: documentTextSource } = await resolveRealtimeDocumentText(uploadResult, file);
+      const targetThreadId = String(options?.threadId || threadId || activeThreadIdRef.current || "").trim();
+      const cachedDocument = cacheRealtimeDocumentContext(targetThreadId, uploadResult, file, documentText, documentTextSource);
       const processingStatus = extractionFailed
         ? "O upload foi concluído, mas a extração de texto falhou."
         : extractedChars > 0 || chunksCreated > 0
           ? `O backend registrou a indexação do documento (${extractedChars || 0} caracteres; ${chunksCreated || 0} trechos).`
-          : "O upload foi concluído, mas este evento não confirma a extração integral do conteúdo.";
+          : documentText
+            ? "O conteúdo do documento foi disponibilizado ao Realtime por ponte local segura."
+            : "O upload foi concluído, mas este evento não confirma a extração integral do conteúdo.";
+
+      const documentContext = documentText
+        ? [
+            `CONTEÚDO DISPONÍVEL DO DOCUMENTO "${filename}":`,
+            documentText.slice(0, RTB05_REALTIME_DOCUMENT_TEXT_LIMIT),
+            documentText.length > RTB05_REALTIME_DOCUMENT_TEXT_LIMIT
+              ? "[Trecho truncado para caber no contexto da sessão Realtime. Use o chat textual para análise integral se necessário.]"
+              : "",
+          ].filter(Boolean).join("\n\n")
+        : "Este evento transmite metadados do upload, mas não recebeu o texto integral do documento.";
 
       const contextText = [
-        "CONTEXTO OPERACIONAL DO SISTEMA:",
+        "CONTEXTO DOCUMENTAL DA THREAD:",
         `O usuário acabou de anexar o arquivo "${filename}" à thread atual.`,
         processingStatus,
+        documentTextSource ? `Fonte do contexto documental: ${documentTextSource}.` : "",
+        documentContext,
         "Reconheça que o anexo foi recebido e está vinculado à conversa.",
-        "Este evento transmite metadados do upload, não o texto integral do documento.",
-        "Não invente conteúdo nem diga que o anexo não chegou.",
-        "Se o usuário pedir análise detalhada, informe com transparência que a ponte documental completa do Realtime ainda precisa fornecer o conteúdo extraído; o chat por texto pode ser usado enquanto isso.",
-      ].join(" ");
+        "Use o conteúdo acima quando o usuário pedir análise do documento.",
+        "Não invente conteúdo ausente e não diga que o anexo não chegou quando este contexto estiver presente.",
+      ].filter(Boolean).join("\n\n");
 
       const sent = sendRealtimeClientEvent(dc, {
         type: "conversation.item.create",
@@ -10211,12 +10637,18 @@ async function stopRealtime(reason = 'client_stop') {
           extractedChars,
           chunksCreated,
           extractionFailed,
+          hasDocumentText: Boolean(documentText),
+          documentTextLength: documentText.length,
+          cached: Boolean(cachedDocument),
         });
         logRealtimeStep("ao72b_hf1:file_upload_context_attached", {
           filename,
           extractedChars,
           chunksCreated,
           extractionFailed,
+          hasDocumentText: Boolean(documentText),
+          documentTextLength: documentText.length,
+          cached: Boolean(cachedDocument),
         });
       }
       return Boolean(sent);
@@ -10251,14 +10683,14 @@ async function stopRealtime(reason = 'client_stop') {
       if (uploadScope === "thread") {
         console.info("[Upload] start", { scope: "thread", filename: f?.name, threadId: effectiveThreadId, size: f?.size || null });
         const uploadResult = await uploadFile(f, { token, org: tenant, threadId: effectiveThreadId, intent: "chat" });
-        const realtimeBridged = bridgeUploadedFileToRealtime(uploadResult, f);
+        const realtimeBridged = await bridgeUploadedFileToRealtime(uploadResult, f, { threadId: effectiveThreadId });
         setUploadStatus(realtimeBridged ? "Arquivo anexado e sinalizado ao Realtime ✅" : "Arquivo anexado à conversa ✅");
         try { await loadMessages(effectiveThreadId, { force: true, expectedEpoch: activeThreadEpochRef.current }); } catch {}
       } else if (uploadScope === "agents") {
         if (!canAccessAdmin) {
           setUploadStatus("No beta público, arquivos são anexados à conversa com Orkio.");
           const uploadResult = await uploadFile(f, { token, org: tenant, threadId: effectiveThreadId, intent: "chat" });
-          const realtimeBridged = bridgeUploadedFileToRealtime(uploadResult, f);
+          const realtimeBridged = await bridgeUploadedFileToRealtime(uploadResult, f, { threadId: effectiveThreadId });
           setUploadStatus(realtimeBridged ? "Arquivo anexado e sinalizado ao Realtime ✅" : "Arquivo anexado à conversa ✅");
           try { await loadMessages(effectiveThreadId, { force: true, expectedEpoch: activeThreadEpochRef.current }); } catch {}
           return;
@@ -10275,7 +10707,7 @@ async function stopRealtime(reason = 'client_stop') {
         const admin = isAdmin(user);
         if (admin) {
           const uploadResult = await uploadFile(f, { token, org: tenant, threadId: effectiveThreadId, intent: "institutional", linkAllAgents: true });
-          const realtimeBridged = bridgeUploadedFileToRealtime(uploadResult, f);
+          const realtimeBridged = await bridgeUploadedFileToRealtime(uploadResult, f, { threadId: effectiveThreadId });
           setUploadStatus(realtimeBridged ? "Arquivo institucional anexado e sinalizado ao Realtime ✅" : "Arquivo institucional (global) ✅");
           // STAB: reload com effectiveThreadId para garantir que mensagem system aparece
           try {
@@ -10284,7 +10716,7 @@ async function stopRealtime(reason = 'client_stop') {
         } else {
           // B2: request institutionalization; keep accessible in this thread
           const uploadResult = await uploadFile(f, { token, org: tenant, threadId: effectiveThreadId, intent: "chat", institutionalRequest: true });
-          const realtimeBridged = bridgeUploadedFileToRealtime(uploadResult, f);
+          const realtimeBridged = await bridgeUploadedFileToRealtime(uploadResult, f, { threadId: effectiveThreadId });
           setUploadStatus(realtimeBridged ? "Solicitação anexada e sinalizada ao Realtime ✅" : "Solicitação enviada ao admin (institucional) ✅");
           try { await loadMessages(effectiveThreadId, { force: true, expectedEpoch: activeThreadEpochRef.current }); } catch {}
         }
