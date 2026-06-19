@@ -681,6 +681,12 @@ async function openKnowledgeModal(agent) {
           >
             Evolution Center ↗
           </button>
+          <button
+            onClick={() => nav("/admin/intake")}
+            className="rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/20"
+          >
+            Strategic Intake ↗
+          </button>
         </div>
 
         {err ? (
