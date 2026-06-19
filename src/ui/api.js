@@ -1113,3 +1113,29 @@ export function buildSignupUrlFromPrechat(base = "/auth") {
   if (context?.prechat_id) qs.set("prechat_id", context.prechat_id);
   return `${base}?${qs.toString()}`;
 }
+
+// RTB09_PUBLIC_STRATEGIC_INTAKE — qualified pre-onboarding.
+// This does not create users and does not grant platform access.
+export async function submitStrategicIntake(payload) {
+  return apiFetch("/api/public/intake", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function listStrategicIntakeSubmissions({ status = "", intake_type = "", limit = 100 } = {}) {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (intake_type) params.set("intake_type", intake_type);
+  if (limit) params.set("limit", String(limit));
+  const qs = params.toString();
+  return apiFetch(`/api/admin/intake/submissions${qs ? `?${qs}` : ""}`);
+}
+
+export async function updateStrategicIntakeSubmission(id, payload) {
+  return apiFetch(`/api/admin/intake/submissions/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
