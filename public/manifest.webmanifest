@@ -1,21 +1,21 @@
 {
-  "id": "/app",
-  "name": "Patroai AI Factory — Orkio",
-  "short_name": "Orkio",
-  "description": "Orkio é a inteligência da Patroai, uma AI Factory que cria agentes, plataformas e automações para empresas.",
-  "start_url": "/app",
+  "id": "/",
+  "name": "Grupo Patroai",
+  "short_name": "Patroai",
+  "description": "Consultech, Holding e AI Factory para consultoria estratégica, valuation, inteligência artificial, ESG e desenvolvimento de negócios.",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "theme_color": "#030713",
   "background_color": "#030713",
   "icons": [
     {
-      "src": "/icons/orkio-192.png",
+      "src": "/icon-192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "/icons/orkio-512.png",
+      "src": "/icon-512.png",
       "sizes": "512x512",
       "type": "image/png"
     }
