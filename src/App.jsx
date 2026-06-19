@@ -2,7 +2,6 @@ import React from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import PatroaiLanding from "./routes/PatroaiLanding.jsx";
-import Landing from "./routes/Landing.jsx";
 import AuthPage from "./routes/AuthPage.jsx";
 import AppConsole from "./routes/AppConsole.jsx";
 import AdminConsole from "./routes/AdminConsole.jsx";
@@ -26,7 +25,10 @@ export default function App() {
       <Routes>
         <Route path="/" element={<PatroaiLanding />} />
         <Route path="/patroai" element={<PatroaiLanding />} />
-        <Route path="/orkio" element={<Landing />} />
+        <Route path="/empresas" element={<PatroaiLanding />} />
+        <Route path="/investidores" element={<PatroaiLanding />} />
+        <Route path="/consultores" element={<PatroaiLanding />} />
+        <Route path="/orkio" element={<Navigate to="/" replace />} />
         <Route path="/beta" element={<BetaAccessGate />} />
         <Route path="/auth" element={<BetaAccessGate><AuthPage /></BetaAccessGate>} />
         <Route path="/app" element={<BetaAccessGate><AppConsole /></BetaAccessGate>} />
