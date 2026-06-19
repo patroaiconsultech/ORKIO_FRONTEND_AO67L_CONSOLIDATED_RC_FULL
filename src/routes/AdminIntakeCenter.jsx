@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import {
   listStrategicIntakeSubmissions,
   updateStrategicIntakeSubmission,
 } from "../ui/api.js";
+import { getToken } from "../lib/auth.js";
 
 const STATUS_OPTIONS = [
   ["", "Todos"],
@@ -74,6 +75,28 @@ function DetailRow({ label, value }) {
       <div className="text-[11px] font-black uppercase tracking-[0.18em] text-white/36">{label}</div>
       <div className="mt-2 break-words text-sm font-semibold leading-6 text-white/78">{compact(value)}</div>
     </div>
+  );
+}
+
+function PrivateAccessState({ title, message }) {
+  return (
+    <main className="min-h-screen bg-[#060813] px-4 py-10 text-white">
+      <section className="mx-auto flex min-h-[70vh] max-w-3xl items-center justify-center">
+        <div className="rounded-[2rem] border border-white/10 bg-white/[0.045] p-8 text-center shadow-2xl shadow-black/20">
+          <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-300/20 bg-emerald-300/10 text-lg font-black text-emerald-100">
+            GP
+          </div>
+          <h1 className="text-3xl font-black tracking-[-0.04em] md:text-4xl">{title}</h1>
+          <p className="mt-4 text-sm font-semibold leading-7 text-white/58">{message}</p>
+          <Link
+            to="/auth?mode=login"
+            className="mt-6 inline-flex rounded-2xl border border-emerald-300/25 bg-emerald-300/12 px-5 py-3 text-sm font-black text-emerald-50 transition hover:border-emerald-200/55 hover:bg-emerald-300/18"
+          >
+            Ir para login
+          </Link>
+        </div>
+      </section>
+    </main>
   );
 }
 
@@ -181,14 +204,31 @@ function IntakeCard({ item, onUpdate, busy }) {
 }
 
 export default function AdminIntakeCenter() {
+  const hasAuthToken = useMemo(() => {
+    try {
+      return Boolean(getToken());
+    } catch {
+      return false;
+    }
+  }, []);
+
   const [status, setStatus] = useState("");
   const [intakeType, setIntakeType] = useState("");
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [authorized, setAuthorized] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
 
   async function load() {
+    if (!hasAuthToken) {
+      setItems([]);
+      setAuthorized(false);
+      setAuthChecked(true);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -198,9 +238,17 @@ export default function AdminIntakeCenter() {
         limit: 200,
       });
       setItems(Array.isArray(res?.items) ? res.items : []);
+      setAuthorized(true);
     } catch (err) {
-      setError(err?.message || "Não foi possível carregar os cadastros.");
+      const statusCode = Number(err?.status || 0);
+      if (statusCode === 401 || statusCode === 403 || err?.isAuthError) {
+        setAuthorized(false);
+        setError("");
+      } else {
+        setError(err?.message || "Não foi possível carregar os cadastros.");
+      }
     } finally {
+      setAuthChecked(true);
       setLoading(false);
     }
   }
@@ -208,9 +256,13 @@ export default function AdminIntakeCenter() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, intakeType]);
+  }, [status, intakeType, hasAuthToken]);
 
   async function updateStatus(id, nextStatus) {
+    if (!hasAuthToken || !authorized) {
+      setError("Acesso restrito.");
+      return;
+    }
     setBusyId(id);
     setError("");
     try {
@@ -234,6 +286,28 @@ export default function AdminIntakeCenter() {
     });
     return result;
   }, [items]);
+
+  if (!hasAuthToken) {
+    return <Navigate to="/auth?mode=login&returnTo=%2Fadmin%2Fintake" replace />;
+  }
+
+  if (loading && !authChecked) {
+    return (
+      <PrivateAccessState
+        title="Verificando autorização"
+        message="Este ambiente é privado e exige autenticação administrativa antes de exibir qualquer estrutura interna."
+      />
+    );
+  }
+
+  if (authChecked && !authorized) {
+    return (
+      <PrivateAccessState
+        title="Acesso restrito"
+        message="Esta área é exclusiva para administração autorizada do Grupo Patroai."
+      />
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[#060813] px-4 py-10 text-white">
