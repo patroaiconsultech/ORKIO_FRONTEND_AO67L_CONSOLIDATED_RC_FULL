@@ -1,15 +1,15 @@
 import usePatroaiSeo from "../lib/usePatroaiSeo.js"; import React, { useMemo, useState } from "react";
 
-const PUBLIC_CODE = "EFATAH777,AMCHAMRSORKIO";
-const STORAGE_KEY = "orkio_internal_gate_passed";
-const BETA_ACCESS_CODE_STORAGE_KEY = "orkio_beta_access_code";
+const PUBLIC_CODE = "EFATAH777";
+const STORAGE_KEY = "patroai_private_gate_passed";
+const BETA_ACCESS_CODE_STORAGE_KEY = "patroai_private_access_code";
 
 function normalize(value) {
   return String(value || "").replace(/\s+/g, "").trim().toUpperCase();
 }
 
 function getAllowedCodes() {
-  const raw = import.meta.env.VITE_ORKIO_BETA_ACCESS_CODES || PUBLIC_CODE;
+  const raw = import.meta.env.VITE_PATROAI_PRIVATE_ACCESS_CODES || PUBLIC_CODE;
 
   return String(raw || "")
     .split(/[;,\n]/g)
@@ -71,7 +71,7 @@ export default function BetaAccessGate({ children = null }) { usePatroaiSeo();
     consent: false,
   });
 
-  const internalCode = normalize(import.meta.env.VITE_ORKIO_INTERNAL_GATE_CODE);
+  const internalCode = normalize(import.meta.env.VITE_PATROAI_INTERNAL_GATE_CODE);
 
   function unlockInternal() {
     try {
@@ -136,7 +136,7 @@ export default function BetaAccessGate({ children = null }) { usePatroaiSeo();
           email: form.email,
           consent: form.consent,
           access_code: normalize(code) || getAllowedCodes()[0] || "EFATAH777",
-          source: "orkio_closed_beta_gate",
+          source: "patroai_private_access_gate",
         }),
       });
 
@@ -215,7 +215,7 @@ export default function BetaAccessGate({ children = null }) { usePatroaiSeo();
             fontWeight: 900,
           }}
         >
-          ORKIO OS
+          Ambiente privado Grupo Patroai
         </div>
 
         <h1
@@ -238,7 +238,7 @@ export default function BetaAccessGate({ children = null }) { usePatroaiSeo();
                 maxWidth: 640,
               }}
             >
-              Estamos realizando melhorias estruturais na nova geração do ORKIO OS.
+              Estamos realizando melhorias estruturais em nosso ambiente privado de inteligência aplicada.
               Neste momento, o acesso antecipado está temporariamente restrito para
               garantir a melhor experiência possível.
             </p>
@@ -337,7 +337,7 @@ export default function BetaAccessGate({ children = null }) { usePatroaiSeo();
                   style={{ marginTop: 3 }}
                 />
                 <span>
-                  Autorizo a equipe ORKIO/PATROAI a entrar em contato sobre atualizações da plataforma.
+                  Autorizo a equipe do Grupo Patroai a entrar em contato sobre atualizações do ambiente privado.
                 </span>
               </label>
 
@@ -356,10 +356,10 @@ export default function BetaAccessGate({ children = null }) { usePatroaiSeo();
           <div style={{ marginTop: 24, display: "grid", gap: 14 }}>
             <h2 style={{ margin: 0, fontSize: 26 }}>Cadastro registrado com sucesso.</h2>
             <p style={{ color: "rgba(255,255,255,0.78)", lineHeight: 1.65 }}>
-              Avisaremos você por e-mail assim que for possível acessar a próxima fase do ORKIO OS.
+              Avisaremos você por e-mail assim que for possível acessar a próxima fase do ambiente privado.
               Obrigado pela sua confiança. Estamos trabalhando para fazer algo realmente incrível.
             </p>
-            <div style={{ color: "#facc15", fontWeight: 900 }}>Equipe ORKIO • PATROAI</div>
+            <div style={{ color: "#facc15", fontWeight: 900 }}>Equipe Grupo Patroai</div>
           </div>
         ) : null}
       </section>
