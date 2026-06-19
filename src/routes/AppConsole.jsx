@@ -2149,16 +2149,18 @@ function suggestOnboardingLanguage(country) {
 
 // AO68A-HF5 — Realtime language propagation from onboarding.
 // Keeps AMCHAM/PT-EN demos bilingual without forcing a global STT language.
+// RTB-04_REALTIME_PRODUCT_IDENTITY_LOCK
+// Mantém a identidade de produto Orkio/Patroai no Realtime.
+// Regra: memória/contexto da thread vem do backend RTB-03.
+// Aqui o frontend apenas evita que session.update/response.create faça o modelo voltar
+// para uma identidade genérica de provedor.
 function normalizeRealtimeLanguageProfile(raw) {
   const value = String(raw || "").trim();
   if (!value || value.toLowerCase() === "auto") return "auto";
-
   const normalized = value.toLowerCase().replace("_", "-");
-
   if (normalized === "pt" || normalized.startsWith("pt-")) return "pt";
   if (normalized === "en" || normalized.startsWith("en-")) return "en";
   if (normalized === "es" || normalized.startsWith("es-")) return "es";
-
   return "auto";
 }
 
@@ -2182,42 +2184,121 @@ function getUserOnboardingLanguage(userObj, formObj) {
   return "auto";
 }
 
+const ORKIO_RTB04_FOUNDER_ADMIN_EMAILS = new Set([
+  "daniel@patroai.com",
+  "dangraebin@gmail.com",
+]);
+
+function normalizeEmailForRealtimeIdentity(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getRealtimeCurrentUserForIdentity() {
+  try {
+    return getUser?.() || {};
+  } catch {
+    return {};
+  }
+}
+
+function isAuthorizedFounderRealtimeUser(userObj = null) {
+  const userLike = userObj || getRealtimeCurrentUserForIdentity();
+  const email = normalizeEmailForRealtimeIdentity(
+    userLike?.email ||
+      userLike?.user_email ||
+      userLike?.login_email ||
+      userLike?.profile?.email ||
+      ""
+  );
+
+  return Boolean(email && ORKIO_RTB04_FOUNDER_ADMIN_EMAILS.has(email));
+}
+
+function buildOrkioRealtimeProductIdentityLock(languageProfile = "auto") {
+  const lang = normalizeRealtimeLanguageProfile(languageProfile);
+  const founder = isAuthorizedFounderRealtimeUser();
+
+  if (lang === "en") {
+    return [
+      "ORKIO/PATROAI PRODUCT IDENTITY — HIGH PRIORITY",
+      "- You are Orkio, the AI platform/agent of Patroai Consultech.",
+      "- The Orkio/Patroai platform was created by Patroai Consultech under the direct leadership of Daniel Graebin.",
+      "- When asked who created you, answer about the Orkio/Patroai product identity, not as a generic base model.",
+      "- You may mention that the platform can use external AI model providers when relevant, but do not say that your product identity was created by OpenAI.",
+      "- Never claim that a common user is Daniel Graebin unless the authenticated e-mail is explicitly authorized.",
+      founder
+        ? "- Authenticated founder context: the current user is Daniel Graebin, Founder and CEO of Patroai Consultech, and creator of the Orkio/Patroai platform. Treat him as founder/admin in governed internal context."
+        : "- For common users, do not expose founder/admin identity context; only use the user's own authorized thread context.",
+    ].join("\n");
+  }
+
+  if (lang === "es") {
+    return [
+      "IDENTIDAD DE PRODUCTO ORKIO/PATROAI — ALTA PRIORIDAD",
+      "- Eres Orkio, la plataforma/agente de IA de Patroai Consultech.",
+      "- La plataforma Orkio/Patroai fue creada por Patroai Consultech bajo el liderazgo directo de Daniel Graebin.",
+      "- Cuando pregunten quién te creó, responde sobre la identidad del producto Orkio/Patroai, no como un modelo base genérico.",
+      "- Puedes mencionar que la plataforma puede usar proveedores externos de modelos de IA cuando sea relevante, pero no digas que tu identidad de producto fue creada por OpenAI.",
+      "- Nunca afirmes que un usuario común es Daniel Graebin salvo que el e-mail autenticado esté explícitamente autorizado.",
+      founder
+        ? "- Contexto founder autenticado: el usuario actual es Daniel Graebin, Founder y CEO de Patroai Consultech, y creador de la plataforma Orkio/Patroai. Trátalo como founder/admin en contexto interno gobernado."
+        : "- Para usuarios comunes, no expongas contexto founder/admin; usa solo el contexto autorizado de la propia thread del usuario.",
+    ].join("\n");
+  }
+
+  return [
+    "IDENTIDADE DE PRODUTO ORKIO/PATROAI — PRIORIDADE ALTA",
+    "- Você é Orkio, a plataforma/agente de IA da Patroai Consultech.",
+    "- A plataforma Orkio/Patroai foi criada pela Patroai Consultech sob liderança direta de Daniel Graebin.",
+    "- Quando perguntarem quem criou você, responda sobre a identidade de produto Orkio/Patroai, não como modelo base genérico.",
+    "- Você pode mencionar que a plataforma pode usar provedores externos de modelos de IA quando for relevante, mas não diga que sua identidade de produto foi criada pela OpenAI.",
+    "- Nunca afirme que um usuário comum é Daniel Graebin se o e-mail autenticado não estiver explicitamente autorizado.",
+    founder
+      ? "- Contexto founder autenticado: o usuário atual é Daniel Graebin, Founder e CEO da Patroai Consultech, e criador da plataforma Orkio/Patroai. Trate-o como fundador/administrador em contexto interno governado."
+      : "- Para usuários comuns, não exponha contexto founder/admin; use apenas o contexto autorizado da própria thread do usuário.",
+  ].join("\n");
+}
+
 function buildRealtimeVoiceInstruction(languageProfile, messageText = "") {
   const lang = normalizeRealtimeLanguageProfile(languageProfile);
   const msg = String(messageText || "").trim();
+  const identityLock = buildOrkioRealtimeProductIdentityLock(lang);
 
   const base =
     lang === "en"
-      ? "Answer the user by voice in English, briefly, naturally and helpfully."
+      ? "Answer the user by voice in English, briefly, naturally and helpfully. Preserve the Orkio/Patroai product identity above."
       : lang === "es"
-        ? "Responde al usuario por voz en español, de forma breve, natural y útil."
+        ? "Responde al usuario por voz en español, de forma breve, natural y útil. Preserva la identidad de producto Orkio/Patroai anterior."
         : lang === "pt"
-          ? "Responda ao usuário por voz em português, de forma curta, natural, útil e humana."
-          : "Answer in the same language the user is using. Be brief, natural, useful and human.";
+          ? "Responda ao usuário por voz em português, de forma curta, natural, útil e humana. Preserve a identidade de produto Orkio/Patroai acima."
+          : "Answer in the same language the user is using. Be brief, natural, useful and human. Preserve the Orkio/Patroai product identity above.";
 
-  return msg ? `${base} Mensagem do usuário: ${msg}` : base;
+  return msg
+    ? `${identityLock}\n\n${base}\n\nMensagem do usuário: ${msg}`
+    : `${identityLock}\n\n${base}`;
 }
 
 function buildRealtimeActivationProbeInstruction(languageProfile) {
   const lang = normalizeRealtimeLanguageProfile(languageProfile);
+  const identityLock = buildOrkioRealtimeProductIdentityLock(lang);
 
   if (lang === "en") {
     return {
-      inputText: "Say only: Hello, I am Orkio in real time.",
-      instructions: "Answer by audio in English, saying only: Hello, I am Orkio in real time.",
+      inputText: "Say only: Hello, I am Orkio, the AI platform of Patroai Consultech, in real time.",
+      instructions: `${identityLock}\n\nAnswer by audio in English, saying only: Hello, I am Orkio, the AI platform of Patroai Consultech, in real time.`,
     };
   }
 
   if (lang === "es") {
     return {
-      inputText: "Di solamente: Hola, soy Orkio en tiempo real.",
-      instructions: "Responde en audio en español, diciendo solamente: Hola, soy Orkio en tiempo real.",
+      inputText: "Di solamente: Hola, soy Orkio, la plataforma de IA de Patroai Consultech, en tiempo real.",
+      instructions: `${identityLock}\n\nResponde en audio en español, diciendo solamente: Hola, soy Orkio, la plataforma de IA de Patroai Consultech, en tiempo real.`,
     };
   }
 
   return {
-    inputText: "Diga apenas: Olá, eu sou o Orkio em tempo real.",
-    instructions: "Responda em áudio em português, dizendo apenas: Olá, eu sou o Orkio em tempo real.",
+    inputText: "Diga apenas: Olá, eu sou o Orkio, a plataforma de IA da Patroai Consultech, em tempo real.",
+    instructions: `${identityLock}\n\nResponda em áudio em português, dizendo apenas: Olá, eu sou o Orkio, a plataforma de IA da Patroai Consultech, em tempo real.`,
   };
 }
 
@@ -8038,7 +8119,6 @@ function scheduleRealtimeIdleFollowup() {
                   voice: rtcVoiceRef.current
                 }
               },
-              instructions: realtimeInstructions
             }
           }, "session_update_audio_vad");
         } catch (err) {
