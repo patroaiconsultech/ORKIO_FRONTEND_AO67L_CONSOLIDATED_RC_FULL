@@ -18,6 +18,8 @@ const TEXT = {
       holding: "Holding",
       factory: "AI Factory",
       esg: "ESG",
+      mission: "Missão",
+      insights: "Blog",
       consultants: "Consultores",
       investors: "Investidores",
       contact: "Contato",
@@ -101,6 +103,146 @@ const TEXT = {
         "Tecnologia orientada à continuidade dos negócios",
       ],
     },
+    mission: {
+      eyebrow: "Missão, visão e valores",
+      title: "Tecnologia, estratégia e propósito para perpetuar negócios.",
+      intro:
+        "A Patroai nasce para unir inteligência estratégica, tecnologia aplicada e responsabilidade empresarial em projetos capazes de gerar valor sustentável.",
+      cards: [
+        {
+          title: "Missão",
+          text:
+            "Apoiar empresas, investidores, consultores e parceiros na estruturação de negócios mais inteligentes, governados e sustentáveis, transformando informação complexa em clareza, decisão e execução.",
+        },
+        {
+          title: "Visão",
+          text:
+            "Ser uma referência brasileira em consultech, AI Factory e desenvolvimento de novos negócios, construindo uma categoria própria de sistemas governados de IA para gestão, crescimento e perpetuação empresarial.",
+        },
+        {
+          title: "Valores",
+          text:
+            "Verdade operacional, governança, sustentabilidade, responsabilidade, excelência, discrição, parceria, inovação aplicada, visão de longo prazo e fé traduzida em serviço.",
+        },
+      ],
+    },
+    market: {
+      eyebrow: "Tese de mercado",
+      title: "Onde estamos e para onde queremos chegar.",
+      text:
+        "O mercado empresarial entrou em um novo ciclo: a inteligência artificial deixou de ser apenas ferramenta e passou a exigir governança, integração, segurança, pessoas qualificadas e clareza estratégica.",
+      cards: [
+        {
+          title: "Mercado",
+          text:
+            "Empresas buscam IA aplicada, mas ainda enfrentam dificuldade para transformar tecnologia em decisão, operação, controle de risco e resultado mensurável.",
+        },
+        {
+          title: "Onde estamos",
+          text:
+            "Estamos em fase de tração controlada, com posicionamento público validado, captação qualificada, ambiente privado protegido e foco em projetos estratégicos de alto valor.",
+        },
+        {
+          title: "Onde queremos chegar",
+          text:
+            "Queremos construir uma categoria própria: uma consultech com AI Factory e visão de holding, capaz de apoiar empresas na continuidade, expansão e perpetuação dos negócios.",
+        },
+      ],
+    },
+    insights: {
+      eyebrow: "Blog e inteligência de mercado",
+      title: "Insights para líderes, investidores e consultores.",
+      text:
+        "Publicaremos análises sobre IA aplicada, governança, ESG, novos negócios, valuation, transformação empresarial e perpetuação, sem expor detalhes sensíveis da plataforma privada.",
+      cta: "Acessar blog",
+      posts: [
+        {
+          title: "O novo ciclo da IA empresarial exige governança",
+          text:
+            "A próxima fase da inteligência artificial não será vencida apenas por quem adotar ferramentas, mas por quem construir processos confiáveis, auditáveis e alinhados ao negócio.",
+        },
+        {
+          title: "ESG e perpetuação: tecnologia com visão de longo prazo",
+          text:
+            "Sustentabilidade, governança e inteligência aplicada passam a fazer parte da mesma agenda: proteger a continuidade das empresas e preparar novas gerações de valor.",
+        },
+        {
+          title: "Consultech, Holding e AI Factory: uma categoria em construção",
+          text:
+            "A Patroai combina estratégia, tecnologia e capital relacional para estruturar negócios, apoiar decisões e desenvolver oportunidades com controle e responsabilidade.",
+        },
+      ],
+    },
+    mission: {
+      eyebrow: "Mission, vision and values",
+      title: "Technology, strategy and purpose for business continuity.",
+      intro:
+        "Patroai was created to combine strategic intelligence, applied technology and responsible business design in projects capable of generating sustainable value.",
+      cards: [
+        {
+          title: "Mission",
+          text:
+            "To support companies, investors, consultants and partners in structuring smarter, governed and sustainable businesses, turning complex information into clarity, decision and execution.",
+        },
+        {
+          title: "Vision",
+          text:
+            "To become a Brazilian reference in consultech, AI Factory and new venture development, building a proprietary category of governed AI systems for management, growth and business continuity.",
+        },
+        {
+          title: "Values",
+          text:
+            "Operational truth, governance, sustainability, responsibility, excellence, discretion, partnership, applied innovation, long-term vision and faith expressed through service.",
+        },
+      ],
+    },
+    market: {
+      eyebrow: "Market thesis",
+      title: "Where we are and where we want to go.",
+      text:
+        "The enterprise market has entered a new cycle: artificial intelligence is no longer just a tool. It requires governance, integration, security, qualified people and strategic clarity.",
+      cards: [
+        {
+          title: "Market",
+          text:
+            "Companies are pursuing applied AI, but many still struggle to turn technology into decision-making, operations, risk control and measurable business outcomes.",
+        },
+        {
+          title: "Where we are",
+          text:
+            "We are in a controlled traction stage, with validated public positioning, qualified intake, a protected private environment and focus on high-value strategic projects.",
+        },
+        {
+          title: "Where we want to go",
+          text:
+            "We aim to build a proprietary category: a consultech with an AI Factory and holding perspective, supporting companies in continuity, expansion and long-term business value.",
+        },
+      ],
+    },
+    insights: {
+      eyebrow: "Blog and market intelligence",
+      title: "Insights for leaders, investors and consultants.",
+      text:
+        "We will publish perspectives on applied AI, governance, ESG, new ventures, valuation, business transformation and continuity, without exposing sensitive details of the private platform.",
+      cta: "Visit blog",
+      posts: [
+        {
+          title: "The new cycle of enterprise AI requires governance",
+          text:
+            "The next stage of artificial intelligence will not be won only by those adopting tools, but by those building reliable, auditable and business-aligned processes.",
+        },
+        {
+          title: "ESG and continuity: technology with a long-term perspective",
+          text:
+            "Sustainability, governance and applied intelligence now belong to the same agenda: protecting business continuity and preparing new generations of value.",
+        },
+        {
+          title: "Consultech, Holding and AI Factory: a category in construction",
+          text:
+            "Patroai combines strategy, technology and relational capital to structure businesses, support decisions and develop opportunities with control and responsibility.",
+        },
+      ],
+    },
     audiences: {
       companies: {
         title: "Para empresas",
@@ -147,11 +289,13 @@ const TEXT = {
         company_size: "Tamanho aproximado da empresa",
         challenge: "Principal desafio ou oportunidade",
         interest_area: "Área de interesse",
-        investor_type: "Perfil do investidor",
+        person_type: "Pessoa física ou jurídica",
+        investor_type: "Perfil / tese do investidor",
         capital_range: "Faixa indicativa / tese de investimento",
         sectors: "Setores de interesse ou experiência",
         expertise: "Especialidade principal",
         years_experience: "Anos de experiência",
+        engagement_model: "Modelo de atuação desejado",
         availability: "Disponibilidade para projetos",
         ai_experience: "Experiência com IA, tecnologia ou transformação digital",
         esg_focus: "Interesse ou experiência em ESG / sustentabilidade",
@@ -180,6 +324,7 @@ const TEXT = {
       noAccess:
         "Nenhum acesso automático foi liberado. Convites privados dependem de aprovação manual.",
       errorConsent: "Para enviar, aceite os termos, a análise de dados e o contato institucional.",
+      errorRequired: "Preencha os campos obrigatórios para análise: {fields}.",
       errorGeneric: "Não foi possível enviar agora. Tente novamente em instantes.",
     },
     legal: {
@@ -209,6 +354,8 @@ const TEXT = {
       holding: "Holding",
       factory: "AI Factory",
       esg: "ESG",
+      mission: "Mission",
+      insights: "Blog",
       consultants: "Consultants",
       investors: "Investors",
       contact: "Contact",
@@ -338,11 +485,13 @@ const TEXT = {
         company_size: "Approximate company size",
         challenge: "Main challenge or opportunity",
         interest_area: "Area of interest",
-        investor_type: "Investor profile",
+        person_type: "Individual or legal entity",
+        investor_type: "Investor profile / thesis",
         capital_range: "Indicative range / investment thesis",
         sectors: "Sectors of interest or experience",
         expertise: "Main expertise",
         years_experience: "Years of experience",
+        engagement_model: "Preferred engagement model",
         availability: "Project availability",
         ai_experience: "Experience with AI, technology or digital transformation",
         esg_focus: "ESG / sustainability interest or experience",
@@ -371,6 +520,7 @@ const TEXT = {
       noAccess:
         "No automatic access was granted. Private invitations depend on manual approval.",
       errorConsent: "To submit, accept the terms, data review and institutional contact.",
+      errorRequired: "Please complete the required fields for review: {fields}.",
       errorGeneric: "We could not submit right now. Please try again shortly.",
     },
     legal: {
@@ -407,11 +557,13 @@ const INITIAL_FORM = {
   company_size: "",
   challenge: "",
   interest_area: "",
+  person_type: "",
   investor_type: "",
   capital_range: "",
   sectors: "",
   expertise: "",
   years_experience: "",
+  engagement_model: "",
   availability: "",
   ai_experience: "",
   esg_focus: "",
@@ -462,9 +614,9 @@ function TextArea({ value, onChange, required = false, placeholder = "", rows = 
   );
 }
 
-function Select({ value, onChange, children }) {
+function Select({ value, onChange, children, required = false }) {
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} className={textInputProps()}>
+    <select required={required} value={value} onChange={(e) => onChange(e.target.value)} className={textInputProps()}>
       {children}
     </select>
   );
@@ -546,6 +698,30 @@ export default function PatroaiLanding() {
     event.preventDefault();
     setError("");
 
+    const missing = [];
+    const present = (value) => String(value || "").trim().length > 0;
+    const requireField = (key, label = t.form.fields[key] || key) => {
+      if (!present(form[key])) missing.push(label);
+    };
+
+    ["full_name", "email", "whatsapp", "city", "state"].forEach((key) => requireField(key));
+
+    if (form.intake_type === "company") {
+      ["company", "role", "segment", "company_size", "interest_area", "challenge"].forEach((key) => requireField(key));
+    } else if (form.intake_type === "investor") {
+      ["person_type", "investor_type", "capital_range", "sectors", "message"].forEach((key) => requireField(key));
+      if (!present(form.linkedin) && !present(form.website)) {
+        missing.push(isEnglish ? "LinkedIn or website" : "LinkedIn ou site");
+      }
+    } else if (form.intake_type === "consultant") {
+      ["linkedin", "expertise", "years_experience", "sectors", "engagement_model", "availability", "message"].forEach((key) => requireField(key));
+    }
+
+    if (missing.length > 0) {
+      setError(t.form.errorRequired.replace("{fields}", missing.join(", ")));
+      return;
+    }
+
     if (!form.consent_terms || !form.consent_data_review || !form.consent_contact) {
       setError(t.form.errorConsent);
       return;
@@ -575,7 +751,7 @@ export default function PatroaiLanding() {
         <TextInput required type="email" value={form.email} onChange={(v) => set("email", v)} />
       </Field>
       <Field label={t.form.fields.whatsapp}>
-        <TextInput value={form.whatsapp} onChange={(v) => set("whatsapp", v)} placeholder="+55 51 99999-9999" />
+        <TextInput required value={form.whatsapp} onChange={(v) => set("whatsapp", v)} placeholder="+55 51 99999-9999" />
       </Field>
       <Field label={t.form.fields.company}>
         <TextInput value={form.company} onChange={(v) => set("company", v)} />
@@ -609,6 +785,8 @@ export default function PatroaiLanding() {
             <a href="#holding" className="hover:text-white">{t.nav.holding}</a>
             <a href="#factory" className="hover:text-white">{t.nav.factory}</a>
             <a href="#esg" className="hover:text-white">{t.nav.esg}</a>
+            <a href="#mission" className="hover:text-white">{t.nav.mission}</a>
+            <a href="#insights" className="hover:text-white">{t.nav.insights}</a>
             <a href="#strategic-intake" className="hover:text-white">{t.nav.contact}</a>
           </nav>
 
@@ -730,6 +908,62 @@ export default function PatroaiLanding() {
         </div>
       </section>
 
+      <section id="mission" className="mx-auto max-w-7xl px-4 py-16">
+        <div className="max-w-3xl">
+          <div className="text-xs font-black uppercase tracking-[0.24em] text-emerald-200/70">{t.mission.eyebrow}</div>
+          <h2 className="mt-4 text-4xl font-black tracking-[-0.04em] md:text-5xl">{t.mission.title}</h2>
+          <p className="mt-5 text-lg leading-8 text-white/65">{t.mission.intro}</p>
+        </div>
+        <div className="mt-10 grid gap-5 lg:grid-cols-3">
+          {t.mission.cards.map((card) => (
+            <div key={card.title} className="rounded-[2rem] border border-white/10 bg-white/[0.045] p-6">
+              <h3 className="text-2xl font-black tracking-[-0.03em] text-white">{card.title}</h3>
+              <p className="mt-4 text-sm leading-7 text-white/62">{card.text}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section id="market" className="mx-auto max-w-7xl px-4 py-16">
+        <div className="rounded-[2.5rem] border border-cyan-200/15 bg-gradient-to-br from-cyan-300/[0.09] via-white/[0.04] to-emerald-300/[0.08] p-7 md:p-10">
+          <div className="max-w-3xl">
+            <div className="text-xs font-black uppercase tracking-[0.24em] text-cyan-100/75">{t.market.eyebrow}</div>
+            <h2 className="mt-4 text-4xl font-black tracking-[-0.04em] md:text-5xl">{t.market.title}</h2>
+            <p className="mt-5 text-lg leading-8 text-white/70">{t.market.text}</p>
+          </div>
+          <div className="mt-10 grid gap-5 lg:grid-cols-3">
+            {t.market.cards.map((card) => (
+              <div key={card.title} className="rounded-2xl border border-white/10 bg-black/20 p-5">
+                <div className="text-sm font-black uppercase tracking-[0.16em] text-cyan-100/70">{card.title}</div>
+                <p className="mt-3 text-sm leading-7 text-white/66">{card.text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="insights" className="mx-auto max-w-7xl px-4 py-16">
+        <div className="flex flex-col justify-between gap-6 md:flex-row md:items-end">
+          <div className="max-w-3xl">
+            <div className="text-xs font-black uppercase tracking-[0.24em] text-emerald-200/70">{t.insights.eyebrow}</div>
+            <h2 className="mt-4 text-4xl font-black tracking-[-0.04em] md:text-5xl">{t.insights.title}</h2>
+            <p className="mt-5 text-lg leading-8 text-white/65">{t.insights.text}</p>
+          </div>
+          <Link to="/blog" className="rounded-2xl border border-white/12 bg-white/[0.055] px-5 py-3 text-center text-sm font-black text-white/80 transition hover:border-white/24 hover:text-white">
+            {t.insights.cta}
+          </Link>
+        </div>
+        <div className="mt-10 grid gap-5 lg:grid-cols-3">
+          {t.insights.posts.map((post) => (
+            <article key={post.title} className="rounded-[2rem] border border-white/10 bg-white/[0.045] p-6">
+              <div className="text-xs font-black uppercase tracking-[0.18em] text-white/35">Patroai Insights</div>
+              <h3 className="mt-4 text-xl font-black tracking-[-0.03em] text-white">{post.title}</h3>
+              <p className="mt-4 text-sm leading-7 text-white/62">{post.text}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
       <section className="mx-auto max-w-7xl px-4 py-16">
         <div className="grid gap-5 lg:grid-cols-3">
           <AudienceCard {...t.audiences.companies} onClick={() => scrollToForm("company")} />
@@ -807,10 +1041,10 @@ export default function PatroaiLanding() {
 
               <div className="grid gap-5 md:grid-cols-3">
                 <Field label={t.form.fields.city}>
-                  <TextInput value={form.city} onChange={(v) => set("city", v)} />
+                  <TextInput required value={form.city} onChange={(v) => set("city", v)} />
                 </Field>
                 <Field label={t.form.fields.state}>
-                  <TextInput value={form.state} onChange={(v) => set("state", v)} />
+                  <TextInput required value={form.state} onChange={(v) => set("state", v)} />
                 </Field>
                 <Field label={t.form.fields.country}>
                   <TextInput value={form.country} onChange={(v) => set("country", v)} />
@@ -820,13 +1054,13 @@ export default function PatroaiLanding() {
               {form.intake_type === "company" && (
                 <div className="grid gap-5 md:grid-cols-2">
                   <Field label={t.form.fields.segment}>
-                    <TextInput value={form.segment} onChange={(v) => set("segment", v)} />
+                    <TextInput required value={form.segment} onChange={(v) => set("segment", v)} />
                   </Field>
                   <Field label={t.form.fields.company_size}>
-                    <TextInput value={form.company_size} onChange={(v) => set("company_size", v)} />
+                    <TextInput required value={form.company_size} onChange={(v) => set("company_size", v)} />
                   </Field>
                   <Field label={t.form.fields.interest_area}>
-                    <Select value={form.interest_area} onChange={(v) => set("interest_area", v)}>
+                    <Select required value={form.interest_area} onChange={(v) => set("interest_area", v)}>
                       <option value="">{isEnglish ? "Select..." : "Selecione..."}</option>
                       <option value="consultoria">{isEnglish ? "Strategic consulting" : "Consultoria estratégica"}</option>
                       <option value="valuation">Valuation</option>
@@ -844,17 +1078,27 @@ export default function PatroaiLanding() {
 
               {form.intake_type === "investor" && (
                 <div className="grid gap-5 md:grid-cols-2">
+                  <Field label={t.form.fields.person_type}>
+                    <Select required value={form.person_type} onChange={(v) => set("person_type", v)}>
+                      <option value="">{isEnglish ? "Select..." : "Selecione..."}</option>
+                      <option value="individual">{isEnglish ? "Individual" : "Pessoa física"}</option>
+                      <option value="legal_entity">{isEnglish ? "Legal entity" : "Pessoa jurídica"}</option>
+                      <option value="family_office">Family office</option>
+                      <option value="fund">{isEnglish ? "Fund / investment vehicle" : "Fundo / veículo de investimento"}</option>
+                      <option value="other">{isEnglish ? "Other" : "Outro"}</option>
+                    </Select>
+                  </Field>
                   <Field label={t.form.fields.investor_type}>
-                    <TextInput value={form.investor_type} onChange={(v) => set("investor_type", v)} placeholder={isEnglish ? "Individual, family office, fund..." : "Pessoa física, family office, fundo..."} />
+                    <TextInput required value={form.investor_type} onChange={(v) => set("investor_type", v)} placeholder={isEnglish ? "Angel, family office, fund, strategic investor..." : "Anjo, family office, fundo, investidor estratégico..."} />
                   </Field>
                   <Field label={t.form.fields.capital_range}>
-                    <TextInput value={form.capital_range} onChange={(v) => set("capital_range", v)} />
+                    <TextInput required value={form.capital_range} onChange={(v) => set("capital_range", v)} />
                   </Field>
                   <Field label={t.form.fields.sectors}>
-                    <TextInput value={form.sectors} onChange={(v) => set("sectors", v)} />
+                    <TextInput required value={form.sectors} onChange={(v) => set("sectors", v)} />
                   </Field>
-                  <Field label={t.form.fields.website}>
-                    <TextInput value={form.website} onChange={(v) => set("website", v)} />
+                  <Field label={`${t.form.fields.website} / LinkedIn`}>
+                    <TextInput value={form.website} onChange={(v) => set("website", v)} placeholder={isEnglish ? "Website or institutional page" : "Site ou página institucional"} />
                   </Field>
                 </div>
               )}
@@ -862,16 +1106,26 @@ export default function PatroaiLanding() {
               {form.intake_type === "consultant" && (
                 <div className="grid gap-5 md:grid-cols-2">
                   <Field label={t.form.fields.expertise}>
-                    <TextInput value={form.expertise} onChange={(v) => set("expertise", v)} placeholder={isEnglish ? "Strategy, finance, ESG, AI, operations..." : "Estratégia, finanças, ESG, IA, operações..."} />
+                    <TextInput required value={form.expertise} onChange={(v) => set("expertise", v)} placeholder={isEnglish ? "Strategy, finance, ESG, AI, operations..." : "Estratégia, finanças, ESG, IA, operações..."} />
                   </Field>
                   <Field label={t.form.fields.years_experience}>
-                    <TextInput value={form.years_experience} onChange={(v) => set("years_experience", v)} />
+                    <TextInput required value={form.years_experience} onChange={(v) => set("years_experience", v)} />
                   </Field>
                   <Field label={t.form.fields.sectors}>
-                    <TextInput value={form.sectors} onChange={(v) => set("sectors", v)} />
+                    <TextInput required value={form.sectors} onChange={(v) => set("sectors", v)} />
+                  </Field>
+                  <Field label={t.form.fields.engagement_model}>
+                    <Select required value={form.engagement_model} onChange={(v) => set("engagement_model", v)}>
+                      <option value="">{isEnglish ? "Select..." : "Selecione..."}</option>
+                      <option value="project_based">{isEnglish ? "Project-based consulting" : "Consultoria por projeto"}</option>
+                      <option value="part_time">{isEnglish ? "Part-time allocation" : "Alocação parcial"}</option>
+                      <option value="advisory">{isEnglish ? "Advisory / mentoring" : "Advisory / mentoria"}</option>
+                      <option value="implementation">{isEnglish ? "Implementation partner" : "Parceiro de implantação"}</option>
+                      <option value="other">{isEnglish ? "Other" : "Outro"}</option>
+                    </Select>
                   </Field>
                   <Field label={t.form.fields.availability}>
-                    <TextInput value={form.availability} onChange={(v) => set("availability", v)} />
+                    <TextInput required value={form.availability} onChange={(v) => set("availability", v)} />
                   </Field>
                 </div>
               )}
