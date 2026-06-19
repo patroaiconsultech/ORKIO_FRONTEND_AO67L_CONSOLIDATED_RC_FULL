@@ -59,6 +59,10 @@ function compact(value) {
   return text || "—";
 }
 
+function boolLabel(value) {
+  return value === true || value === "true" || value === 1 || value === "1" ? "Sim" : "Não";
+}
+
 function getSubmitted(item) {
   const submitted = item?.payload?.submitted;
   return submitted && typeof submitted === "object" ? submitted : {};
@@ -75,6 +79,7 @@ function DetailRow({ label, value }) {
 
 function IntakeCard({ item, onUpdate, busy }) {
   const submitted = getSubmitted(item);
+  const requestInfo = item?.payload?.request && typeof item.payload.request === "object" ? item.payload.request : {};
   const message =
     submitted.challenge ||
     submitted.message ||
@@ -134,12 +139,28 @@ function IntakeCard({ item, onUpdate, busy }) {
 
       <div className="mt-3 grid gap-3 md:grid-cols-2">
         <DetailRow label="Área / setor" value={submitted.interest_area || submitted.segment || submitted.sectors || submitted.expertise} />
+        <DetailRow label="Pessoa / entidade" value={submitted.person_type} />
+        <DetailRow label="Modelo de atuação" value={submitted.engagement_model} />
         <DetailRow label="ESG / sustentabilidade" value={submitted.esg_focus} />
       </div>
 
       <div className="mt-3 rounded-2xl border border-white/10 bg-black/18 p-4">
         <div className="text-[11px] font-black uppercase tracking-[0.18em] text-white/36">Mensagem / desafio</div>
         <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-white/72">{compact(message)}</p>
+      </div>
+
+      <div className="mt-3 rounded-2xl border border-emerald-300/15 bg-emerald-300/10 p-4">
+        <div className="text-[11px] font-black uppercase tracking-[0.18em] text-emerald-50/54">Consentimentos registrados</div>
+        <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-5">
+          <DetailRow label="Termos e privacidade" value={boolLabel(submitted.consent_terms)} />
+          <DetailRow label="Análise de dados" value={boolLabel(submitted.consent_data_review)} />
+          <DetailRow label="Contato institucional" value={boolLabel(submitted.consent_contact)} />
+          <DetailRow label="Marketing / novidades" value={boolLabel(submitted.consent_marketing)} />
+          <DetailRow label="Versão dos termos" value={requestInfo.terms_version} />
+        </div>
+        <p className="mt-3 text-xs font-semibold leading-6 text-emerald-50/60">
+          Estes registros indicam os consentimentos declarados no pré-onboarding público. O cadastro permanece em análise manual e não libera acesso automaticamente.
+        </p>
       </div>
 
       {flags.length > 0 && (
