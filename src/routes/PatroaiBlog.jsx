@@ -1,6 +1,5 @@
 import React from "react";
-import { Link } from "react-router-dom";
-import { useLandingLocale } from "../lib/landingLocale.js";
+import { Link, useLocation } from "react-router-dom";
 import usePatroaiSeo from "../lib/usePatroaiSeo.js";
 
 const POSTS = {
@@ -105,27 +104,35 @@ const TEXT = {
 
 export default function PatroaiBlog() {
   usePatroaiSeo();
-  const { isEnglish } = useLandingLocale();
+  const location = useLocation();
+  const isEnglish = location.pathname === "/en" || location.pathname.startsWith("/en/");
   const locale = isEnglish ? "en" : "pt";
   const posts = POSTS[locale];
   const t = TEXT[locale];
+  const homeHref = isEnglish ? "/en" : "/";
+  const languageHref = isEnglish ? "/blog" : "/en/blog";
 
   return (
     <main className="min-h-screen bg-[#060813] text-white">
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(52,211,153,0.16),transparent_34%),radial-gradient(circle_at_80%_0%,rgba(125,92,255,0.15),transparent_30%),linear-gradient(180deg,#060813,#090d16_45%,#05060b)]" />
 
       <header className="border-b border-white/10 bg-[#060813]/82 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
-          <Link to="/" className="flex items-center gap-3">
-            <img src="/patroai-assets/logo-patroai-novo.png" alt="Grupo Patroai" className="h-9 w-auto" />
-            <div>
-              <div className="text-xs font-black uppercase tracking-[0.28em] text-white">GRUPO PATROAI</div>
-              <div className="text-[11px] font-semibold text-white/45">Consultech • Holding • AI Factory</div>
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 md:py-4">
+          <Link to={homeHref} className="flex min-w-0 items-center gap-3">
+            <img src="/patroai-assets/logo-patroai-novo.png" alt="Grupo Patroai" className="h-12 w-auto shrink-0 md:h-14" />
+            <div className="min-w-0">
+              <div className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.22em] text-white sm:text-xs">GRUPO PATROAI</div>
+              <div className="hidden text-[11px] font-semibold text-white/45 sm:block">Consultech • Holding • AI Factory</div>
             </div>
           </Link>
-          <Link to="/" className="rounded-full border border-white/12 bg-white/[0.055] px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-white/75">
-            {t.back}
-          </Link>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <Link to={homeHref} className="whitespace-nowrap rounded-full border border-white/12 bg-white/[0.055] px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-white/75">
+              {t.back}
+            </Link>
+            <Link to={languageHref} title={isEnglish ? "Ver em português" : "View in English"} className="whitespace-nowrap rounded-full border border-emerald-300/25 bg-emerald-300/10 px-3 py-2 text-xs font-black uppercase tracking-[0.14em] text-emerald-100">
+              {isEnglish ? "PT" : "EN"}
+            </Link>
+          </div>
         </div>
       </header>
 
