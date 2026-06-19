@@ -4,6 +4,8 @@ import usePatroaiSeo from "../lib/usePatroaiSeo.js";
 import { useLandingLocale } from "../lib/landingLocale.js";
 import { submitStrategicIntake } from "../ui/api.js";
 
+const PATROAI_WHATSAPP_URL = "https://wa.me/5551989697605?text=Ol%C3%A1%2C%20Grupo%20Patroai.%20Gostaria%20de%20falar%20sobre%20uma%20oportunidade%20estrat%C3%A9gica.";
+
 const TEXT = {
   pt: {
     langToggle: "EN",
@@ -19,6 +21,13 @@ const TEXT = {
       consultants: "Consultores",
       investors: "Investidores",
       contact: "Contato",
+    },
+    auth: {
+      login: "Login",
+      signup: "Cadastro com código",
+      signupTitle: "Cadastro somente mediante código especial fornecido pelo Grupo Patroai",
+      whatsapp: "WhatsApp",
+      whatsappTitle: "Falar com o Grupo Patroai no WhatsApp",
     },
     hero: {
       badge: "Acesso privado e controlado",
@@ -42,7 +51,7 @@ const TEXT = {
         title: "Patroai Consultech",
         subtitle: "Estratégia, valuation e suporte executivo especializado.",
         body:
-          "Apoiamo empresas em momentos de análise, estruturação, crescimento, reposicionamento e tomada de decisão. Atuamos com business plan, valuation, diagnóstico estratégico, suporte executivo e estruturação comercial, financeira e operacional.",
+          "Apoiamos empresas em momentos de análise, estruturação, crescimento, reposicionamento e tomada de decisão. Atuamos com business plan, valuation, diagnóstico estratégico, suporte executivo e estruturação comercial, financeira e operacional.",
         items: [
           "Business plan e planejamento estratégico",
           "Valuation e modelagens dinâmicas de valor",
@@ -203,6 +212,13 @@ const TEXT = {
       consultants: "Consultants",
       investors: "Investors",
       contact: "Contact",
+    },
+    auth: {
+      login: "Login",
+      signup: "Sign up with code",
+      signupTitle: "Registration is available only with a special code provided by Grupo Patroai",
+      whatsapp: "WhatsApp",
+      whatsappTitle: "Talk to Grupo Patroai on WhatsApp",
     },
     hero: {
       badge: "Private and controlled access",
@@ -596,14 +612,38 @@ export default function PatroaiLanding() {
             <a href="#strategic-intake" className="hover:text-white">{t.nav.contact}</a>
           </nav>
 
-          <button
-            type="button"
-            onClick={() => setLocale(isEnglish ? "pt" : "en")}
-            title={t.langTitle}
-            className="rounded-full border border-white/12 bg-white/[0.055] px-4 py-2 text-xs font-black tracking-[0.18em] text-white/80 transition hover:border-emerald-300/40 hover:text-white"
-          >
-            {t.langToggle}
-          </button>
+          <div className="flex items-center gap-2">
+            <a
+              href={PATROAI_WHATSAPP_URL}
+              target="_blank"
+              rel="noreferrer noopener"
+              title={t.auth.whatsappTitle}
+              className="hidden rounded-full border border-emerald-300/25 bg-emerald-300/10 px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-emerald-100 transition hover:border-emerald-200/55 hover:bg-emerald-300/16 md:inline-flex"
+            >
+              {t.auth.whatsapp}
+            </a>
+            <Link
+              to="/auth?mode=login"
+              className="rounded-full border border-white/12 bg-white/[0.055] px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-white/78 transition hover:border-white/24 hover:text-white"
+            >
+              {t.auth.login}
+            </Link>
+            <Link
+              to="/auth?mode=register"
+              title={t.auth.signupTitle}
+              className="hidden rounded-full border border-cyan-200/25 bg-cyan-200/10 px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-cyan-100 transition hover:border-cyan-200/55 hover:bg-cyan-200/16 sm:inline-flex"
+            >
+              {t.auth.signup}
+            </Link>
+            <button
+              type="button"
+              onClick={() => setLocale(isEnglish ? "pt" : "en")}
+              title={t.langTitle}
+              className="rounded-full border border-white/12 bg-white/[0.055] px-3 py-2 text-[11px] font-black tracking-[0.18em] text-white/80 transition hover:border-emerald-300/40 hover:text-white"
+            >
+              {t.langToggle}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -887,6 +927,16 @@ export default function PatroaiLanding() {
           )}
         </div>
       </section>
+
+      <a
+        href={PATROAI_WHATSAPP_URL}
+        target="_blank"
+        rel="noreferrer noopener"
+        title={t.auth.whatsappTitle}
+        className="fixed bottom-5 right-5 z-50 rounded-full border border-emerald-300/35 bg-emerald-300 px-5 py-3 text-xs font-black uppercase tracking-[0.16em] text-slate-950 shadow-2xl shadow-emerald-950/40 transition hover:brightness-110"
+      >
+        {t.auth.whatsapp}
+      </a>
 
       <footer className="border-t border-white/10 px-4 py-10">
         <div className="mx-auto flex max-w-7xl flex-col gap-8 md:flex-row md:items-end md:justify-between">
