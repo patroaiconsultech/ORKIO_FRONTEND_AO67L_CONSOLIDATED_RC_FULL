@@ -6,6 +6,7 @@ import AuthPage from "./routes/AuthPage.jsx";
 import AppConsole from "./routes/AppConsole.jsx";
 import AdminConsole from "./routes/AdminConsole.jsx";
 import AdminEscalations from "./routes/AdminEscalations.jsx";
+import AdminIntakeCenter from "./routes/AdminIntakeCenter.jsx";
 import Contact from "./routes/Contact.jsx";
 import AdminTrademarkCenter from "./routes/AdminTrademarkCenter.jsx";
 import AdminValuationCenter from "./routes/AdminValuationCenter.jsx";
@@ -37,6 +38,8 @@ export default function App() {
         <Route path="/admin" element={<BetaAccessGate><AdminConsole /></BetaAccessGate>} />
         <Route path="/orkio/admin" element={<BetaAccessGate><AdminConsole /></BetaAccessGate>} />
         <Route path="/admin/escalations" element={<AdminEscalations />} />
+        <Route path="/admin/intake" element={<BetaAccessGate><AdminIntakeCenter /></BetaAccessGate>} />
+        <Route path="/admin/cadastros" element={<BetaAccessGate><AdminIntakeCenter /></BetaAccessGate>} />
         <Route path="/admin/trademarks" element={<AdminTrademarkCenter />} />
         <Route path="/admin/valuation" element={<AdminValuationCenter />} />
 
