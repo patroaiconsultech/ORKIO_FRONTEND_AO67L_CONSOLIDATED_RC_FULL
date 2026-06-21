@@ -173,6 +173,76 @@ const TEXT = {
         },
       ],
     },
+    mission: {
+      eyebrow: "Mission, vision and values",
+      title: "Technology, strategy and purpose for business continuity.",
+      intro:
+        "Patroai was created to connect strategic intelligence, applied technology and responsible business design in projects capable of generating sustainable value.",
+      cards: [
+        {
+          title: "Mission",
+          text:
+            "Support companies, investors, consultants and partners in structuring smarter, governed and sustainable businesses, transforming complex information into clarity, decisions and execution.",
+        },
+        {
+          title: "Vision",
+          text:
+            "Become a Brazilian reference in consultech, AI Factory and new venture development, building a proprietary category of governed AI systems for management, growth and business continuity.",
+        },
+        {
+          title: "Values",
+          text:
+            "Operational truth, governance, sustainability, responsibility, excellence, discretion, partnership, applied innovation, long-term vision and faith expressed through service.",
+        },
+      ],
+    },
+    market: {
+      eyebrow: "Market thesis",
+      title: "Where we are and where we want to go.",
+      text:
+        "The enterprise market has entered a new cycle: artificial intelligence is no longer just a tool. It now requires governance, integration, security, qualified people and strategic clarity.",
+      cards: [
+        {
+          title: "Market",
+          text:
+            "Companies are pursuing applied AI, but many still struggle to turn technology into decisions, operations, risk control and measurable business outcomes.",
+        },
+        {
+          title: "Where we are",
+          text:
+            "We are in a controlled traction stage, with validated public positioning, qualified intake, a protected private environment and focus on high-value strategic projects.",
+        },
+        {
+          title: "Where we want to go",
+          text:
+            "We aim to build a proprietary category: a consultech with an AI Factory and holding perspective, supporting companies in continuity, expansion and long-term business value.",
+        },
+      ],
+    },
+    insights: {
+      eyebrow: "Blog and market intelligence",
+      title: "Insights for leaders, investors and consultants.",
+      text:
+        "We publish perspectives on applied AI, governance, ESG, new ventures, valuation, business transformation and continuity, without exposing sensitive details of the private platform.",
+      cta: "Visit blog",
+      posts: [
+        {
+          title: "The new cycle of enterprise AI requires governance",
+          text:
+            "The next stage of artificial intelligence will not be won only by those adopting tools, but by those building reliable, auditable and business-aligned processes.",
+        },
+        {
+          title: "ESG and continuity: technology with a long-term perspective",
+          text:
+            "Sustainability, governance and applied intelligence belong to the same agenda: protecting business continuity and preparing new generations of value.",
+        },
+        {
+          title: "Consultech, Holding and AI Factory: a category in construction",
+          text:
+            "Patroai combines strategy, technology and relational capital to structure businesses, support decisions and develop opportunities with control and responsibility.",
+        },
+      ],
+    },
     audiences: {
       companies: {
         title: "Para empresas",
@@ -238,13 +308,13 @@ const TEXT = {
         message: "Inclua informações relevantes para análise do perfil.",
       },
       consentTerms:
-        "Li e aceito os Termos de Uso e a Política de Privacidade.",
+        "Li e aceito os Termos de Uso e a Política de Privacidade da PATROAI.",
       consentData:
-        "Autorizo o Grupo Patroai a analisar meus dados para fins de triagem, aderência e contato institucional.",
+        "Autorizo a utilização dos dados enviados para triagem, análise de aderência e contato institucional relacionado à minha solicitação.",
       consentContact:
-        "Autorizo contato por e-mail, telefone ou WhatsApp sobre este cadastro.",
+        "Autorizo contato operacional por e-mail, telefone ou WhatsApp sobre este cadastro.",
       consentMarketing:
-        "Aceito receber comunicações institucionais e conteúdos do Grupo Patroai.",
+        "Desejo receber comunicações institucionais, conteúdos, convites e novidades do Grupo Patroai. Posso cancelar a qualquer momento.",
       submit: "Enviar cadastro para análise",
       sending: "Enviando...",
       successTitle: "Cadastro recebido",
@@ -259,9 +329,9 @@ const TEXT = {
     },
     legal: {
       investor:
-        "O cadastro de investidores tem finalidade de relacionamento institucional e apresentação privada de oportunidades futuras. Não constitui oferta pública de investimento, promessa de rentabilidade ou garantia de participação.",
+        "O cadastro de investidores tem finalidade exclusivamente institucional, voltada à análise de aderência, relacionamento e eventual apresentação privada futura de projetos. Não constitui oferta pública de investimento, recomendação de investimento, promessa de rentabilidade, garantia de participação, captação pública ou distribuição de valores mobiliários.",
       consultant:
-        "O cadastro de consultores não constitui vínculo empregatício, associação automática ou promessa de contratação. Perfis são avaliados conforme experiência, reputação, disponibilidade e aderência aos projetos.",
+        "O envio do cadastro como consultor associado não cria vínculo empregatício, societário, associativo, comercial, parceria automática, exclusividade ou obrigação de contratação. Eventual relação futura dependerá de análise interna, contrato específico, escopo, disponibilidade, confidencialidade, compliance e aprovação expressa da PATROAI.",
     },
     footer: {
       verse:
@@ -270,6 +340,7 @@ const TEXT = {
       rights: "© 2026 Grupo Patroai. Todos os direitos reservados.",
       terms: "Termos",
       privacy: "Privacidade",
+      cookies: "Cookies",
       contact: "Contato",
     },
   },
@@ -370,6 +441,76 @@ const TEXT = {
         "Technology oriented to business continuity",
       ],
     },
+    mission: {
+      eyebrow: "Mission, vision and values",
+      title: "Technology, strategy and purpose for business continuity.",
+      intro:
+        "Patroai was created to connect strategic intelligence, applied technology and responsible business design in projects capable of generating sustainable value.",
+      cards: [
+        {
+          title: "Mission",
+          text:
+            "Support companies, investors, consultants and partners in structuring smarter, governed and sustainable businesses, transforming complex information into clarity, decisions and execution.",
+        },
+        {
+          title: "Vision",
+          text:
+            "Become a Brazilian reference in consultech, AI Factory and new venture development, building a proprietary category of governed AI systems for management, growth and business continuity.",
+        },
+        {
+          title: "Values",
+          text:
+            "Operational truth, governance, sustainability, responsibility, excellence, discretion, partnership, applied innovation, long-term vision and faith expressed through service.",
+        },
+      ],
+    },
+    market: {
+      eyebrow: "Market thesis",
+      title: "Where we are and where we want to go.",
+      text:
+        "The enterprise market has entered a new cycle: artificial intelligence is no longer just a tool. It now requires governance, integration, security, qualified people and strategic clarity.",
+      cards: [
+        {
+          title: "Market",
+          text:
+            "Companies are pursuing applied AI, but many still struggle to turn technology into decisions, operations, risk control and measurable business outcomes.",
+        },
+        {
+          title: "Where we are",
+          text:
+            "We are in a controlled traction stage, with validated public positioning, qualified intake, a protected private environment and focus on high-value strategic projects.",
+        },
+        {
+          title: "Where we want to go",
+          text:
+            "We aim to build a proprietary category: a consultech with an AI Factory and holding perspective, supporting companies in continuity, expansion and long-term business value.",
+        },
+      ],
+    },
+    insights: {
+      eyebrow: "Blog and market intelligence",
+      title: "Insights for leaders, investors and consultants.",
+      text:
+        "We publish perspectives on applied AI, governance, ESG, new ventures, valuation, business transformation and continuity, without exposing sensitive details of the private platform.",
+      cta: "Visit blog",
+      posts: [
+        {
+          title: "The new cycle of enterprise AI requires governance",
+          text:
+            "The next stage of artificial intelligence will not be won only by those adopting tools, but by those building reliable, auditable and business-aligned processes.",
+        },
+        {
+          title: "ESG and continuity: technology with a long-term perspective",
+          text:
+            "Sustainability, governance and applied intelligence belong to the same agenda: protecting business continuity and preparing new generations of value.",
+        },
+        {
+          title: "Consultech, Holding and AI Factory: a category in construction",
+          text:
+            "Patroai combines strategy, technology and relational capital to structure businesses, support decisions and develop opportunities with control and responsibility.",
+        },
+      ],
+    },
     audiences: {
       companies: {
         title: "For companies",
@@ -435,18 +576,26 @@ const TEXT = {
         message: "Include relevant information for profile review.",
       },
       consentTerms:
-        "I have read and accept the Terms of Use and Privacy Policy.",
+        "I have read and accept PATROAI’s Terms of Use and Privacy Policy.",
       consentData:
-        "I authorize Grupo Patroai to review my data for screening, fit analysis and institutional contact.",
+        "I authorize the use of the submitted data for screening, fit analysis and institutional contact related to my request.",
       consentContact:
-        "I authorize contact by email, phone or WhatsApp regarding this registration.",
+        "I authorize operational contact by email, phone or WhatsApp regarding this registration.",
       consentMarketing:
-        "I agree to receive institutional communications and content from Grupo Patroai.",
+        "I wish to receive institutional communications, content, invitations and updates from Grupo Patroai. I may opt out at any time.",
       submit: "Submit registration for review",
       sending: "Sending...",
       successTitle: "Registration received",
       successText:
         "We received your information. Our team will perform an internal review and may contact you if there is fit with our criteria, projects or opportunities.",
+      successByType: {
+        company:
+          "Registration received. Your request will be internally reviewed by the PATROAI team. Submitting this form does not create automatic access, a proposal, diagnosis or obligation to contract. If there is fit, we may contact you through the channels provided.",
+        investor:
+          "Interest registered. Your registration will be reviewed exclusively for institutional relationship and possible future private contact. This record does not represent an investment offer, guarantee of participation, promise of returns or any commitment by PATROAI.",
+        consultant:
+          "Profile received. PATROAI may review your information for a possible future relationship. Registration does not guarantee approval, engagement, project referral or individual response. If there is fit, we may contact you.",
+      },
       protocol: "Protocol",
       noAccess:
         "No automatic access was granted. Private invitations depend on manual approval.",
@@ -456,9 +605,9 @@ const TEXT = {
     },
     legal: {
       investor:
-        "Investor registration is intended for institutional relationship and private presentation of future opportunities. It does not constitute a public investment offering, promise of returns or guarantee of participation.",
+        "Investor registration is exclusively intended for institutional relationship, fit analysis and possible future private presentation of projects. It does not constitute a public investment offering, investment recommendation, promise of returns, guarantee of participation, public fundraising or securities distribution.",
       consultant:
-        "Consultant registration does not constitute employment, automatic association or promise of engagement. Profiles are reviewed according to experience, reputation, availability and project fit.",
+        "Submitting an associated consultant registration does not create employment, corporate, associative or commercial relationship, automatic partnership, exclusivity or obligation to engage. Any future relationship depends on internal review, a specific agreement, scope, availability, confidentiality, compliance and express approval by PATROAI.",
     },
     footer: {
       verse:
@@ -467,6 +616,7 @@ const TEXT = {
       rights: "© 2026 Grupo Patroai. All rights reserved.",
       terms: "Terms",
       privacy: "Privacy",
+      cookies: "Cookies",
       contact: "Contact",
     },
   },
@@ -607,6 +757,10 @@ export default function PatroaiLanding() {
   const locale = isEnglish ? "en" : "pt";
   const t = TEXT[locale];
   const languageHref = isEnglish ? "/" : "/en";
+  const blogHref = isEnglish ? "/en/blog" : "/blog";
+  const termsHref = isEnglish ? "/en/terms" : "/termos";
+  const privacyHref = isEnglish ? "/en/privacy" : "/privacidade";
+  const cookiesHref = isEnglish ? "/en/cookies" : "/cookies";
 
   const [form, setForm] = useState(INITIAL_FORM);
   const [sending, setSending] = useState(false);
@@ -668,7 +822,7 @@ export default function PatroaiLanding() {
         locale,
         source: "grupo_patroai_public_landing",
       });
-      setReceipt(result?.data || result);
+      setReceipt({ ...(result?.data || result || {}), intake_type: form.intake_type });
     } catch (err) {
       setError(err?.message || t.form.errorGeneric);
     } finally {
@@ -704,12 +858,12 @@ export default function PatroaiLanding() {
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(52,211,153,0.16),transparent_34%),radial-gradient(circle_at_80%_0%,rgba(125,92,255,0.15),transparent_30%),linear-gradient(180deg,#060813,#090d16_45%,#05060b)]" />
 
       <header className="sticky top-0 z-40 border-b border-white/10 bg-[#060813]/78 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 md:py-4 xl:flex-nowrap">
-          <a href="#top" className="flex min-w-0 items-center gap-3">
-            <img src="/patroai-assets/logo-patroai-novo.png" alt="Grupo Patroai" className="h-12 w-auto shrink-0 md:h-14" />
-            <div className="min-w-0">
-              <div className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.22em] text-white sm:text-xs">{t.brand}</div>
-              <div className="hidden text-[11px] font-semibold text-white/45 sm:block">{t.pillars}</div>
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 md:gap-4 md:py-4 xl:flex-nowrap">
+          <a href="#top" className="flex min-w-[190px] max-w-full items-center gap-3 md:min-w-[260px]">
+            <img src="/patroai-assets/logo-patroai-novo.png" alt="Grupo Patroai" className="h-14 w-auto max-w-[64px] shrink-0 object-contain md:h-16 md:max-w-[74px]" style={{ height: "64px", width: "auto", maxWidth: "74px", objectFit: "contain" }} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[11px] font-black uppercase tracking-[0.18em] text-white sm:text-xs md:tracking-[0.22em]">{t.brand}</div>
+              <div className="hidden truncate text-[11px] font-semibold text-white/45 sm:block">{t.pillars}</div>
             </div>
           </a>
 
@@ -724,7 +878,7 @@ export default function PatroaiLanding() {
             <a href="#strategic-intake" className="hover:text-white">{t.nav.contact}</a>
           </nav>
 
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2 sm:flex-nowrap">
             <a
               href={PATROAI_WHATSAPP_URL}
               target="_blank"
@@ -883,7 +1037,7 @@ export default function PatroaiLanding() {
             <h2 className="mt-4 text-4xl font-black tracking-[-0.04em] md:text-5xl">{t.insights.title}</h2>
             <p className="mt-5 text-lg leading-8 text-white/65">{t.insights.text}</p>
           </div>
-          <Link to="/blog" className="rounded-2xl border border-white/12 bg-white/[0.055] px-5 py-3 text-center text-sm font-black text-white/80 transition hover:border-white/24 hover:text-white">
+          <Link to={blogHref} className="rounded-2xl border border-white/12 bg-white/[0.055] px-5 py-3 text-center text-sm font-black text-white/80 transition hover:border-white/24 hover:text-white">
             {t.insights.cta}
           </Link>
         </div>
@@ -917,7 +1071,7 @@ export default function PatroaiLanding() {
           {receipt ? (
             <div className="rounded-[2rem] border border-emerald-300/25 bg-emerald-300/10 p-6">
               <h3 className="text-2xl font-black text-emerald-50">{t.form.successTitle}</h3>
-              <p className="mt-3 text-sm leading-7 text-emerald-50/75">{t.form.successText}</p>
+              <p className="mt-3 text-sm leading-7 text-emerald-50/75">{t.form.successByType?.[receipt?.intake_type] || t.form.successText}</p>
               <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4">
                 <div className="text-xs font-black uppercase tracking-[0.18em] text-white/45">{t.form.protocol}</div>
                 <div className="mt-2 font-mono text-sm text-white">{receipt?.intake_id || receipt?.id || "registered"}</div>
@@ -1086,7 +1240,7 @@ export default function PatroaiLanding() {
 
               <div className="grid gap-3">
                 <ConsentBox required checked={form.consent_terms} onChange={(v) => set("consent_terms", v)}>
-                  {t.form.consentTerms} <Link to="/legal/terms" className="text-emerald-200 underline">{t.footer.terms}</Link> / <Link to="/legal/privacy" className="text-emerald-200 underline">{t.footer.privacy}</Link>
+                  {t.form.consentTerms} <Link to={termsHref} className="text-emerald-200 underline">{t.footer.terms}</Link> / <Link to={privacyHref} className="text-emerald-200 underline">{t.footer.privacy}</Link>
                 </ConsentBox>
                 <ConsentBox required checked={form.consent_data_review} onChange={(v) => set("consent_data_review", v)}>
                   {t.form.consentData}
@@ -1137,12 +1291,13 @@ export default function PatroaiLanding() {
             </blockquote>
           </div>
           <div className="flex flex-wrap gap-4 text-xs font-bold uppercase tracking-[0.16em] text-white/42">
-            <Link to="/legal/terms" className="hover:text-white">{t.footer.terms}</Link>
-            <Link to="/legal/privacy" className="hover:text-white">{t.footer.privacy}</Link>
+            <Link to={termsHref} className="hover:text-white">{t.footer.terms}</Link>
+            <Link to={privacyHref} className="hover:text-white">{t.footer.privacy}</Link>
+            <Link to={cookiesHref} className="hover:text-white">{t.footer.cookies}</Link>
             <a href="#strategic-intake" className="hover:text-white">{t.footer.contact}</a>
           </div>
         </div>
-        <div className="mx-auto mt-8 max-w-7xl text-xs text-white/32">{t.footer.rights}</div>
+        <div className="mx-auto mt-8 max-w-7xl text-xs leading-6 text-white/32">{t.footer.rights}<br />{isEnglish ? "PATROAI uses technology, artificial intelligence and assisted automation to support analysis, organization and business development. AI-generated content and outputs may have limitations and should be reviewed by qualified people before relevant decisions." : "A PATROAI utiliza tecnologia, inteligência artificial e automação assistida para apoiar análise, organização e desenvolvimento de negócios. Conteúdos e respostas geradas por IA podem conter limitações e devem ser revisados por pessoa qualificada antes de decisões relevantes."}</div>
       </footer>
     </main>
   );
