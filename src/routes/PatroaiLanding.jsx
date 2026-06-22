@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import usePatroaiSeo from "../lib/usePatroaiSeo.js";
+import { PATROAI_LEGAL_IDENTITY as LEGAL } from "../lib/patroaiLegalIdentity.js";
 import { submitStrategicIntake } from "../ui/api.js";
 
 const PATROAI_WHATSAPP_URL = "https://wa.me/5551989697605?text=Ol%C3%A1%2C%20Grupo%20Patroai.%20Gostaria%20de%20falar%20sobre%20uma%20oportunidade%20estrat%C3%A9gica.";
@@ -666,7 +667,7 @@ function Field({ label, children }) {
 }
 
 function textInputProps() {
-  return "w-full rounded-2xl border border-white/10 bg-white/[0.055] px-4 py-3 text-sm text-white placeholder-white/28 outline-none transition focus:border-emerald-300/60 focus:bg-white/[0.075]";
+  return "w-full rounded-2xl border border-white/10 bg-white/[0.055] px-4 py-3.5 text-base text-white placeholder-white/28 outline-none transition focus:border-emerald-300/60 focus:bg-white/[0.075] sm:py-3 sm:text-sm";
 }
 
 function TextInput({ value, onChange, required = false, placeholder = "", type = "text" }) {
@@ -705,9 +706,9 @@ function Select({ value, onChange, children, required = false }) {
 
 function PillarCard({ unit }) {
   return (
-    <article id={unit.id} className="rounded-[2rem] border border-white/10 bg-white/[0.045] p-6 shadow-2xl shadow-black/20">
+    <article id={unit.id} className="rounded-[1.65rem] border border-white/10 bg-white/[0.045] p-5 shadow-2xl shadow-black/20 sm:rounded-[2rem] sm:p-6">
       <div className="text-xs font-black uppercase tracking-[0.22em] text-emerald-200/70">{unit.title}</div>
-      <h3 className="mt-4 text-2xl font-black tracking-tight text-white">{unit.subtitle}</h3>
+      <h3 className="mt-4 text-xl font-black tracking-tight text-white sm:text-2xl">{unit.subtitle}</h3>
       <p className="mt-4 text-sm leading-7 text-white/68">{unit.body}</p>
       <ul className="mt-6 space-y-3">
         {unit.items.map((item) => (
@@ -726,9 +727,9 @@ function AudienceCard({ title, text, cta, onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className="group rounded-[2rem] border border-white/10 bg-gradient-to-b from-white/[0.075] to-white/[0.035] p-6 text-left transition hover:border-emerald-300/35 hover:from-emerald-300/[0.11] hover:to-white/[0.045]"
+      className="group rounded-[1.65rem] border border-white/10 bg-gradient-to-b from-white/[0.075] to-white/[0.035] p-5 text-left transition hover:border-emerald-300/35 hover:from-emerald-300/[0.11] hover:to-white/[0.045] sm:rounded-[2rem] sm:p-6"
     >
-      <h3 className="text-xl font-black text-white">{title}</h3>
+      <h3 className="text-lg font-black text-white sm:text-xl">{title}</h3>
       <p className="mt-3 text-sm leading-7 text-white/64">{text}</p>
       <div className="mt-6 text-sm font-black text-emerald-200 group-hover:text-emerald-100">{cta} →</div>
     </button>
@@ -737,13 +738,13 @@ function AudienceCard({ title, text, cta, onClick }) {
 
 function ConsentBox({ checked, onChange, children, required = false }) {
   return (
-    <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3 text-sm leading-6 text-white/68">
+    <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3 text-sm leading-6 text-white/68 sm:p-4">
       <input
         type="checkbox"
         required={required}
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="mt-1 h-4 w-4 rounded border-white/20 bg-transparent"
+        className="mt-1 h-5 w-5 shrink-0 rounded border-white/20 bg-transparent sm:h-4 sm:w-4"
       />
       <span>{children}</span>
     </label>
@@ -854,18 +855,25 @@ export default function PatroaiLanding() {
   );
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[#060813] text-white">
+    <main className="min-h-screen overflow-x-hidden bg-[#060813] text-white">
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(52,211,153,0.16),transparent_34%),radial-gradient(circle_at_80%_0%,rgba(125,92,255,0.15),transparent_30%),linear-gradient(180deg,#060813,#090d16_45%,#05060b)]" />
 
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#060813]/78 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 md:gap-4 md:py-4 xl:flex-nowrap">
-          <a href="#top" className="flex min-w-[190px] max-w-full items-center gap-3 md:min-w-[260px]">
-            <img src="/patroai-assets/logo-patroai-novo.png" alt="Grupo Patroai" className="h-14 w-auto max-w-[64px] shrink-0 object-contain md:h-16 md:max-w-[74px]" style={{ height: "64px", width: "auto", maxWidth: "74px", objectFit: "contain" }} />
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[11px] font-black uppercase tracking-[0.18em] text-white sm:text-xs md:tracking-[0.22em]">{t.brand}</div>
-              <div className="hidden truncate text-[11px] font-semibold text-white/45 sm:block">{t.pillars}</div>
-            </div>
-          </a>
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#060813]/90 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-7xl flex-col gap-2 px-3 py-2 sm:px-4 md:flex-row md:items-center md:justify-between md:gap-4 md:py-3 xl:flex-nowrap">
+          <div className="flex w-full items-center justify-between gap-3 md:w-auto md:min-w-[300px]">
+            <a href="#top" className="flex min-w-0 flex-1 items-center gap-3">
+              <img
+                src="/patroai-assets/logo-patroai-novo.png"
+                alt="Grupo Patroai"
+                className="h-14 w-auto max-w-[78px] shrink-0 object-contain sm:h-16 sm:max-w-[90px] md:h-[72px] md:max-w-[104px]"
+                style={{ height: "clamp(56px, 13vw, 76px)", width: "auto", maxWidth: "104px", objectFit: "contain" }}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[10px] font-black uppercase tracking-[0.14em] text-white sm:text-xs md:tracking-[0.22em]">{t.brand}</div>
+                <div className="mt-0.5 truncate text-[10px] font-semibold text-white/45 sm:text-[11px]">{t.pillars}</div>
+              </div>
+            </a>
+          </div>
 
           <nav className="hidden items-center gap-4 text-[11px] font-bold uppercase tracking-[0.12em] text-white/54 xl:flex">
             <a href="#scope" className="hover:text-white">{t.nav.about}</a>
@@ -878,26 +886,27 @@ export default function PatroaiLanding() {
             <a href="#strategic-intake" className="hover:text-white">{t.nav.contact}</a>
           </nav>
 
-          <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2 sm:flex-nowrap">
+          <div className="grid w-full grid-cols-4 gap-2 md:w-auto md:flex md:min-w-0 md:shrink-0 md:flex-nowrap md:items-center md:justify-end">
             <a
               href={PATROAI_WHATSAPP_URL}
               target="_blank"
               rel="noreferrer noopener"
               title={t.auth.whatsappTitle}
-              className="hidden whitespace-nowrap rounded-full border border-emerald-300/25 bg-emerald-300/10 px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-emerald-100 transition hover:border-emerald-200/55 hover:bg-emerald-300/16 md:inline-flex"
+              className="inline-flex h-9 items-center justify-center whitespace-nowrap rounded-full border border-emerald-300/25 bg-emerald-300/10 px-2 text-[10px] font-black uppercase tracking-[0.08em] text-emerald-100 transition hover:border-emerald-200/55 hover:bg-emerald-300/16 md:h-auto md:px-3 md:py-2 md:text-[11px] md:tracking-[0.14em]"
             >
-              {t.auth.whatsapp}
+              <span className="hidden sm:inline">{t.auth.whatsapp}</span>
+              <span className="sm:hidden">WA</span>
             </a>
             <Link
               to="/auth?mode=login"
-              className="whitespace-nowrap rounded-full border border-white/12 bg-white/[0.055] px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-white/78 transition hover:border-white/24 hover:text-white"
+              className="inline-flex h-9 items-center justify-center whitespace-nowrap rounded-full border border-white/12 bg-white/[0.055] px-2 text-[10px] font-black uppercase tracking-[0.08em] text-white/78 transition hover:border-white/24 hover:text-white md:h-auto md:px-3 md:py-2 md:text-[11px] md:tracking-[0.14em]"
             >
               {t.auth.login}
             </Link>
             <Link
               to="/auth?mode=register"
               title={t.auth.signupTitle}
-              className="inline-flex whitespace-nowrap rounded-full border border-cyan-200/25 bg-cyan-200/10 px-3 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-cyan-100 transition hover:border-cyan-200/55 hover:bg-cyan-200/16"
+              className="inline-flex h-9 items-center justify-center whitespace-nowrap rounded-full border border-cyan-200/25 bg-cyan-200/10 px-2 text-[10px] font-black uppercase tracking-[0.08em] text-cyan-100 transition hover:border-cyan-200/55 hover:bg-cyan-200/16 md:h-auto md:px-3 md:py-2 md:text-[11px] md:tracking-[0.12em]"
             >
               <span className="hidden md:inline">{t.auth.signup}</span>
               <span className="md:hidden">{t.auth.signupShort}</span>
@@ -905,44 +914,52 @@ export default function PatroaiLanding() {
             <Link
               to={languageHref}
               title={t.langTitle}
-              className="whitespace-nowrap rounded-full border border-white/12 bg-white/[0.055] px-3 py-2 text-[11px] font-black tracking-[0.18em] text-white/80 transition hover:border-emerald-300/40 hover:text-white"
+              className="inline-flex h-9 items-center justify-center whitespace-nowrap rounded-full border border-white/12 bg-white/[0.055] px-2 text-[10px] font-black tracking-[0.12em] text-white/80 transition hover:border-emerald-300/40 hover:text-white md:h-auto md:px-3 md:py-2 md:text-[11px] md:tracking-[0.18em]"
             >
               {t.langToggle}
             </Link>
           </div>
+
+          <nav className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 text-[10px] font-black uppercase tracking-[0.10em] text-white/46 [scrollbar-width:none] md:hidden">
+            <a href="#scope" className="shrink-0 rounded-full border border-white/10 bg-white/[0.035] px-3 py-2">{t.nav.about}</a>
+            <a href="#esg" className="shrink-0 rounded-full border border-white/10 bg-white/[0.035] px-3 py-2">{t.nav.esg}</a>
+            <a href="#mission" className="shrink-0 rounded-full border border-white/10 bg-white/[0.035] px-3 py-2">{t.nav.mission}</a>
+            <a href="#insights" className="shrink-0 rounded-full border border-white/10 bg-white/[0.035] px-3 py-2">{t.nav.insights}</a>
+            <a href="#strategic-intake" className="shrink-0 rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-emerald-100">{t.nav.contact}</a>
+          </nav>
         </div>
       </header>
 
-      <section id="top" className="relative mx-auto grid max-w-7xl gap-12 px-4 pb-20 pt-20 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:pt-24">
+      <section id="top" className="relative mx-auto grid max-w-7xl gap-7 px-3 pb-12 pt-10 sm:px-4 sm:pb-16 sm:pt-14 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-12 lg:pt-24">
         <div>
-          <div className="inline-flex rounded-full border border-emerald-300/25 bg-emerald-300/10 px-4 py-2 text-xs font-black uppercase tracking-[0.22em] text-emerald-100">
+          <div className="inline-flex max-w-full rounded-full border border-emerald-300/25 bg-emerald-300/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-emerald-100 sm:px-4 sm:text-xs sm:tracking-[0.22em]">
             {t.hero.badge}
           </div>
-          <h1 className="mt-8 max-w-4xl text-5xl font-black leading-[0.96] tracking-[-0.06em] text-white md:text-7xl">
+          <h1 className="mt-6 max-w-4xl text-[clamp(2.45rem,11.5vw,4.75rem)] font-black leading-[0.98] tracking-[-0.045em] text-white md:text-7xl md:leading-[0.96] md:tracking-[-0.06em]">
             {t.hero.title}
           </h1>
-          <p className="mt-7 max-w-2xl text-lg leading-8 text-white/68">
+          <p className="mt-5 max-w-2xl text-base leading-7 text-white/68 sm:text-lg sm:leading-8">
             {t.hero.subtitle}
           </p>
-          <div className="mt-9 flex flex-col gap-4 sm:flex-row">
+          <div className="mt-7 flex flex-col gap-3 sm:mt-9 sm:flex-row sm:gap-4">
             <button
               type="button"
               onClick={() => scrollToForm("company")}
-              className="rounded-2xl bg-gradient-to-r from-emerald-300 to-cyan-200 px-6 py-4 text-sm font-black text-slate-950 shadow-2xl shadow-emerald-950/40 transition hover:brightness-110"
+              className="w-full rounded-2xl bg-gradient-to-r from-emerald-300 to-cyan-200 px-5 py-4 text-sm font-black text-slate-950 shadow-2xl shadow-emerald-950/40 transition hover:brightness-110 sm:w-auto sm:px-6"
             >
               {t.hero.primary}
             </button>
-            <a href="#scope" className="rounded-2xl border border-white/12 bg-white/[0.055] px-6 py-4 text-center text-sm font-black text-white/85 transition hover:border-white/24 hover:bg-white/[0.08]">
+            <a href="#scope" className="w-full rounded-2xl border border-white/12 bg-white/[0.055] px-5 py-4 text-center text-sm font-black text-white/85 transition hover:border-white/24 hover:bg-white/[0.08] sm:w-auto sm:px-6">
               {t.hero.secondary}
             </a>
           </div>
           <p className="mt-6 max-w-xl text-xs font-semibold uppercase leading-6 tracking-[0.18em] text-white/38">{t.hero.note}</p>
         </div>
 
-        <div className="rounded-[2.5rem] border border-white/10 bg-white/[0.045] p-5 shadow-2xl shadow-black/30">
-          <div className="rounded-[2rem] border border-white/10 bg-[#0d1320]/90 p-6">
+        <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.045] p-3 shadow-2xl shadow-black/30 sm:rounded-[2.5rem] sm:p-5">
+          <div className="rounded-[1.5rem] border border-white/10 bg-[#0d1320]/90 p-4 sm:rounded-[2rem] sm:p-6">
             <div className="text-xs font-black uppercase tracking-[0.22em] text-emerald-200/70">{t.pillars}</div>
-            <div className="mt-8 grid gap-4">
+            <div className="mt-6 grid gap-3 sm:mt-8 sm:gap-4">
               {[
                 t.nav.consultech,
                 t.nav.holding,
@@ -950,13 +967,13 @@ export default function PatroaiLanding() {
                 "ESG",
                 isEnglish ? "Private access" : "Acesso privado",
               ].map((item, index) => (
-                <div key={item} className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.045] p-4">
+                <div key={item} className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.045] p-3 sm:p-4">
                   <span className="text-sm font-bold text-white/78">{item}</span>
                   <span className="text-xs font-black text-white/35">0{index + 1}</span>
                 </div>
               ))}
             </div>
-            <div className="mt-8 rounded-2xl border border-emerald-300/20 bg-emerald-300/10 p-4 text-sm leading-6 text-emerald-50/78">
+            <div className="mt-6 rounded-2xl border border-emerald-300/20 bg-emerald-300/10 p-4 text-sm leading-6 text-emerald-50/78 sm:mt-8">
               {isEnglish
                 ? "A discreet public presence. A controlled strategic relationship. A private operating environment."
                 : "Presença pública discreta. Relacionamento estratégico controlado. Ambiente operacional privado."}
@@ -965,11 +982,11 @@ export default function PatroaiLanding() {
         </div>
       </section>
 
-      <section id="scope" className="mx-auto max-w-7xl px-4 py-16">
+      <section id="scope" className="mx-auto max-w-7xl px-3 py-12 sm:px-4 sm:py-16">
         <div className="max-w-3xl">
           <div className="text-xs font-black uppercase tracking-[0.24em] text-emerald-200/70">{t.intro.eyebrow}</div>
-          <h2 className="mt-4 text-4xl font-black tracking-[-0.04em] md:text-5xl">{t.intro.title}</h2>
-          <p className="mt-5 text-lg leading-8 text-white/65">{t.intro.text}</p>
+          <h2 className="mt-4 text-3xl font-black tracking-[-0.04em] sm:text-4xl md:text-5xl">{t.intro.title}</h2>
+          <p className="mt-5 text-base leading-7 text-white/65 sm:text-lg sm:leading-8">{t.intro.text}</p>
         </div>
 
         <div className="mt-12 grid gap-5 lg:grid-cols-3">
@@ -977,13 +994,13 @@ export default function PatroaiLanding() {
         </div>
       </section>
 
-      <section id="esg" className="mx-auto max-w-7xl px-4 py-16">
-        <div className="rounded-[2.5rem] border border-emerald-300/15 bg-gradient-to-br from-emerald-300/[0.11] via-white/[0.045] to-cyan-300/[0.08] p-7 md:p-10">
+      <section id="esg" className="mx-auto max-w-7xl px-3 py-12 sm:px-4 sm:py-16">
+        <div className="rounded-[1.75rem] border border-emerald-300/15 sm:rounded-[2.5rem] bg-gradient-to-br from-emerald-300/[0.11] via-white/[0.045] to-cyan-300/[0.08] p-7 md:p-10">
           <div className="grid gap-10 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
             <div>
               <div className="text-xs font-black uppercase tracking-[0.24em] text-emerald-100/75">{t.esg.eyebrow}</div>
-              <h2 className="mt-4 text-4xl font-black tracking-[-0.04em] md:text-5xl">{t.esg.title}</h2>
-              <p className="mt-5 text-lg leading-8 text-white/70">{t.esg.text}</p>
+              <h2 className="mt-4 text-3xl font-black tracking-[-0.04em] sm:text-4xl md:text-5xl">{t.esg.title}</h2>
+              <p className="mt-5 text-base leading-7 text-white/70 sm:text-lg sm:leading-8">{t.esg.text}</p>
             </div>
             <div className="grid gap-4">
               {t.esg.items.map((item) => (
@@ -996,11 +1013,11 @@ export default function PatroaiLanding() {
         </div>
       </section>
 
-      <section id="mission" className="mx-auto max-w-7xl px-4 py-16">
+      <section id="mission" className="mx-auto max-w-7xl px-3 py-12 sm:px-4 sm:py-16">
         <div className="max-w-3xl">
           <div className="text-xs font-black uppercase tracking-[0.24em] text-emerald-200/70">{t.mission.eyebrow}</div>
-          <h2 className="mt-4 text-4xl font-black tracking-[-0.04em] md:text-5xl">{t.mission.title}</h2>
-          <p className="mt-5 text-lg leading-8 text-white/65">{t.mission.intro}</p>
+          <h2 className="mt-4 text-3xl font-black tracking-[-0.04em] sm:text-4xl md:text-5xl">{t.mission.title}</h2>
+          <p className="mt-5 text-base leading-7 text-white/65 sm:text-lg sm:leading-8">{t.mission.intro}</p>
         </div>
         <div className="mt-10 grid gap-5 lg:grid-cols-3">
           {t.mission.cards.map((card) => (
@@ -1012,12 +1029,12 @@ export default function PatroaiLanding() {
         </div>
       </section>
 
-      <section id="market" className="mx-auto max-w-7xl px-4 py-16">
-        <div className="rounded-[2.5rem] border border-cyan-200/15 bg-gradient-to-br from-cyan-300/[0.09] via-white/[0.04] to-emerald-300/[0.08] p-7 md:p-10">
+      <section id="market" className="mx-auto max-w-7xl px-3 py-12 sm:px-4 sm:py-16">
+        <div className="rounded-[1.75rem] border border-cyan-200/15 sm:rounded-[2.5rem] bg-gradient-to-br from-cyan-300/[0.09] via-white/[0.04] to-emerald-300/[0.08] p-7 md:p-10">
           <div className="max-w-3xl">
             <div className="text-xs font-black uppercase tracking-[0.24em] text-cyan-100/75">{t.market.eyebrow}</div>
-            <h2 className="mt-4 text-4xl font-black tracking-[-0.04em] md:text-5xl">{t.market.title}</h2>
-            <p className="mt-5 text-lg leading-8 text-white/70">{t.market.text}</p>
+            <h2 className="mt-4 text-3xl font-black tracking-[-0.04em] sm:text-4xl md:text-5xl">{t.market.title}</h2>
+            <p className="mt-5 text-base leading-7 text-white/70 sm:text-lg sm:leading-8">{t.market.text}</p>
           </div>
           <div className="mt-10 grid gap-5 lg:grid-cols-3">
             {t.market.cards.map((card) => (
@@ -1030,12 +1047,12 @@ export default function PatroaiLanding() {
         </div>
       </section>
 
-      <section id="insights" className="mx-auto max-w-7xl px-4 py-16">
+      <section id="insights" className="mx-auto max-w-7xl px-3 py-12 sm:px-4 sm:py-16">
         <div className="flex flex-col justify-between gap-6 md:flex-row md:items-end">
           <div className="max-w-3xl">
             <div className="text-xs font-black uppercase tracking-[0.24em] text-emerald-200/70">{t.insights.eyebrow}</div>
-            <h2 className="mt-4 text-4xl font-black tracking-[-0.04em] md:text-5xl">{t.insights.title}</h2>
-            <p className="mt-5 text-lg leading-8 text-white/65">{t.insights.text}</p>
+            <h2 className="mt-4 text-3xl font-black tracking-[-0.04em] sm:text-4xl md:text-5xl">{t.insights.title}</h2>
+            <p className="mt-5 text-base leading-7 text-white/65 sm:text-lg sm:leading-8">{t.insights.text}</p>
           </div>
           <Link to={blogHref} className="rounded-2xl border border-white/12 bg-white/[0.055] px-5 py-3 text-center text-sm font-black text-white/80 transition hover:border-white/24 hover:text-white">
             {t.insights.cta}
@@ -1052,7 +1069,7 @@ export default function PatroaiLanding() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-4 py-16">
+      <section className="mx-auto max-w-7xl px-3 py-12 sm:px-4 sm:py-16">
         <div className="grid gap-5 lg:grid-cols-3">
           <AudienceCard {...t.audiences.companies} onClick={() => scrollToForm("company")} />
           <AudienceCard {...t.audiences.investors} onClick={() => scrollToForm("investor")} />
@@ -1060,11 +1077,11 @@ export default function PatroaiLanding() {
         </div>
       </section>
 
-      <section id="strategic-intake" className="mx-auto max-w-5xl px-4 py-20">
-        <div className="rounded-[2.5rem] border border-white/10 bg-white/[0.045] p-5 shadow-2xl shadow-black/30 md:p-8">
-          <div className="mb-8 max-w-3xl">
+      <section id="strategic-intake" className="mx-auto max-w-5xl scroll-mt-36 px-3 py-12 sm:px-4 sm:py-20">
+        <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.045] p-4 shadow-2xl shadow-black/30 sm:p-5 md:rounded-[2.5rem] md:p-8">
+          <div className="mb-6 max-w-3xl sm:mb-8">
             <div className="text-xs font-black uppercase tracking-[0.24em] text-emerald-200/70">{t.form.eyebrow}</div>
-            <h2 className="mt-4 text-4xl font-black tracking-[-0.04em]">{t.form.title}</h2>
+            <h2 className="mt-4 text-3xl font-black tracking-[-0.04em] sm:text-4xl">{t.form.title}</h2>
             <p className="mt-4 text-sm leading-7 text-white/62">{t.form.subtitle}</p>
           </div>
 
@@ -1105,13 +1122,13 @@ export default function PatroaiLanding() {
               )}
 
               <Field label={t.form.typeLabel}>
-                <div className="grid gap-3 md:grid-cols-3">
+                <div className="grid gap-2 sm:gap-3 md:grid-cols-3">
                   {["company", "investor", "consultant"].map((type) => (
                     <button
                       key={type}
                       type="button"
                       onClick={() => set("intake_type", type)}
-                      className={`rounded-2xl border px-4 py-3 text-sm font-black transition ${
+                      className={`rounded-2xl border px-3 py-3 text-sm font-black transition sm:px-4 ${
                         form.intake_type === type
                           ? "border-emerald-300/45 bg-emerald-300/15 text-emerald-50"
                           : "border-white/10 bg-white/[0.045] text-white/58 hover:text-white"
@@ -1275,16 +1292,29 @@ export default function PatroaiLanding() {
         target="_blank"
         rel="noreferrer noopener"
         title={t.auth.whatsappTitle}
-        className="fixed bottom-5 right-5 z-50 rounded-full border border-emerald-300/35 bg-emerald-300 px-5 py-3 text-xs font-black uppercase tracking-[0.16em] text-slate-950 shadow-2xl shadow-emerald-950/40 transition hover:brightness-110"
+        className="fixed bottom-4 right-4 z-50 rounded-full border border-emerald-300/35 bg-emerald-300 px-4 py-3 text-[11px] font-black uppercase tracking-[0.12em] text-slate-950 shadow-2xl shadow-emerald-950/40 transition hover:brightness-110 sm:bottom-5 sm:right-5 sm:px-5 sm:text-xs sm:tracking-[0.16em]"
       >
         {t.auth.whatsapp}
       </a>
 
-      <footer className="border-t border-white/10 px-4 py-10">
+      <footer className="border-t border-white/10 px-3 py-10 sm:px-4">
         <div className="mx-auto flex max-w-7xl flex-col gap-8 md:flex-row md:items-end md:justify-between">
           <div>
             <div className="text-xs font-black uppercase tracking-[0.28em] text-white">{t.brand}</div>
             <div className="mt-1 text-sm text-white/46">{t.pillars}</div>
+            <div className="mt-4 text-xs leading-6 text-white/38">
+              <div>{LEGAL.legalName}</div>
+              <div>{isEnglish ? `Brazilian CNPJ ${LEGAL.cnpj}` : `CNPJ ${LEGAL.cnpj}`}</div>
+              <div>{LEGAL.address.full}</div>
+              <div>
+                {isEnglish ? "Institutional contact" : "Contato institucional"}:{" "}
+                <a href={`mailto:${LEGAL.emails.contact}`} className="text-white/58 underline underline-offset-4 hover:text-white">{LEGAL.emails.contact}</a>
+              </div>
+              <div>
+                {isEnglish ? "Privacy and data protection" : "Privacidade e proteção de dados"}:{" "}
+                <a href={`mailto:${LEGAL.emails.privacy}`} className="text-white/58 underline underline-offset-4 hover:text-white">{LEGAL.emails.privacy}</a>
+              </div>
+            </div>
             <blockquote className="mt-5 max-w-2xl text-sm italic leading-7 text-white/62">
               {t.footer.verse}
               <span className="not-italic text-white/42"> — {t.footer.reference}</span>
