@@ -1,47 +1,54 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-:root {
-  color-scheme: dark;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #060813;
-}
-
-html {
-  scroll-behavior: smooth;
-  background: #060813;
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  width: 100%;
 }
 
 body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-  background: #060813;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(34, 211, 238, 0.08), transparent 28%),
+    radial-gradient(circle at top right, rgba(124, 58, 237, 0.12), transparent 30%),
+    #060812;
+  color: #ffffff;
 }
 
 * {
   box-sizing: border-box;
 }
 
-img,
-svg,
-video,
-canvas {
-  max-width: 100%;
+:root {
+  color-scheme: dark;
 }
 
 button,
 input,
-select,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+::selection {
+  background: rgba(103, 232, 249, 0.28);
+  color: #ffffff;
+}
+
+/* Fallback mínimo caso o CDN do Tailwind seja bloqueado durante testes locais. */
+.patroai-logo-safe {
+  max-width: min(210px, 56vw);
+  height: auto;
+}
+
 @media (max-width: 480px) {
-  input,
-  select,
-  textarea {
-    font-size: 16px;
+  .patroai-logo-safe {
+    max-width: min(180px, 52vw);
   }
 }
