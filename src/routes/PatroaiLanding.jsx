@@ -174,76 +174,6 @@ const TEXT = {
         },
       ],
     },
-    mission: {
-      eyebrow: "Mission, vision and values",
-      title: "Technology, strategy and purpose for business continuity.",
-      intro:
-        "Patroai was created to connect strategic intelligence, applied technology and responsible business design in projects capable of generating sustainable value.",
-      cards: [
-        {
-          title: "Mission",
-          text:
-            "Support companies, investors, consultants and partners in structuring smarter, governed and sustainable businesses, transforming complex information into clarity, decisions and execution.",
-        },
-        {
-          title: "Vision",
-          text:
-            "Become a Brazilian reference in consultech, AI Factory and new venture development, building a proprietary category of governed AI systems for management, growth and business continuity.",
-        },
-        {
-          title: "Values",
-          text:
-            "Operational truth, governance, sustainability, responsibility, excellence, discretion, partnership, applied innovation, long-term vision and faith expressed through service.",
-        },
-      ],
-    },
-    market: {
-      eyebrow: "Market thesis",
-      title: "Where we are and where we want to go.",
-      text:
-        "The enterprise market has entered a new cycle: artificial intelligence is no longer just a tool. It now requires governance, integration, security, qualified people and strategic clarity.",
-      cards: [
-        {
-          title: "Market",
-          text:
-            "Companies are pursuing applied AI, but many still struggle to turn technology into decisions, operations, risk control and measurable business outcomes.",
-        },
-        {
-          title: "Where we are",
-          text:
-            "We are in a controlled traction stage, with validated public positioning, qualified intake, a protected private environment and focus on high-value strategic projects.",
-        },
-        {
-          title: "Where we want to go",
-          text:
-            "We aim to build a proprietary category: a consultech with an AI Factory and holding perspective, supporting companies in continuity, expansion and long-term business value.",
-        },
-      ],
-    },
-    insights: {
-      eyebrow: "Blog and market intelligence",
-      title: "Insights for leaders, investors and consultants.",
-      text:
-        "We publish perspectives on applied AI, governance, ESG, new ventures, valuation, business transformation and continuity, without exposing sensitive details of the private platform.",
-      cta: "Visit blog",
-      posts: [
-        {
-          title: "The new cycle of enterprise AI requires governance",
-          text:
-            "The next stage of artificial intelligence will not be won only by those adopting tools, but by those building reliable, auditable and business-aligned processes.",
-        },
-        {
-          title: "ESG and continuity: technology with a long-term perspective",
-          text:
-            "Sustainability, governance and applied intelligence belong to the same agenda: protecting business continuity and preparing new generations of value.",
-        },
-        {
-          title: "Consultech, Holding and AI Factory: a category in construction",
-          text:
-            "Patroai combines strategy, technology and relational capital to structure businesses, support decisions and develop opportunities with control and responsibility.",
-        },
-      ],
-    },
     audiences: {
       companies: {
         title: "Para empresas",
@@ -855,17 +785,17 @@ export default function PatroaiLanding() {
   );
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#060813] text-white">
+    <main className="patroai-landing-root min-h-screen overflow-x-hidden bg-[#060813] text-white">
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(52,211,153,0.16),transparent_34%),radial-gradient(circle_at_80%_0%,rgba(125,92,255,0.15),transparent_30%),linear-gradient(180deg,#060813,#090d16_45%,#05060b)]" />
 
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#060813]/90 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl flex-col gap-2 px-3 py-2 sm:px-4 md:flex-row md:items-center md:justify-between md:gap-4 md:py-3 xl:flex-nowrap">
+      <header className="patroai-header sticky top-0 z-40 border-b border-white/10 bg-[#060813]/90 backdrop-blur-xl">
+        <div className="patroai-header-inner mx-auto flex max-w-7xl flex-col gap-2 px-3 py-2 sm:px-4 md:flex-row md:items-center md:justify-between md:gap-4 md:py-3 xl:flex-nowrap">
           <div className="flex w-full items-center justify-between gap-3 md:w-auto md:min-w-[300px]">
-            <a href="#top" className="flex min-w-0 flex-1 items-center gap-3">
+            <a href="#top" className="patroai-brand-lockup flex min-w-0 flex-1 items-center gap-3">
               <img
                 src="/patroai-assets/logo-patroai-novo.png"
                 alt="Grupo Patroai"
-                className="h-14 w-auto max-w-[78px] shrink-0 object-contain sm:h-16 sm:max-w-[90px] md:h-[72px] md:max-w-[104px]"
+                className="patroai-logo-safe patroai-logo h-14 w-auto max-w-[78px] shrink-0 object-contain sm:h-16 sm:max-w-[90px] md:h-[72px] md:max-w-[104px]"
                 style={{ height: "clamp(56px, 13vw, 76px)", width: "auto", maxWidth: "104px", objectFit: "contain" }}
               />
               <div className="min-w-0 flex-1">
@@ -886,7 +816,7 @@ export default function PatroaiLanding() {
             <a href="#strategic-intake" className="hover:text-white">{t.nav.contact}</a>
           </nav>
 
-          <div className="grid w-full grid-cols-4 gap-2 md:w-auto md:flex md:min-w-0 md:shrink-0 md:flex-nowrap md:items-center md:justify-end">
+          <div className="patroai-header-actions grid w-full grid-cols-4 gap-2 md:w-auto md:flex md:min-w-0 md:shrink-0 md:flex-nowrap md:items-center md:justify-end">
             <a
               href={PATROAI_WHATSAPP_URL}
               target="_blank"
@@ -920,7 +850,7 @@ export default function PatroaiLanding() {
             </Link>
           </div>
 
-          <nav className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 text-[10px] font-black uppercase tracking-[0.10em] text-white/46 [scrollbar-width:none] md:hidden">
+          <nav className="patroai-mobile-nav -mx-3 flex gap-2 overflow-x-auto px-3 pb-1 text-[10px] font-black uppercase tracking-[0.10em] text-white/46 [scrollbar-width:none] md:hidden">
             <a href="#scope" className="shrink-0 rounded-full border border-white/10 bg-white/[0.035] px-3 py-2">{t.nav.about}</a>
             <a href="#esg" className="shrink-0 rounded-full border border-white/10 bg-white/[0.035] px-3 py-2">{t.nav.esg}</a>
             <a href="#mission" className="shrink-0 rounded-full border border-white/10 bg-white/[0.035] px-3 py-2">{t.nav.mission}</a>
@@ -930,33 +860,38 @@ export default function PatroaiLanding() {
         </div>
       </header>
 
-      <section id="top" className="relative mx-auto grid max-w-7xl gap-7 px-3 pb-12 pt-10 sm:px-4 sm:pb-16 sm:pt-14 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-12 lg:pt-24">
+      <section id="top" className="patroai-hero relative mx-auto grid max-w-7xl gap-7 px-3 pb-12 pt-10 sm:px-4 sm:pb-16 sm:pt-14 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-12 lg:pt-24">
         <div>
           <div className="inline-flex max-w-full rounded-full border border-emerald-300/25 bg-emerald-300/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-emerald-100 sm:px-4 sm:text-xs sm:tracking-[0.22em]">
             {t.hero.badge}
           </div>
-          <h1 className="mt-6 max-w-4xl text-[clamp(2.45rem,11.5vw,4.75rem)] font-black leading-[0.98] tracking-[-0.045em] text-white md:text-7xl md:leading-[0.96] md:tracking-[-0.06em]">
+          <h1 className="patroai-hero-title mt-6 max-w-4xl text-[clamp(2.45rem,11.5vw,4.75rem)] font-black leading-[0.98] tracking-[-0.045em] text-white md:text-7xl md:leading-[0.96] md:tracking-[-0.06em]">
             {t.hero.title}
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-white/68 sm:text-lg sm:leading-8">
             {t.hero.subtitle}
           </p>
-          <div className="mt-7 flex flex-col gap-3 sm:mt-9 sm:flex-row sm:gap-4">
+          <div className="patroai-hero-actions mt-7 flex flex-col gap-3 sm:mt-9 sm:flex-row sm:gap-4">
             <button
               type="button"
               onClick={() => scrollToForm("company")}
-              className="w-full rounded-2xl bg-gradient-to-r from-emerald-300 to-cyan-200 px-5 py-4 text-sm font-black text-slate-950 shadow-2xl shadow-emerald-950/40 transition hover:brightness-110 sm:w-auto sm:px-6"
+              className="patroai-hero-primary w-full rounded-2xl bg-gradient-to-r from-emerald-300 to-cyan-200 px-5 py-4 text-sm font-black text-slate-950 shadow-2xl shadow-emerald-950/40 transition hover:brightness-110 sm:w-auto sm:px-6"
             >
               {t.hero.primary}
             </button>
-            <a href="#scope" className="w-full rounded-2xl border border-white/12 bg-white/[0.055] px-5 py-4 text-center text-sm font-black text-white/85 transition hover:border-white/24 hover:bg-white/[0.08] sm:w-auto sm:px-6">
+            <a href="#scope" className="patroai-hero-secondary w-full rounded-2xl border border-white/12 bg-white/[0.055] px-5 py-4 text-center text-sm font-black text-white/85 transition hover:border-white/24 hover:bg-white/[0.08] sm:w-auto sm:px-6">
               {t.hero.secondary}
             </a>
           </div>
           <p className="mt-6 max-w-xl text-xs font-semibold uppercase leading-6 tracking-[0.18em] text-white/38">{t.hero.note}</p>
+          <div className="patroai-trust-strip mt-5 grid gap-2 text-[11px] font-black uppercase tracking-[0.12em] text-white/50 sm:grid-cols-3">
+            <span>{isEnglish ? "Qualification first" : "Qualificação primeiro"}</span>
+            <span>{isEnglish ? "Manual review" : "Análise manual"}</span>
+            <span>{isEnglish ? "Controlled access" : "Acesso controlado"}</span>
+          </div>
         </div>
 
-        <div className="rounded-[1.75rem] border border-white/10 bg-white/[0.045] p-3 shadow-2xl shadow-black/30 sm:rounded-[2.5rem] sm:p-5">
+        <div className="patroai-hero-card rounded-[1.75rem] border border-white/10 bg-white/[0.045] p-3 shadow-2xl shadow-black/30 sm:rounded-[2.5rem] sm:p-5">
           <div className="rounded-[1.5rem] border border-white/10 bg-[#0d1320]/90 p-4 sm:rounded-[2rem] sm:p-6">
             <div className="text-xs font-black uppercase tracking-[0.22em] text-emerald-200/70">{t.pillars}</div>
             <div className="mt-6 grid gap-3 sm:mt-8 sm:gap-4">
