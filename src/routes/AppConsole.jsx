@@ -1527,7 +1527,7 @@ function sanitizePublicAssistantSpeaker(messageLike, proposedName = "Orkio") {
     return "Orkio";
   }
 
-  if ((finalKey === "orkio" || visibleKey === "orkio") && proposedKey === "orion") {
+  if ((finalKey === "orkio" || visibleKey === "orkio") && proposedKey === "orion" && !canSeeInternalOrionSpeaker()) {
     return "Orkio";
   }
 
@@ -1558,6 +1558,32 @@ function sanitizePublicAssistantSpeaker(messageLike, proposedName = "Orkio") {
 function inferSpeakerNameFromContent(content) {
   const text = String(content || "").trim();
   if (!text) return "";
+
+  // EFATA777 V5 — Realtime/persisted messages can arrive from the backend with
+  // a stale visible speaker ("Orkio") even when the actual spoken content says
+  // Orion/Chris assumed the turn. Infer the visible speaker from explicit
+  // self-identification before falling back to the first-line label heuristic.
+  const normalizedText = text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+  if (
+    /\b(eu\s+sou|sou|aqui\s+e|quem\s+fala\s+e|fala\s+o)\s+(o\s+)?orion\b/iu.test(normalizedText) ||
+    /\borion\s+(entrou|assumiu|esta\s+na\s+escuta|estou\s+na\s+escuta|pode\s+assumir|assumindo)\b/iu.test(normalizedText) ||
+    (/\borion\b/iu.test(normalizedText) && /\b(cto|diagnostico\s+tecnico|agente\s+tecnico)\b/iu.test(normalizedText))
+  ) {
+    return "Orion";
+  }
+
+  if (
+    /\b(eu\s+sou|sou|aqui\s+e|quem\s+fala\s+e|fala\s+a)\s+(a\s+)?chris\b/iu.test(normalizedText) ||
+    /\bchris\s+(entrou|assumiu|esta\s+na\s+escuta|estou\s+na\s+escuta|pode\s+assumir|assumindo)\b/iu.test(normalizedText) ||
+    (/\bchris\b/iu.test(normalizedText) && /\b(cfo|financeir|estrategic|valuation|captacao)\b/iu.test(normalizedText))
+  ) {
+    return "Chris";
+  }
+
   const lines = text
     .split(/\r?\n/)
     .map((line) => String(line || "").replace(/^[\s#>*-]+/, "").replace(/\s*[:：]\s*$/, "").trim())
@@ -1566,7 +1592,6 @@ function inferSpeakerNameFromContent(content) {
   if (!lines.length) return "";
   const first = lines[0];
   const inferred = canonicalizeSpeakerLabel(first);
-  const normalizedInferred = String(inferred || "").trim().toLowerCase();
   const normalizedFirst = String(first || "").trim().toLowerCase();
   if (!inferred) return "";
   if (["agent", "assistant", "model", "agente"].includes(normalizedFirst)) return "Agent";
@@ -1592,7 +1617,15 @@ function resolveAssistantDisplayName(messageLike, fallback = "Agent") {
 
   let candidate = "";
 
-  if (explicitFromContent && ["agent", "assistant", "model"].includes(rawLower)) {
+  const explicitKey = String(canonicalizeSpeakerLabel(explicitFromContent || "") || "").trim().toLowerCase();
+
+  if (
+    explicitFromContent &&
+    canSeeInternalOrionSpeaker() &&
+    ["orion", "chris"].includes(explicitKey)
+  ) {
+    candidate = explicitFromContent;
+  } else if (explicitFromContent && ["agent", "assistant", "model"].includes(rawLower)) {
     candidate = explicitFromContent;
   } else if (explicitFromContent && !rawName) {
     candidate = explicitFromContent;
@@ -1621,6 +1654,14 @@ function normalizeMessageSpeaker(messageLike) {
     final_speaker: displayName,
     visible_agent: displayName,
   };
+}
+
+function resolveRealtimeVisibleSpeakerName(content = "", fallback = "") {
+  const inferred = inferSpeakerNameFromContent(content);
+  if (inferred && inferred !== "Agent") return inferred;
+  const active = String(fallback || "").trim();
+  if (active) return canonicalizeSpeakerLabel(active);
+  return "Orkio";
 }
 
 // METATRON_CHAT_ORDER_STABILITY
@@ -4313,9 +4354,11 @@ function formatAgentOptionLabel(agent) {
       "Você está em uma sessão de voz realtime dentro da plataforma Patroai. " +
       "Você deve reconhecer agentes internos da plataforma: Orkio, Team, Chris e Orion. " +
       "Orion é agente interno de diagnóstico técnico/CTO da plataforma. " +
-      "Nunca trate Orion como pessoa externa, contato externo, e-mail ou sistema fora da plataforma. " +
-      "Se o usuário pedir para falar com Orion e Orion já for o agente selecionado, responda como Orion imediatamente. " +
-      "Se outro agente estiver selecionado e o usuário pedir Orion, reconheça que Orion é interno e oriente selecionar Orion/reiniciar o realtime, sem dizer que não conhece.";
+      "Chris é agente interno financeiro/estratégico. " +
+      "Nunca trate Orion ou Chris como pessoa externa, contato externo, e-mail ou sistema fora da plataforma. " +
+      "Nunca afirme que acionou, publicou, abriu auditoria, criou War Room, enviou push, chamou agente ou executou integração se isso não tiver confirmação técnica no runtime. " +
+      "Se a orquestração real ainda não estiver confirmada, diga de forma transparente que está conduzindo a transição de fala no Realtime e registrando a pendência técnica. " +
+      "Se o usuário pedir para falar com Orion e Orion já for o agente selecionado, responda como Orion imediatamente.";
 
     if (slug === "orion") {
       return (
@@ -4340,7 +4383,9 @@ function formatAgentOptionLabel(agent) {
       return (
         base + "\n\n" +
         "Identidade ativa: você é Team, coordenação interna da Patroai. " +
-        "Fale como Team e organize decisões, riscos, responsáveis e próximos passos."
+        "Fale como facilitador executivo e organize decisões, riscos, responsáveis e próximos passos. " +
+        "Se Daniel pedir para chamar Orion ou Chris, conduza uma transição de fala para o agente correto. " +
+        "Não simule várias vozes simultâneas e não diga que uma sala multiagente real foi aberta sem confirmação técnica."
       );
     }
 
@@ -4426,24 +4471,50 @@ function formatAgentOptionLabel(agent) {
     );
   }
 
-  function maybeApplyRealtimeAgentHandoffFromTranscript(rawText = "", source = "transcript") {
-    if (!canAccessAdmin) return false;
-    if (!isRealtimeOrionHandoffIntent(rawText)) return false;
+  function resolveRealtimeHandoffTargetFromTranscript(rawText = "") {
+    if (!canAccessAdmin) return null;
+    const textValue = String(rawText || "");
+    const normalized = textValue
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
 
-    const orion = findAgentByCanonicalSlug("orion") || findAgentByRuntimeIdentity("orion");
-    if (!orion?.id) {
+    const wantsChris =
+      /\b(chris|cris|cfo|financeir|valuation|captacao)\b/iu.test(normalized) &&
+      /\b(chame|chamar|inclua|incluir|traga|trazer|aciona|acionar|passa|passar|assuma|assumir|conversa|diagnostic|escuta)\b/iu.test(normalized);
+
+    const wantsOrion =
+      isRealtimeOrionHandoffIntent(textValue) ||
+      (
+        /\b(orion|oria|auria|aurya|arian|aryan|orlan|warren|cto|tecnico|diagnostico)\b/iu.test(normalized) &&
+        /\b(chame|chamar|inclua|incluir|traga|trazer|aciona|acionar|passa|passar|assuma|assumir|conversa|diagnostic|escuta)\b/iu.test(normalized)
+      );
+
+    if (wantsChris) return "chris";
+    if (wantsOrion) return "orion";
+    return null;
+  }
+
+  function maybeApplyRealtimeAgentHandoffFromTranscript(rawText = "", source = "transcript") {
+    const targetSlug = resolveRealtimeHandoffTargetFromTranscript(rawText);
+    if (!targetSlug) return false;
+
+    const targetAgent = findAgentByCanonicalSlug(targetSlug) || findAgentByRuntimeIdentity(targetSlug);
+    if (!targetAgent?.id) {
       try {
-        logRealtimeStep("realtime:orion_handoff_skipped_missing_agent", {
+        logRealtimeStep("realtime:agent_handoff_skipped_missing_agent", {
           source,
+          targetSlug,
           transcript: String(rawText || "").slice(0, 180),
         });
       } catch {}
       return false;
     }
 
-    rtcHostAgentIdRef.current = orion.id;
-    rtcHostAgentNameRef.current = String(orion.name || "Orion").trim() || "Orion";
-    selectSingleAgentForRuntime(orion.id, `realtime_${source}`);
+    const targetName = canonicalizeSpeakerLabel(targetAgent.name || targetSlug);
+    rtcHostAgentIdRef.current = targetAgent.id;
+    rtcHostAgentNameRef.current = String(targetName || targetAgent.name || targetSlug).trim() || targetName || targetSlug;
+    selectSingleAgentForRuntime(targetAgent.id, `realtime_${source}`);
 
     const dc = rtcDcRef.current;
     if (dc?.readyState === "open") {
@@ -4452,29 +4523,43 @@ function formatAgentOptionLabel(agent) {
           type: "session.update",
           session: {
             type: "realtime",
-            instructions: buildRealtimeAgentInstructions(orion),
+            instructions: buildRealtimeAgentInstructions(targetAgent),
           },
-        }, "orion_handoff_session_update");
+        }, `${targetSlug}_handoff_session_update`);
+
+        const handoffPrompt = targetSlug === "orion"
+          ? "Transição de fala: Orion, agente técnico/CTO interno da Patroai, assuma agora. Responda em primeira pessoa como Orion. Não diga que é Orkio."
+          : "Transição de fala: Chris, agente financeiro/estratégico interno da Patroai, assuma agora. Responda em primeira pessoa como Chris. Não diga que é Orkio.";
+
+        sendRealtimeClientEvent(dc, {
+          type: "response.create",
+          response: {
+            modalities: ["text", "audio"],
+            instructions: handoffPrompt,
+          },
+        }, `${targetSlug}_handoff_response_create`);
       } catch (err) {
-        logRealtimeStep("realtime:orion_handoff_session_update_failed", {
+        logRealtimeStep("realtime:agent_handoff_session_update_failed", {
           source,
+          targetSlug,
           message: err?.message || null,
         });
       }
     }
 
     try {
-      setActiveRuntimeAgent("Orion");
-      setRuntimeHandoffLabel("Realtime direcionado para Orion — agente técnico/CTO interno.");
-      setUploadStatus("🛰️ Orion selecionado para assumir o Realtime.");
+      setActiveRuntimeAgent(rtcHostAgentNameRef.current);
+      setRuntimeHandoffLabel(`Realtime direcionado para ${rtcHostAgentNameRef.current}.`);
+      setUploadStatus(`🛰️ ${rtcHostAgentNameRef.current} selecionado para assumir o Realtime.`);
       setTimeout(() => setUploadStatus(""), 2200);
     } catch {}
 
     try {
-      logRealtimeStep("realtime:orion_handoff_applied", {
+      logRealtimeStep("realtime:agent_handoff_applied", {
         source,
-        agent_id: orion.id,
-        agent_name: orion.name || "Orion",
+        target_slug: targetSlug,
+        agent_id: targetAgent.id,
+        agent_name: rtcHostAgentNameRef.current,
       });
     } catch {}
 
@@ -4869,7 +4954,7 @@ async function sendMessage(presetMsg = null, opts = {}) {
             ? {
                 ...m,
                 content: "Peço perdão. Não consegui concluir a resposta pelo stream nesta tentativa. A tentativa foi encerrada com segurança; tente novamente.",
-                agent_name: "Orkio",
+                agent_name: assistantAgentName,
               }
             : m
         )));
@@ -4964,7 +5049,7 @@ async function sendMessage(presetMsg = null, opts = {}) {
       setWalletBlockedDetail(null);
       setExecutionTraceExpanded(true);
       try { window.localStorage?.setItem("orkio_execution_trace_open", "1"); } catch {}
-      setActiveRuntimeAgent("Orkio");
+      setActiveRuntimeAgent(initialDraftAgentName || "Orkio");
       setRuntimeHandoffLabel("");
       resetExecutionTrace([
         {
@@ -5286,6 +5371,30 @@ async function sendMessage(presetMsg = null, opts = {}) {
                 throw fallbackErr;
               }
             }
+          } else if (streamErr?.status === 422 || streamErr?.code === "CHAT_STREAM_VALIDATION_ERROR") {
+            appendExecutionTrace({
+              kind: "warning",
+              label: "Contrato do stream recusado",
+              detail: "O upload foi preservado, mas /api/chat/stream recusou a chamada com 422. Revise a mensagem e tente enviar uma pergunta textual.",
+            });
+            setMessages((prev) =>
+              (Array.isArray(prev) ? prev : []).map((m) =>
+                m.id === draftAssistantId
+                  ? {
+                      ...m,
+                      content: "Arquivo anexado. Não consegui acionar a análise porque o contrato do stream recusou a chamada. Escreva uma pergunta objetiva sobre o arquivo anexado e tente novamente.",
+                      agent_name: m.agent_name || initialDraftAgentName || "Orkio",
+                    }
+                  : m
+              )
+            );
+            setUploadStatus("");
+            setSending(false);
+            sendingRef.current = false;
+            setV2vPhase(null);
+            setV2vError("O upload foi concluído; a análise por chat falhou por validação 422 no stream.");
+            collapseExecutionTrace();
+            return false;
           } else if (streamErr?.status === 429 || streamErr?.code === "RATE_LIMITED" || streamErr?.isRateLimited) {
             appendExecutionTrace({
               kind: "warning",
@@ -5298,7 +5407,7 @@ async function sendMessage(presetMsg = null, opts = {}) {
                   ? {
                       ...m,
                       content: "Capacidade temporariamente atingida. Tente novamente em instantes.",
-                      agent_name: "Orkio",
+                      agent_name: m.agent_name || initialDraftAgentName || "Orkio",
                     }
                   : m
               )
@@ -5331,7 +5440,7 @@ async function sendMessage(presetMsg = null, opts = {}) {
                       content: streamErr?.status === 403
                         ? "Seu acesso foi negado para esta execução. Revise a sessão e tente novamente."
                         : "Sessão expirada ou inconsistente. Entre novamente para continuar.",
-                      agent_name: "Orkio",
+                      agent_name: m.agent_name || initialDraftAgentName || "Orkio",
                     }
                   : m
               )
@@ -6349,7 +6458,8 @@ function scheduleRealtimeIdleFollowup() {
   if (!REALTIME_IDLE_FOLLOWUP_ENABLED) return;
   if (!realtimeModeRef.current) return;
 
-  const assistantAgentId = destSingle || null;
+  const assistantAgentId = rtcHostAgentIdRef.current || destSingle || null;
+  const assistantAgentName = resolveRealtimeVisibleSpeakerName("", rtcHostAgentNameRef.current || activeRuntimeAgent || "Orkio");
   const displayName = resolveRealtimeIdleDisplayName(user);
   rtcIdleFollowupTimerRef.current = setTimeout(async () => {
     try {
@@ -6953,14 +7063,18 @@ function scheduleRealtimeIdleFollowup() {
 
       if (lastKey && lastKey === dedupeKey) return list;
 
+      const realtimeSpeakerName = safeRole === "assistant"
+        ? resolveRealtimeVisibleSpeakerName(cleanText, rtcHostAgentNameRef.current || activeRuntimeAgent || "Orkio")
+        : displayUserName;
+
       const realtimeMessage = {
         id: `rtc_${safeRole}_${Date.now()}_${Math.random().toString(16).slice(2)}`,
         role: safeRole,
         content: cleanText,
-        agent_id: safeRole === "assistant" ? (rtcHostAgentIdRef.current || "orkio") : null,
-        agent_name: safeRole === "assistant" ? (String(rtcHostAgentNameRef.current || "Orkio").trim() || "Orkio") : displayUserName,
-        final_speaker: safeRole === "assistant" ? (String(rtcHostAgentNameRef.current || "Orkio").trim() || "Orkio") : displayUserName,
-        visible_agent: safeRole === "assistant" ? (String(rtcHostAgentNameRef.current || "Orkio").trim() || "Orkio") : displayUserName,
+        agent_id: safeRole === "assistant" ? (rtcHostAgentIdRef.current || canonicalAgentSlug(realtimeSpeakerName) || "orkio") : null,
+        agent_name: realtimeSpeakerName,
+        final_speaker: realtimeSpeakerName,
+        visible_agent: realtimeSpeakerName,
         created_at: now,
         meta: {
           ...(meta && typeof meta === "object" ? meta : {}),
@@ -6997,7 +7111,10 @@ function scheduleRealtimeIdleFollowup() {
     if (rtcPremiumStatus === "connecting") return "🎙️ Conectando...";
     if (rtcPremiumStatus === "listening") return "🎙️ Ouvindo...";
     if (rtcPremiumStatus === "transcribing") return "📝 Transcrição ativa";
-    if (rtcPremiumStatus === "responding") return "🔊 Orkio respondendo...";
+    if (rtcPremiumStatus === "responding") {
+      const speaker = resolveRealtimeVisibleSpeakerName("", rtcHostAgentNameRef.current || activeRuntimeAgent || "Orkio");
+      return `🔊 ${speaker} respondendo...`;
+    }
     if (rtcPremiumStatus === "ending") return "⚠️ Encerrando em breve...";
     if (rtcPremiumStatus === "cooldown") {
       return `🕒 Voz disponível novamente em ${formatRealtimeCountdown(rtcCooldownRemaining || REALTIME_PUBLIC_BETA_COOLDOWN_SECONDS)}`;
