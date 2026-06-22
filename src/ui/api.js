@@ -157,6 +157,26 @@ async function parseResponseBody(response) {
   }
 }
 
+function cleanChatRequestPayload(payload = {}) {
+  const out = {};
+  for (const [key, value] of Object.entries(payload || {})) {
+    if (value === undefined || value === null) continue;
+    if (Array.isArray(value)) {
+      const clean = value.map((item) => String(item || "").trim()).filter(Boolean);
+      if (clean.length) out[key] = clean;
+      continue;
+    }
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed && key !== "message") continue;
+      out[key] = key === "message" ? trimmed : value;
+      continue;
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
 export async function apiFetch(path, options = {}) {
   const normalizedRequestPath = normalizePath(path);
   const url = joinApi(normalizedRequestPath);
@@ -264,6 +284,14 @@ export async function apiFetch(path, options = {}) {
     if (response.status === 403) {
       err.code = "AUTH_FORBIDDEN";
       err.isAuthError = true;
+    }
+    if (response.status === 422) {
+      err.code = "API_VALIDATION_ERROR";
+      err.isValidationError = true;
+    }
+    if (response.status === 422) {
+      err.code = "CHAT_STREAM_VALIDATION_ERROR";
+      err.isValidationError = true;
     }
     if (response.status === 429) {
       err.code = "RATE_LIMITED";
@@ -467,7 +495,7 @@ export const chat = ({
     // Direct chat is only a diagnostic fallback; never send cookies cross-origin.
     credentials: "omit",
     signal,
-    body: {
+    body: cleanChatRequestPayload({
       thread_id,
       message,
       agent_id,
@@ -480,7 +508,7 @@ export const chat = ({
       trace_id,
       client_message_id,
       tenant: tenant || org || readTenant(),
-    },
+    }),
   });
 
 export async function chatStream({
@@ -520,7 +548,7 @@ export async function chatStream({
       // but Chrome keeps the POST in provisional/pending state.
       credentials: "omit",
       signal,
-      body: JSON.stringify({
+      body: JSON.stringify(cleanChatRequestPayload({
         thread_id,
         message,
         agent_id,
@@ -533,7 +561,7 @@ export async function chatStream({
         trace_id,
         client_message_id,
         tenant: tenant || org || readTenant(),
-      }),
+      })),
     });
   } catch (err) {
     const wrapped = err instanceof Error ? err : new Error(String(err || "Stream request failed"));
