@@ -746,6 +746,7 @@ export async function startRealtimeSession({
   visible_agent = null,
   target_agent_slug = null,
   agent_ids = null,
+  client_controlled_response = null,
 } = {}) {
   const resolvedLanguageProfile = language_profile || language || null;
   const { data } = await apiFetch("/api/realtime/start", {
@@ -766,6 +767,7 @@ export async function startRealtimeSession({
       visible_agent,
       target_agent_slug,
       agent_ids,
+      client_controlled_response,
     },
   });
   return data;
@@ -787,6 +789,7 @@ export async function startSummitSession({
   visible_agent = null,
   target_agent_slug = null,
   agent_ids = null,
+  client_controlled_response = null,
 } = {}) {
   const { data } = await apiFetch("/api/realtime/start", {
     method: "POST",
@@ -806,6 +809,7 @@ export async function startSummitSession({
       visible_agent,
       target_agent_slug,
       agent_ids,
+      client_controlled_response,
     },
   });
   return data;
