@@ -5,7 +5,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch, uploadFile, chat, chatStream, transcribeAudio, requestFounderHandoff, getRealtimeClientSecret, startRealtimeSession, startSummitSession, postRealtimeEventsBatch, endRealtimeSession, getRealtimeSession, getSummitSessionScore, submitSummitSessionReview, downloadRealtimeAta as downloadRealtimeAtaFile, guardRealtimeTranscript, getOrionSquadHealth, getOrionSquadPreview, getAgentCapabilities } from "../ui/api.js";
-import { clearSession, getTenant, getToken, getUser, isAdmin, isApproved, setSession, logout } from "../lib/auth.js";
+import { clearSession, clearTenant, getTenant, getToken, getUser, isAdmin, isApproved, setSession, setUser as storeUser, logout } from "../lib/auth.js";
 import { ORKIO_CANONICAL_VOICE_ID, ORKIO_DEFAULT_TTS_SPEED, ORKIO_DEFAULT_VOICE_ID, ORKIO_VOICES, coerceTtsSpeed, coerceVoiceId } from "../lib/voices.js";
 import TermsModal from "../ui/TermsModal.jsx";
 import PWAInstallPrompt from "../components/PWAInstallPrompt.jsx";
@@ -2361,10 +2361,44 @@ const ORKIO_HF6_4_BUILD_MARKER = "HF6.4_REALTIME_ZERO_TIMER_TAIL_GRACE";
 
   const nav = useNavigate();
 
+  function resolveAuthenticatedTenant(userLike = null, fallbackTenant = "") {
+    const candidateUser = userLike || getUser?.() || {};
+    const candidates = [
+      candidateUser?.org_slug,
+      candidateUser?.org,
+      candidateUser?.tenant,
+      fallbackTenant,
+      getTenant?.(),
+    ]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+
+    const privileged = hasAdminAccess(candidateUser) || isAuthorizedFounderRealtimeUser(candidateUser);
+    const nonPublic = candidates.find((value) => value && value.toLowerCase() !== "public");
+    if (nonPublic) return nonPublic;
+    if (privileged) return "";
+    return candidates[0] || "public";
+  }
+
+  function applyAuthenticatedSession(nextUser, fallbackTenant = "") {
+    const resolvedTenant = resolveAuthenticatedTenant(nextUser, fallbackTenant);
+    setUser(nextUser);
+    setTenant(resolvedTenant || "");
+    try {
+      if (resolvedTenant) {
+        setSession({ token: getToken(), user: nextUser, tenant: resolvedTenant });
+      } else {
+        storeUser(nextUser);
+        clearTenant();
+      }
+    } catch {}
+    return resolvedTenant;
+  }
+
 
   async function confirmSessionExpired(reason = "unknown") {
     const t = getToken();
-    const org = getTenant() || tenant || "public";
+    const org = resolveAuthenticatedTenant(getUser?.(), tenant);
 
     if (!t) return true;
 
@@ -2372,7 +2406,7 @@ const ORKIO_HF6_4_BUILD_MARKER = "HF6.4_REALTIME_ZERO_TIMER_TAIL_GRACE";
       await apiFetch("/api/me", {
         method: "GET",
         token: t,
-        org,
+        org: org || "",
         skipAuthRedirect: true,
       });
       return false;
@@ -2401,7 +2435,7 @@ const ORKIO_HF6_4_BUILD_MARKER = "HF6.4_REALTIME_ZERO_TIMER_TAIL_GRACE";
   }
 
 
-  const [tenant, setTenant] = useState(getTenant() || "public");
+  const [tenant, setTenant] = useState(() => resolveAuthenticatedTenant(getUser?.(), getTenant()) || "");
   const [token, setToken] = useState(getToken());
   const [user, setUser] = useState(getUser());
   const canAccessAdmin = hasAdminAccess(user);
@@ -3116,9 +3150,9 @@ useEffect(() => {
   async function bootstrapUser() {
     const t = getToken();
     const u = getUser();
-    const org = getTenant() || "public";
+    const org = resolveAuthenticatedTenant(u, getTenant());
     setToken(t);
-    setTenant(org);
+    setTenant(org || "");
     setUser(u);
 
     if (!t) {
@@ -3127,13 +3161,23 @@ useEffect(() => {
     }
 
     try {
-      const { data } = await apiFetch("/api/me", { method: "GET", token: t, org });
+      let meResponse = null;
+      try {
+        meResponse = await apiFetch("/api/me", { method: "GET", token: t, org: org || "" });
+      } catch (firstErr) {
+        if (String(org || "").toLowerCase() === "public" || firstErr?.status === 403) {
+          meResponse = await apiFetch("/api/me", { method: "GET", token: t, org: "" });
+        } else {
+          throw firstErr;
+        }
+      }
+      const { data } = meResponse || {};
       if (!alive) return;
       if (data) {
         const mergedUser = {
           ...(u || {}),
           ...data,
-          org_slug: data?.org_slug || u?.org_slug || org,
+          org_slug: data?.org_slug || data?.org || u?.org_slug || u?.org || org || "",
           role: data?.role || u?.role || "user",
           signup_source: data?.signup_source ?? u?.signup_source ?? null,
           signup_code_label: data?.signup_code_label ?? u?.signup_code_label ?? null,
@@ -3151,8 +3195,7 @@ useEffect(() => {
         };
         mergedUser.admin = mergedUser.is_admin === true;
 
-        setUser(mergedUser);
-        try { setSession({ token: t, user: mergedUser, tenant: mergedUser.org_slug || org }); } catch {}
+        applyAuthenticatedSession(mergedUser, mergedUser.org_slug || org);
 
         const explicitPendingApproval = (
           mergedUser?.pending_approval === true
@@ -8898,9 +8941,11 @@ function scheduleRealtimeIdleFollowup() {
   function buildRealtimeOrchestrationBridgePrompt(bridge) {
     const rawText = String(bridge?.text || "").trim();
     if (!rawText) return "";
+    const technicalOrionIntent = /(?:@?\s*orion|arquitet|runtime|deploy|c[oó]digo|bug|erro|falha|auditoria|seguran[çc]a|infra|backend|frontend|realtime|service\s*worker|pwa|api|log|stack|regress[aã]o)/i.test(rawText);
+    const targetAgent = canAccessAdmin && technicalOrionIntent ? "@Orion" : "@Orkio";
 
     return [
-      "@Orkio orchestration_audit",
+      `${targetAgent} orchestration_audit`,
       "",
       "Origem: Realtime voice transcript.final",
       "Modo: readonly",
@@ -10151,11 +10196,12 @@ async function stopRealtime(reason = 'client_stop') {
       const base = (window.__ORKIO_ENV__?.VITE_API_BASE_URL || import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/$/, '');
       const apiUrl = base.endsWith('/api') ? base.slice(0, -4) : base;
 
+      const effectiveTenant = resolveAuthenticatedTenant(user, tenant);
       const ttsHeaders = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
-        'X-Org-Slug': tenant,
       };
+      if (effectiveTenant) ttsHeaders['X-Org-Slug'] = effectiveTenant;
       if (effectiveTrace) ttsHeaders['X-Trace-Id'] = effectiveTrace;
 
       const ORKIO_ENV = (typeof window !== "undefined" && window.__ORKIO_ENV__) ? window.__ORKIO_ENV__ : {};
@@ -10761,7 +10807,7 @@ async function stopRealtime(reason = 'client_stop') {
       cursor: "pointer",
     },
     threads: { flex: 1, overflowY: "auto", padding: "0 8px" },
-    emptyThreads: { padding: "20px", textAlign: "center", color: "rgba(255,255,255,0.3)", fontSize: "13px" },
+    emptyThreads: { padding: "20px", textAlign: "center", color: "rgba(255,255,255,0.42)", fontSize: "13px", lineHeight: 1.45 },
     threadItem: {
       display: "flex",
       alignItems: "center",
@@ -11041,6 +11087,12 @@ async function stopRealtime(reason = 'client_stop') {
       background: "rgba(255,255,255,0.05)",
       color: "#fff",
       fontSize: "12px",
+      minWidth: isMobile ? "132px" : "156px",
+      maxWidth: isMobile ? "min(74vw, 260px)" : "280px",
+      minHeight: "40px",
+      lineHeight: 1.25,
+      flexShrink: 0,
+      cursor: "pointer",
     },
     modalBack: {
       position: "fixed",
@@ -11190,6 +11242,17 @@ async function stopRealtime(reason = 'client_stop') {
 
   const pendingApprovedPatchExecution = findPendingApprovedPatchExecution(messages);
   const orderedChatMessages = orderChatMessages(messages);
+  const nonPublicOrgLabel = [tenant, user?.org_slug, user?.org, user?.tenant]
+    .map((value) => String(value || "").trim())
+    .find((value) => value && value.toLowerCase() !== "public");
+  const appConsoleOrgLabel = nonPublicOrgLabel || (canAccessAdmin ? "autenticado" : (tenant || "public"));
+  const sidebarEmptyText = threadsLoadState === "loading"
+    ? "Carregando conversas..."
+    : threadsLoadState === "retrying"
+      ? "Restaurando conversas..."
+      : threadsLoadState === "load_failed"
+        ? (threadsLoadError || "Não foi possível carregar as conversas.")
+        : "Nenhuma conversa ainda.";
   const latestSmartActionMessageId = (() => {
     for (let index = orderedChatMessages.length - 1; index >= 0; index -= 1) {
       const candidate = orderedChatMessages[index] || {};
@@ -11369,9 +11432,9 @@ async function stopRealtime(reason = 'client_stop') {
       <div style={{ ...styles.sidebar, display: (!isMobile || mobileSidebarOpen) ? "flex" : "none", position: isMobile ? "fixed" : styles.sidebar.position, inset: isMobile ? "0 auto 0 0" : "auto", width: isMobile ? "min(88vw, 360px)" : styles.sidebar.width, zIndex: isMobile ? 40 : styles.sidebar.zIndex, boxShadow: isMobile ? "0 24px 80px rgba(0,0,0,0.45)" : styles.sidebar.boxShadow, borderRight: isMobile ? "1px solid rgba(255,255,255,0.08)" : styles.sidebar.borderRight }}>
         <div style={styles.topRow}>
           <div>
-            <div style={styles.brand}>Orkio</div>
+            <div style={styles.brand}>Patroai Console</div>
             <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <span style={styles.badge}>org: {tenant}</span>
+              <span style={styles.badge}>org: {appConsoleOrgLabel}</span>
               <span style={styles.badge}>{health === "ok" ? "ready" : health}</span>
             </div>
           </div>
@@ -11383,7 +11446,18 @@ async function stopRealtime(reason = 'client_stop') {
 
         <div style={styles.threads}>
           {threads.length === 0 ? (
-            <div style={styles.emptyThreads}>Nenhuma conversa ainda.</div>
+            <div style={styles.emptyThreads}>
+              {sidebarEmptyText}
+              {threadsLoadState === "load_failed" ? (
+                <button
+                  type="button"
+                  onClick={() => loadThreads({ manualRetry: true, preserveThreadId: readStoredThreadId() })}
+                  style={{ ...styles.btn, marginTop: 12, width: "100%" }}
+                >
+                  Tentar novamente
+                </button>
+              ) : null}
+            </div>
           ) : (
             threads.map((t) => (
               <button
@@ -11533,7 +11607,7 @@ async function stopRealtime(reason = 'client_stop') {
             ) : null}
           </div>
 
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: isMobile ? "wrap" : "nowrap", justifyContent: "flex-end" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end", minWidth: isMobile ? 0 : 360 }}>
             {isMobile ? (
               <>
                 <button
