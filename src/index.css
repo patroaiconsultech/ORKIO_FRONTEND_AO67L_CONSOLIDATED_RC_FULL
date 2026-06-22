@@ -52,3 +52,166 @@ a {
     max-width: min(180px, 52vw);
   }
 }
+
+/* RTB-10 HF7 — Premium mobile stabilization fallback
+   Mantém o deploy lock-safe: não exige Tailwind local nem mudanças em package-lock.
+   Atua apenas como proteção caso o CDN do Tailwind atrase/falhe e refina o mobile premium. */
+.patroai-landing-root {
+  background:
+    radial-gradient(circle at top left, rgba(34, 211, 238, 0.08), transparent 28%),
+    radial-gradient(circle at top right, rgba(124, 58, 237, 0.12), transparent 30%),
+    #060812;
+}
+
+.patroai-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(6, 8, 19, 0.92);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.patroai-header-inner {
+  max-width: 80rem;
+  margin: 0 auto;
+}
+
+.patroai-brand-lockup {
+  min-width: 0;
+}
+
+.patroai-logo,
+.patroai-logo-safe {
+  display: block;
+  width: auto;
+  height: clamp(56px, 13vw, 76px);
+  max-width: 108px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.patroai-header-actions a,
+.patroai-header-actions button {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.patroai-mobile-nav {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.patroai-mobile-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.patroai-hero-title {
+  text-wrap: balance;
+}
+
+.patroai-trust-strip span {
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.035);
+  border-radius: 999px;
+  padding: 0.65rem 0.85rem;
+  text-align: center;
+}
+
+@media (max-width: 767px) {
+  .patroai-header-inner {
+    padding: 0.5rem 0.75rem 0.55rem;
+  }
+
+  .patroai-brand-lockup {
+    gap: 0.75rem;
+  }
+
+  .patroai-logo,
+  .patroai-logo-safe {
+    height: clamp(54px, 15vw, 66px);
+    max-width: 92px;
+  }
+
+  .patroai-header-actions {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.45rem;
+    width: 100%;
+  }
+
+  .patroai-header-actions a,
+  .patroai-header-actions button {
+    height: 38px;
+    padding-left: 0.35rem;
+    padding-right: 0.35rem;
+    border-radius: 999px;
+    font-size: 0.63rem;
+    letter-spacing: 0.04em;
+  }
+
+  .patroai-mobile-nav {
+    margin-left: -0.75rem;
+    margin-right: -0.75rem;
+    padding: 0.18rem 0.75rem 0.32rem;
+  }
+
+  .patroai-hero {
+    padding-top: 2.1rem;
+    padding-bottom: 3rem;
+    gap: 1.6rem;
+  }
+
+  .patroai-hero-title {
+    margin-top: 1.05rem;
+    font-size: clamp(2.35rem, 12vw, 3.35rem);
+    line-height: 0.96;
+    letter-spacing: -0.055em;
+  }
+
+  .patroai-hero-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .patroai-hero-primary,
+  .patroai-hero-secondary {
+    min-height: 52px;
+    border-radius: 1.05rem;
+  }
+
+  .patroai-trust-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .patroai-hero-card {
+    border-radius: 1.5rem;
+  }
+
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+@media (min-width: 768px) {
+  .patroai-header-inner {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .patroai-trust-strip {
+    max-width: 44rem;
+  }
+}
+
+@media (min-width: 1180px) {
+  .patroai-logo,
+  .patroai-logo-safe {
+    height: 76px;
+    max-width: 112px;
+  }
+}
