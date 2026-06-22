@@ -2916,6 +2916,8 @@ const messagesEndRef = useRef(null);
   const rtcLastFinalTranscriptRef = useRef("");
   const rtcMagicEnabledRef = useRef(true);
   const rtcVoiceRef = useRef(ORKIO_DEFAULT_VOICE_ID);
+  const rtcHostAgentIdRef = useRef(null);
+  const rtcHostAgentNameRef = useRef("Orkio");
   const rtcAudioTranscriptBufRef = useRef("");
   const rtcLastAssistantFinalRef = useRef("");
   const rtcAssistantFinalCommittedRef = useRef(false);
@@ -4158,9 +4160,54 @@ function formatAgentOptionLabel(agent) {
     };
   }
 
+  function normalizeAgentLookupValue(value = "") {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/^@+/, "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[\s\-/]+/g, "_")
+      .replace(/[^a-z0-9_]+/g, "")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "");
+  }
+
+  function canonicalAgentSlug(value = "") {
+    const raw = normalizeAgentLookupValue(value);
+    if (!raw) return "";
+    if (raw.includes("orion") || ["oria", "auria", "aurya", "arian", "aryan", "cto", "warren"].includes(raw)) return "orion";
+    if (raw.includes("chris") || raw === "cfo") return "chris";
+    if (raw.includes("team") || raw === "time" || raw === "equipe") return "team";
+    if (raw.includes("orkio") || raw === "archio" || raw === "orquio") return "orkio";
+    return raw;
+  }
+
+  function findAgentByRuntimeIdentity(value = "") {
+    const wantedRaw = normalizeAgentLookupValue(value);
+    const wantedSlug = canonicalAgentSlug(value);
+    if (!wantedRaw && !wantedSlug) return null;
+
+    return (agents || []).find((a) => {
+      const candidates = [
+        a?.id,
+        a?.name,
+        a?.slug,
+        a?.key,
+        a?.code,
+        a?.agent_id,
+        a?.agent_slug,
+      ].map((v) => normalizeAgentLookupValue(v)).filter(Boolean);
+
+      const canonicalCandidates = candidates.map((v) => canonicalAgentSlug(v)).filter(Boolean);
+      return candidates.includes(wantedRaw) || canonicalCandidates.includes(wantedSlug);
+    }) || null;
+  }
+
   function resolveHostAgentId(modeOverride = null) {
     // ORKIO_AO60F_REALTIME_ORKIO_ONLY_IDENTITY_GUARD
     const namedOrkio =
+      findAgentByRuntimeIdentity("orkio") ||
       agents.find((a) => (a?.name || "").toLowerCase() === "orkio") ||
       agents.find((a) => (a?.slug || "").toLowerCase() === "orkio") ||
       agents.find((a) => (a?.key || "").toLowerCase() === "orkio") ||
@@ -4173,11 +4220,14 @@ function formatAgentOptionLabel(agent) {
     const mode = String(modeOverride || destMode || "team").trim().toLowerCase();
 
     if (mode === "single") {
-      return destSingle || fallbackAgent?.id || null;
+      const selected = findAgentByRuntimeIdentity(destSingle);
+      return selected?.id || destSingle || fallbackAgent?.id || null;
     }
 
     if (mode === "multi") {
-      const selected = agents.filter((a) => destMulti.includes(String(a?.id || "")));
+      const selected = (destMulti || [])
+        .map((id) => findAgentByRuntimeIdentity(id))
+        .filter(Boolean);
       if (selected.length === 1) {
         return selected[0]?.id || fallbackAgent?.id || null;
       }
@@ -4187,6 +4237,82 @@ function formatAgentOptionLabel(agent) {
     return fallbackAgent?.id || null;
   }
 
+  function resolveRealtimeAgentId(modeOverride = null) {
+    // Realtime must honor the visible selected agent. The text chat may default
+    // to Orkio/Team, but voice cannot ignore a user-selected specialist.
+    if (publicBetaOrkioOnly) return resolveHostAgentId(modeOverride);
+
+    const mode = String(modeOverride || destMode || "team").trim().toLowerCase();
+
+    if (mode === "single") {
+      const selected = findAgentByRuntimeIdentity(destSingle);
+      if (selected?.id) return selected.id;
+    }
+
+    if (mode === "multi") {
+      const selected = (destMulti || [])
+        .map((id) => findAgentByRuntimeIdentity(id))
+        .filter(Boolean);
+      if (selected.length === 1 && selected[0]?.id) return selected[0].id;
+    }
+
+    // Defensive fallback: if a single agent was selected/stored but destMode
+    // drifted back to team after refresh, keep the selected specialist for Realtime.
+    const singleFallback = findAgentByRuntimeIdentity(destSingle);
+    if (singleFallback?.id) return singleFallback.id;
+
+    const multiFallback = (destMulti || [])
+      .map((id) => findAgentByRuntimeIdentity(id))
+      .filter(Boolean);
+    if (multiFallback.length === 1 && multiFallback[0]?.id) return multiFallback[0].id;
+
+    return resolveHostAgentId(modeOverride);
+  }
+
+  function buildRealtimeAgentInstructions(agentObj = null) {
+    const name = String(agentObj?.name || "").trim() || "Orkio";
+    const slug = canonicalAgentSlug(name || agentObj?.slug || agentObj?.key || agentObj?.id);
+    const base =
+      "Você está em uma sessão de voz realtime dentro da plataforma Patroai. " +
+      "Você deve reconhecer agentes internos da plataforma: Orkio, Team, Chris e Orion. " +
+      "Orion é agente interno de diagnóstico técnico/CTO da plataforma. " +
+      "Nunca trate Orion como pessoa externa, contato externo, e-mail ou sistema fora da plataforma. " +
+      "Se o usuário pedir para falar com Orion e Orion já for o agente selecionado, responda como Orion imediatamente. " +
+      "Se outro agente estiver selecionado e o usuário pedir Orion, reconheça que Orion é interno e oriente selecionar Orion/reiniciar o realtime, sem dizer que não conhece.";
+
+    if (slug === "orion") {
+      return (
+        base + "\n\n" +
+        "Identidade ativa: você é Orion, o agente técnico/CTO da Patroai. " +
+        "Fale em primeira pessoa como Orion. " +
+        "Prioridade: diagnóstico técnico, runtime, backend, frontend, realtime, agentes, logs, deploy, rollback e estabilidade. " +
+        "Quando Daniel pedir Orion, diga que Orion entrou na conversa e faça o diagnóstico direto. " +
+        "Não responda como Orkio e não diga que não consegue incluir outro participante."
+      );
+    }
+
+    if (slug === "chris") {
+      return (
+        base + "\n\n" +
+        "Identidade ativa: você é Chris, agente financeiro/estratégico da Patroai. " +
+        "Fale como Chris e mantenha foco em viabilidade, valuation, captação, funil e análise financeira."
+      );
+    }
+
+    if (slug === "team") {
+      return (
+        base + "\n\n" +
+        "Identidade ativa: você é Team, coordenação interna da Patroai. " +
+        "Fale como Team e organize decisões, riscos, responsáveis e próximos passos."
+      );
+    }
+
+    return (
+      base + "\n\n" +
+      "Identidade ativa: você é Orkio, copiloto executivo da Patroai. " +
+      "Se o usuário solicitar Orion/CTO, reconheça Orion como agente interno e faça um handoff claro, sem sugerir e-mail ou contato externo."
+    );
+  }
 
   function appendToPlaceholder(delta) {
     if (!delta) return;
@@ -7645,23 +7771,34 @@ function scheduleRealtimeIdleFollowup() {
 
     // AO72D-HF1: greeting first, timer phrase second. The countdown starts only
     // when the assistant transcript reaches "two minutes", after the greeting.
+    const activeAgentName = String(rtcHostAgentNameRef.current || "Orkio").trim() || "Orkio";
+    const activeAgentSlug = canonicalAgentSlug(activeAgentName);
+    const activeAgentIntro =
+      activeAgentSlug === "orion"
+        ? (lang === "en" ? "Orion, Patroai technical CTO agent" : lang === "es" ? "Orion, agente CTO técnico de Patroai" : "Orion, agente CTO técnico da Patroai")
+        : activeAgentSlug === "chris"
+          ? (lang === "en" ? "Chris, Patroai financial strategy agent" : lang === "es" ? "Chris, agente financiero estratégico de Patroai" : "Chris, agente financeiro estratégico da Patroai")
+          : activeAgentSlug === "team"
+            ? (lang === "en" ? "Team, Patroai coordination agent" : lang === "es" ? "Team, agente de coordinación de Patroai" : "Team, agente de coordenação da Patroai")
+            : activeAgentName;
+
     const announcement =
       lang === "en"
         ? (
           limited
-            ? `Hello, I am Orkio. It is a pleasure to speak with you in real time. We have ${durationLabel} of conversation starting now. Where would you like to begin?`
-            : "Hello, I am Orkio. It is a pleasure to speak with you in real time. Where would you like to begin?"
+            ? `Hello, I am ${activeAgentIntro}. It is a pleasure to speak with you in real time. We have ${durationLabel} of conversation starting now. Where would you like to begin?`
+            : `Hello, I am ${activeAgentIntro}. It is a pleasure to speak with you in real time. Where would you like to begin?`
         )
         : lang === "es"
           ? (
             limited
-              ? `Hola, soy Orkio. Es un placer hablar contigo en tiempo real. Tenemos ${durationLabel} de conversación a partir de ahora. ¿Por dónde quieres empezar?`
-              : "Hola, soy Orkio. Es un placer hablar contigo en tiempo real. ¿Por dónde quieres empezar?"
+              ? `Hola, soy ${activeAgentIntro}. Es un placer hablar contigo en tiempo real. Tenemos ${durationLabel} de conversación a partir de ahora. ¿Por dónde quieres empezar?`
+              : `Hola, soy ${activeAgentIntro}. Es un placer hablar contigo en tiempo real. ¿Por dónde quieres empezar?`
           )
           : (
             limited
-              ? `Olá, eu sou Orkio. Prazer em falar com você em tempo real. Temos ${durationLabel} de conversa a partir de agora. Por onde você quer começar?`
-              : "Olá, eu sou Orkio. Prazer em falar com você em tempo real. Por onde você quer começar?"
+              ? `Olá, eu sou ${activeAgentIntro}. Prazer em falar com você em tempo real. Temos ${durationLabel} de conversa a partir de agora. Por onde você quer começar?`
+              : `Olá, eu sou ${activeAgentIntro}. Prazer em falar com você em tempo real. Por onde você quer começar?`
           );
 
     const activationInput =
@@ -7801,7 +7938,17 @@ function scheduleRealtimeIdleFollowup() {
       try { setSummitSessionScore(null); } catch {}
 
 
-      const agentIdToSend = resolveHostAgentId(); // host agent depends on current routing mode
+      const agentIdToSend = resolveRealtimeAgentId(); // realtime must honor the selected visible agent
+      const selectedAgentObjForRealtime = findAgentByRuntimeIdentity(agentIdToSend) || findAgentByRuntimeIdentity(destSingle) || null;
+      rtcHostAgentIdRef.current = agentIdToSend || null;
+      rtcHostAgentNameRef.current = String(selectedAgentObjForRealtime?.name || "").trim() || "Orkio";
+      logRealtimeStep("start:agent_resolved", {
+        agent_id: agentIdToSend || null,
+        agent_name: rtcHostAgentNameRef.current,
+        destMode,
+        destSingle,
+        destMulti,
+      });
       const ORKIO_ENV = (typeof window !== "undefined" && window.__ORKIO_ENV__) ? window.__ORKIO_ENV__ : {};
       const envVoice = (ORKIO_ENV.VITE_REALTIME_VOICE || import.meta.env.VITE_REALTIME_VOICE || "").trim();
       const rtModel = (ORKIO_ENV.VITE_REALTIME_MODEL || import.meta.env.VITE_REALTIME_MODEL || "gpt-realtime-mini").trim();
@@ -7812,10 +7959,11 @@ function scheduleRealtimeIdleFollowup() {
       rtcMagicEnabledRef.current = magicEnabled;
 
       // Voice priority: agent.voice_id (Admin) > env default > fallback Orkio warmth preset
-      const selectedAgentObj = (agents || []).find(a => String(a.id) === String(agentIdToSend));
+      const selectedAgentObj = selectedAgentObjForRealtime || findAgentByRuntimeIdentity(agentIdToSend) || (agents || []).find(a => String(a.id) === String(agentIdToSend));
       const agentVoice = ((selectedAgentObj?.voice_id || selectedAgentObj?.voice || selectedAgentObj?.tts_voice || selectedAgentObj?.voiceId || "")).toString().trim();
       const rtVoice = coerceVoiceId(agentVoice || envVoice || ORKIO_DEFAULT_VOICE_ID);
       rtcVoiceRef.current = rtVoice;
+      const realtimeAgentInstructions = buildRealtimeAgentInstructions(selectedAgentObj);
 
       // AO68A-HF5: explicit Summit/platform mode + onboarding language propagation.
       // Before HF5, language_profile was only sent in Summit mode. Normal Realtime stayed on env/auto.
@@ -8294,6 +8442,7 @@ function scheduleRealtimeIdleFollowup() {
             type: "session.update",
             session: {
               type: "realtime",
+              instructions: realtimeAgentInstructions,
               // AO64D-HF5_RESPONSE_CREATE_GA_SAFE:
               // Do not send session.modalities. Use output_modalities only.
               output_modalities: ["audio"],
