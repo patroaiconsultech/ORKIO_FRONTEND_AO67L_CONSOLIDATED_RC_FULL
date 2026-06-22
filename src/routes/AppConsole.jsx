@@ -3514,7 +3514,7 @@ useEffect(() => {
           currentThreadId: currentActive,
           storedThreadId: preserveThreadId,
           isMobile,
-          forceNewestOnMobile: true,
+          forceNewestOnMobile: false,
         });
         if (mobilePreferredThreadId) effectivePreserveThreadId = mobilePreferredThreadId;
       } catch {}
@@ -3892,7 +3892,7 @@ useEffect(() => {
 
         setDestSingle((prev) => {
           const prevId = String(prev || "").trim();
-          const prevStillExists = prevId && list.some((agent) => String(agent?.id || "") === prevId);
+          const prevStillExists = prevId && Boolean(findAgentByRuntimeIdentity(prevId));
           if (prevStillExists) return prev;
           const next = normalizedDestination.single || "";
           return String(prev || "") === next ? prev : next;
@@ -3900,7 +3900,7 @@ useEffect(() => {
 
         setDestMulti((prev) => {
           const prevClean = Array.isArray(prev) ? prev.map((v) => String(v || "").trim()).filter(Boolean) : [];
-          const validPrev = prevClean.filter((id) => list.some((agent) => String(agent?.id || "") === id));
+          const validPrev = prevClean.map((id) => findAgentByRuntimeIdentity(id)?.id || "").filter(Boolean);
           if (validPrev.length === prevClean.length && prevClean.length) return prev;
           const next = Array.isArray(normalizedDestination.multi) ? normalizedDestination.multi : [];
           if (JSON.stringify(validPrev) === JSON.stringify(next)) return validPrev;
@@ -3916,9 +3916,9 @@ useEffect(() => {
 
         try {
           persistPwaMobileDestinationState({
-            mode: destMode || normalizedDestination.mode || "team",
-            single: destSingle || normalizedDestination.single || "",
-            multi: Array.isArray(destMulti) && destMulti.length ? destMulti : (normalizedDestination.multi || []),
+            mode: normalizedDestination.mode || destMode || "team",
+            single: normalizedDestination.single || destSingle || "",
+            multi: Array.isArray(normalizedDestination.multi) ? normalizedDestination.multi : [],
           });
         } catch {}
       }
@@ -4534,7 +4534,7 @@ function formatAgentOptionLabel(agent) {
         id: `tmp-ass-${Date.now()}`,
         role: "assistant",
         content: delta,
-        agent_name: "Orkio",
+        agent_name: rtcHostAgentNameRef.current || "Orkio",
         created_at: Math.floor(Date.now() / 1000),
       });
 
@@ -8175,6 +8175,10 @@ function scheduleRealtimeIdleFollowup() {
         ttl_seconds: effectiveRealtimeTtlSeconds,
         language_profile: languageProfile,
         language: languageProfile,
+        dest_mode: destMode,
+        visible_agent: rtcHostAgentNameRef.current || selectedAgentObj?.name || null,
+        target_agent_slug: canonicalAgentSlug(selectedAgentObj?.slug || selectedAgentObj?.key || selectedAgentObj?.name || agentIdToSend),
+        agent_ids: String(destMode || "").trim().toLowerCase() === "multi" ? destMulti : null,
       };
 
       const start = runtimeMode === "summit"
