@@ -4243,7 +4243,7 @@ function formatAgentOptionLabel(agent) {
     const raw = normalizeAgentLookupValue(value);
     if (!raw) return "";
     if (raw.includes("orion") || ["oria", "auria", "aurya", "arian", "aryan", "cto", "warren"].includes(raw)) return "orion";
-    if (raw.includes("chris") || raw === "cfo") return "chris";
+    if (raw.includes("chris") || raw === "cfo" || ["cris", "criz", "crys", "crist", "crista", "cristo", "cruz", "c_h_r_i_s"].includes(raw)) return "chris";
     if (raw.includes("team") || raw === "time" || raw === "equipe") return "team";
     if (raw.includes("orkio") || raw === "archio" || raw === "orquio") return "orkio";
     return raw;
@@ -4474,24 +4474,47 @@ function formatAgentOptionLabel(agent) {
   function resolveRealtimeHandoffTargetFromTranscript(rawText = "") {
     if (!canAccessAdmin) return null;
     const textValue = String(rawText || "");
+    if (!textValue.trim()) return null;
+
     const normalized = textValue
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .toLowerCase();
 
-    const wantsChris =
-      /\b(chris|cris|cfo|financeir|valuation|captacao)\b/iu.test(normalized) &&
-      /\b(chame|chamar|inclua|incluir|traga|trazer|aciona|acionar|passa|passar|assuma|assumir|conversa|diagnostic|escuta)\b/iu.test(normalized);
+    const compact = normalizeAgentLookupValue(textValue);
 
-    const wantsOrion =
-      isRealtimeOrionHandoffIntent(textValue) ||
-      (
-        /\b(orion|oria|auria|aurya|arian|aryan|orlan|warren|cto|tecnico|diagnostico)\b/iu.test(normalized) &&
-        /\b(chame|chamar|inclua|incluir|traga|trazer|aciona|acionar|passa|passar|assuma|assumir|conversa|diagnostic|escuta)\b/iu.test(normalized)
-      );
+    const hasActionVerb = /\b(chame|chamar|inclua|incluir|traga|trazer|aciona|acionar|passa|passar|assuma|assumir|conversa|diagnostic|escuta|online|ouvindo|falar|fala|quero falar|volta|retorna|retornar|troca|trocar)\b/iu.test(normalized);
 
-    if (wantsChris) return "chris";
-    if (wantsOrion) return "orion";
+    const directAddress = (pattern) => (
+      new RegExp(`(^|\\b)(oi|ol[aá]|hey|e ai|fala|escuta)?\\s*${pattern}\\b`, "iu").test(normalized) ||
+      new RegExp(`\\b${pattern}\\s*(,|!|\\?|\\s+(ta|est[aá]|pode|por favor|me|nos|vem|entra|assume|assuma|online|ouvindo|escuta))`, "iu").test(normalized)
+    );
+
+    const wantsChrisName = (
+      /\b(chris|cris|criz|crys|crista|cristo|cruz|c\s*[- ]?\s*h\s*[- ]?\s*r\s*[- ]?\s*i\s*[- ]?\s*s|cfo|financeir|valuation|capta[cç][aã]o)\b/iu.test(normalized) ||
+      compact.includes("chris") ||
+      compact.includes("c_h_r_i_s")
+    );
+
+    const wantsOrionName = (
+      /\b(orion|oria|orlan|auria|aurya|arian|aryan|warren|cto|t[eé]cnico|diagn[oó]stico)\b/iu.test(normalized) ||
+      isRealtimeOrionHandoffIntent(textValue)
+    );
+
+    const wantsOrkioName = (
+      /\b(orkio|orquio|archio|workio|workq|copiloto)\b/iu.test(normalized) ||
+      compact.includes("orkio") ||
+      compact.includes("orquio") ||
+      compact.includes("archio")
+    );
+
+    const wantsTeamName = /\b(team|time|equipe|todos|sala|war room|reuni[aã]o)\b/iu.test(normalized);
+
+    if (wantsChrisName && (hasActionVerb || directAddress("(chris|cris|criz|crys|crista|cristo|cruz|c\\s*[- ]?\\s*h\\s*[- ]?\\s*r\\s*[- ]?\\s*i\\s*[- ]?\\s*s)"))) return "chris";
+    if (wantsOrionName && (hasActionVerb || directAddress("(orion|oria|orlan|auria|aurya|arian|aryan|warren|cto)"))) return "orion";
+    if (wantsOrkioName && (hasActionVerb || directAddress("(orkio|orquio|archio|workio|workq)"))) return "orkio";
+    if (wantsTeamName && (hasActionVerb || directAddress("(team|time|equipe)"))) return "team";
+
     return null;
   }
 
@@ -4527,17 +4550,19 @@ function formatAgentOptionLabel(agent) {
           },
         }, `${targetSlug}_handoff_session_update`);
 
-        const handoffPrompt = targetSlug === "orion"
-          ? "Transição de fala: Orion, agente técnico/CTO interno da Patroai, assuma agora. Responda em primeira pessoa como Orion. Não diga que é Orkio."
-          : "Transição de fala: Chris, agente financeiro/estratégico interno da Patroai, assuma agora. Responda em primeira pessoa como Chris. Não diga que é Orkio.";
-
-        sendRealtimeClientEvent(dc, {
-          type: "response.create",
-          response: {
-            modalities: ["text", "audio"],
-            instructions: handoffPrompt,
-          },
-        }, `${targetSlug}_handoff_response_create`);
+        // EFATA777 V7:
+        // Do not fire response.create inside the handoff helper.
+        // The transcript handler will call triggerRealtimeResponse exactly once
+        // after guard checks. This prevents duplicate answers and the old agent
+        // speaking before the updated speaker instructions are applied.
+        try {
+          queueRealtimeTelemetry("agent_handoff_session_updated", {
+            target_slug: targetSlug,
+            agent_id: targetAgent.id,
+            agent_name: rtcHostAgentNameRef.current,
+            source,
+          });
+        } catch {}
       } catch (err) {
         logRealtimeStep("realtime:agent_handoff_session_update_failed", {
           source,
@@ -8296,6 +8321,11 @@ function scheduleRealtimeIdleFollowup() {
         visible_agent: rtcHostAgentNameRef.current || selectedAgentObj?.name || null,
         target_agent_slug: canonicalAgentSlug(selectedAgentObj?.slug || selectedAgentObj?.key || selectedAgentObj?.name || agentIdToSend),
         agent_ids: String(destMode || "").trim().toLowerCase() === "multi" ? destMulti : null,
+        // EFATA777 V7:
+        // Admin/founder Realtime is client-controlled so the frontend can inspect
+        // the final transcript, apply the voice handoff, and only then create one
+        // spoken response. This prevents duplicate/old-speaker answers.
+        client_controlled_response: !isRealtimeTimeboxLimitedUser(),
       };
 
       const start = runtimeMode === "summit"
@@ -9377,6 +9407,20 @@ function scheduleRealtimeIdleFollowup() {
     const normalizedEventType = String(event_type || "event").trim() || "event";
     const contentText = content == null ? "" : String(content);
     const baseMeta = (meta && typeof meta === "object") ? meta : {};
+    const activeAgentName = String(
+      baseMeta.agent_name ||
+      baseMeta.active_agent ||
+      rtcHostAgentNameRef.current ||
+      activeRuntimeAgent ||
+      ""
+    ).trim();
+    const activeAgentSlug = canonicalAgentSlug(
+      baseMeta.target_agent_slug ||
+      baseMeta.agent_slug ||
+      activeAgentName ||
+      rtcHostAgentIdRef.current ||
+      ""
+    );
     const payload = {
       event_type: normalizedEventType,
       role,
@@ -9385,6 +9429,10 @@ function scheduleRealtimeIdleFollowup() {
       content: contentText,
       transcript: (is_final && String(role || "").toLowerCase() === "user") ? contentText : "",
       source: "frontend_realtime_event_queue",
+      agent_name: activeAgentName || undefined,
+      active_agent: activeAgentName || undefined,
+      target_agent_slug: activeAgentSlug || undefined,
+      agent_id: rtcHostAgentIdRef.current || undefined,
     };
 
     rtcEventQueueRef.current.push({
@@ -9398,6 +9446,10 @@ function scheduleRealtimeIdleFollowup() {
       content: contentText,
       created_at: Math.floor(Date.now()/1000),
       is_final,
+      agent_name: activeAgentName || undefined,
+      active_agent: activeAgentName || undefined,
+      target_agent_slug: activeAgentSlug || undefined,
+      agent_id: rtcHostAgentIdRef.current || undefined,
       payload,
       meta: {
         ...baseMeta,
@@ -9407,6 +9459,10 @@ function scheduleRealtimeIdleFollowup() {
         text: contentText,
         content: contentText,
         transcript: (is_final && String(role || "").toLowerCase() === "user") ? contentText : "",
+        agent_name: activeAgentName || undefined,
+        active_agent: activeAgentName || undefined,
+        target_agent_slug: activeAgentSlug || undefined,
+        agent_id: rtcHostAgentIdRef.current || undefined,
       },
     });
     try {
@@ -9633,7 +9689,20 @@ function scheduleRealtimeIdleFollowup() {
       });
 
       setMessages((prev) => {
-        const exists = (prev || []).some((m) => String(m?.id || "") === evId);
+        const normalizedContentKey = normalizeRealtimeAssistantText(content)
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase();
+        const exists = (prev || []).some((m) => {
+          if (String(m?.id || "") === evId) return true;
+          const sameRole = String(m?.role || "").toLowerCase() === "assistant";
+          const sameContent = normalizeRealtimeAssistantText(m?.content || "")
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toLowerCase() === normalizedContentKey;
+          const sameRealtime = Boolean(m?.meta?.realtime_assistant_transcript || m?.meta?.realtime_inline_turn);
+          return sameRole && sameRealtime && sameContent;
+        });
         if (exists) return prev;
         const backendRealtimeMessage = {
           id: evId,
@@ -9809,6 +9878,27 @@ function scheduleRealtimeIdleFollowup() {
     return "";
   }
 
+
+  function inferRealtimeAgentNameForContent(content = "") {
+    const raw = String(content || "");
+    const normalized = raw
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+
+    if (/\b(eu sou|sou|aqui e|aqui é|fala)\s+(o\s+)?orion\b/iu.test(normalized) || normalized.includes("orion entrou")) return "Orion";
+    if (/\b(eu sou|sou|aqui e|aqui é|fala)\s+(a\s+)?chris\b/iu.test(normalized) || normalized.includes("chris entrou")) return "Chris";
+    if (/\b(eu sou|sou|aqui e|aqui é|fala)\s+(o\s+)?team\b/iu.test(normalized)) return "Team";
+    if (/\b(eu sou|sou|aqui e|aqui é|fala)\s+(o\s+)?orkio\b/iu.test(normalized)) return "Orkio";
+
+    const active = canonicalizeSpeakerLabel(rtcHostAgentNameRef.current || activeRuntimeAgent || "");
+    if (active && active !== "Agent") return active;
+
+    const selectedAgent = findAgentByRuntimeIdentity(rtcHostAgentIdRef.current) || findAgentByRuntimeIdentity(destSingle) || null;
+    const selectedName = canonicalizeSpeakerLabel(selectedAgent?.name || selectedAgent?.slug || selectedAgent?.id || "");
+    return selectedName || "Orkio";
+  }
+
   function commitRealtimeAssistantFinal(rawText, { source = 'unknown' } = {}) {
     const finalText = normalizeRealtimeAssistantText(rawText);
     if (!finalText) return;
@@ -9849,11 +9939,12 @@ function scheduleRealtimeIdleFollowup() {
     queueRealtimeEvent({ event_type: 'response.final', role: 'assistant', content: finalText, is_final: true, meta: { source, hf4: true, upgraded: isMeaningfulUpgrade } });
 
     try {
-      const selectedAgentObj2 = (agents || []).find(a => String(a.id) === String(destSingle || ""));
-      // AO64D-HF5_PUBLIC_REALTIME_SPEAKER_ORKIO
-      // Runtime source labels like "response.done:longest" are telemetry, not public speaker names.
-      const agentName2 = "Orkio";
-      const agentId2 = selectedAgentObj2?.id || (destSingle || null);
+      const selectedAgentObj2 = (agents || []).find(a => String(a.id) === String(destSingle || "")) || findAgentByRuntimeIdentity(rtcHostAgentIdRef.current) || null;
+      // EFATA777 V7:
+      // Admin/founder Realtime must preserve the actual active speaker.
+      // Do not collapse Orion/Chris back to Orkio when the session has switched.
+      const agentName2 = inferRealtimeAgentNameForContent(finalText);
+      const agentId2 = selectedAgentObj2?.id || rtcHostAgentIdRef.current || (destSingle || null);
 
       if (isMeaningfulUpgrade && existingMessageId) {
         setMessages((prev) => (prev || []).map((m) => (
@@ -9893,8 +9984,8 @@ function scheduleRealtimeIdleFollowup() {
     // AO66R-HF4: if native Realtime audio does not play but assistant text arrived,
     // use the already validated classic TTS pipeline as a safe voice fallback.
     try {
-      const selectedAgentObj3 = (agents || []).find(a => String(a.id) === String(destSingle || ""));
-      const agentId3 = selectedAgentObj3?.id || (destSingle || null);
+      const selectedAgentObj3 = (agents || []).find(a => String(a.id) === String(destSingle || "")) || findAgentByRuntimeIdentity(rtcHostAgentIdRef.current) || null;
+      const agentId3 = selectedAgentObj3?.id || rtcHostAgentIdRef.current || (destSingle || null);
       console.log("REALTIME_TTS_FALLBACK_REQUESTED", {
         marker: ORKIO_AO66R_HF4_BUILD_MARKER,
         source,
