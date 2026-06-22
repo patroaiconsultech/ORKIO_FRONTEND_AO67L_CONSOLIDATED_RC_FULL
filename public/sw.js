@@ -1,15 +1,14 @@
-const CACHE_NAME = "orkio-executive-shell-v1";
+const CACHE_NAME = "patroai-executive-shell-v1";
 
 const APP_SHELL = [
   "/",
   "/app",
-  "/orkio",
   "/auth",
   "/manifest.webmanifest",
   "/favicon.ico",
   "/apple-touch-icon.png",
-  "/icons/orkio-192.png",
-  "/icons/orkio-512.png",
+  "/icon-192.png",
+  "/icon-512.png",
 ];
 
 async function cacheAppShell() {
@@ -68,7 +67,6 @@ self.addEventListener("fetch", (event) => {
       fetch(request).catch(async () => {
         return (
           (await caches.match("/app")) ||
-          (await caches.match("/orkio")) ||
           (await caches.match("/")) ||
           Response.error()
         );
