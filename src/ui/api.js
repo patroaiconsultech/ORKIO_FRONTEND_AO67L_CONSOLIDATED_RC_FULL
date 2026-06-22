@@ -80,9 +80,11 @@ export function joinApi(path = "") {
   return `${API_BASE}${p}`;
 }
 
-export function headers({ token, org, json = true, extra = {} } = {}) {
+export function headers({ token, org, json = true, extra = {}, allowPublicOrg = false } = {}) {
   const resolvedToken = token ?? readToken();
-  const resolvedOrg = org ?? readTenant();
+  const rawResolvedOrg = org ?? readTenant();
+  const normalizedOrg = String(rawResolvedOrg || "").trim();
+  const isPublicOrg = normalizedOrg.toLowerCase() === "public";
 
   const out = {
     ...extra,
@@ -90,7 +92,13 @@ export function headers({ token, org, json = true, extra = {} } = {}) {
 
   if (json) out["Content-Type"] = "application/json";
   if (resolvedToken) out["Authorization"] = `Bearer ${resolvedToken}`;
-  if (resolvedOrg) out["X-Org-Slug"] = resolvedOrg;
+
+  // EFATA777_V4:
+  // A logged-in/admin AppConsole must not be forced into org=public by stale
+  // localStorage/tenant state. Public routes may still explicitly allow it.
+  if (normalizedOrg && (!isPublicOrg || allowPublicOrg || !resolvedToken)) {
+    out["X-Org-Slug"] = normalizedOrg;
+  }
 
   return out;
 }
@@ -150,7 +158,13 @@ async function parseResponseBody(response) {
 }
 
 export async function apiFetch(path, options = {}) {
-  const url = joinApi(path);
+  const normalizedRequestPath = normalizePath(path);
+  const url = joinApi(normalizedRequestPath);
+  const allowPublicOrg = Boolean(
+    options.allowPublicOrg === true ||
+    normalizedRequestPath.startsWith("/api/public/") ||
+    normalizedRequestPath.startsWith("/api/billing/public/")
+  );
 
   const isFormData =
     typeof FormData !== "undefined" && options.body instanceof FormData;
@@ -162,6 +176,7 @@ export async function apiFetch(path, options = {}) {
       org: options.org,
       json: !isFormData,
       extra: options.headers || {},
+      allowPublicOrg,
     }),
     credentials: options.credentials || "same-origin",
     signal: options.signal,
@@ -494,6 +509,7 @@ export async function chatStream({
         token,
         org: org || tenant,
         json: true,
+        allowPublicOrg: false,
         extra: {
           Accept: "text/event-stream",
         },
@@ -698,6 +714,10 @@ export async function startRealtimeSession({
   response_profile = null,
   language_profile = null,
   language = null,
+  dest_mode = null,
+  visible_agent = null,
+  target_agent_slug = null,
+  agent_ids = null,
 } = {}) {
   const resolvedLanguageProfile = language_profile || language || null;
   const { data } = await apiFetch("/api/realtime/start", {
@@ -714,6 +734,10 @@ export async function startRealtimeSession({
       response_profile,
       language_profile: resolvedLanguageProfile,
       language: resolvedLanguageProfile,
+      dest_mode,
+      visible_agent,
+      target_agent_slug,
+      agent_ids,
     },
   });
   return data;
@@ -731,6 +755,10 @@ export async function startSummitSession({
   mode = "summit",
   response_profile = "stage",
   language_profile = "auto",
+  dest_mode = null,
+  visible_agent = null,
+  target_agent_slug = null,
+  agent_ids = null,
 } = {}) {
   const { data } = await apiFetch("/api/realtime/start", {
     method: "POST",
@@ -746,6 +774,10 @@ export async function startSummitSession({
       response_profile,
       language_profile,
       language: language_profile,
+      dest_mode,
+      visible_agent,
+      target_agent_slug,
+      agent_ids,
     },
   });
   return data;
