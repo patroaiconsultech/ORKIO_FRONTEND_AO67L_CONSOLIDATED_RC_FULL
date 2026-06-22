@@ -212,7 +212,7 @@ export function selectPreferredThreadIdForPwaMobile({
   currentThreadId,
   storedThreadId,
   isMobile,
-  forceNewestOnMobile = true,
+  forceNewestOnMobile = false,
 } = {}) {
   const list = Array.isArray(threads) ? threads : [];
   const current = String(currentThreadId || "").trim();
@@ -233,23 +233,69 @@ export function selectPreferredThreadIdForPwaMobile({
   })[0] || list[0];
 
   const newestId = threadIdOf(newest);
-  if (!newestId) return current || stored || "";
-
   const storedThread = stored ? list.find((t) => threadIdOf(t) === stored) : null;
   const currentThread = current ? list.find((t) => threadIdOf(t) === current) : null;
 
-  // PWA mobile often boots with stale localStorage from a previous installed session.
-  // Prefer server's freshest thread unless the active thread is explicitly present and newer/equal.
-  const candidate = currentThread || storedThread || null;
-  if (!candidate) return newestId;
+  // EFATA777_V4:
+  // Realtime must never jump to the newest thread merely because the PWA resumed.
+  // Preserve the visible/current thread first, then the stored thread, then fallback
+  // to the newest server thread only when no explicit thread is still valid.
+  if (currentThread) return threadIdOf(currentThread);
+  if (storedThread) return threadIdOf(storedThread);
+  if (!newestId) return current || stored || "";
 
-  const newestTime = threadTimeOf(newest);
-  const candidateTime = threadTimeOf(candidate);
-  if (forceNewestOnMobile && newestId && newestId !== threadIdOf(candidate)) {
-    if (!candidateTime || !newestTime || newestTime >= candidateTime) return newestId;
+  if (forceNewestOnMobile) return newestId;
+
+  return current || stored || newestId;
+}
+
+function normalizeAgentToken(value = "") {
+  return String(value || "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/^@+/, "")
+    .replace(/[^a-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function collectAgentIdentifiers(agent) {
+  const out = new Set();
+  const rawValues = [
+    agent?.id,
+    agent?.agent_id,
+    agent?.slug,
+    agent?.agent_slug,
+    agent?.key,
+    agent?.code,
+    agent?.name,
+    agent?.label,
+  ];
+
+  for (const value of rawValues) {
+    const raw = String(value || "").trim();
+    if (!raw) continue;
+    out.add(raw);
+    const normalized = normalizeAgentToken(raw);
+    if (normalized) out.add(normalized);
   }
 
-  return threadIdOf(candidate) || newestId;
+  return out;
+}
+
+function buildAgentIdentifierMap(agents = []) {
+  const map = new Map();
+  for (const agent of Array.isArray(agents) ? agents : []) {
+    const canonicalId = String(agent?.id || agent?.agent_id || agent?.slug || agent?.agent_slug || agent?.name || "").trim();
+    if (!canonicalId) continue;
+    for (const identifier of collectAgentIdentifiers(agent)) {
+      map.set(String(identifier || "").trim(), canonicalId);
+      const normalized = normalizeAgentToken(identifier);
+      if (normalized) map.set(normalized, canonicalId);
+    }
+  }
+  return map;
 }
 
 export function normalizeDestinationForAvailableAgents({
@@ -260,18 +306,24 @@ export function normalizeDestinationForAvailableAgents({
   isMobile,
 } = {}) {
   const list = Array.isArray(agents) ? agents : [];
-  const ids = new Set(list.map((a) => String(a?.id || a?.agent_id || a?.slug || "").trim()).filter(Boolean));
+  const idMap = buildAgentIdentifierMap(list);
+
+  const resolveAgentId = (value = "") => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    return idMap.get(raw) || idMap.get(normalizeAgentToken(raw)) || "";
+  };
 
   const stored = readPwaMobileDestinationState();
   const rawMode = String(mode || stored.mode || "team").trim().toLowerCase();
   const safeMode = ["team", "single", "multi"].includes(rawMode) ? rawMode : "team";
 
   const rawSingle = String(single || stored.single || "").trim();
-  const validSingle = rawSingle && ids.has(rawSingle) ? rawSingle : "";
+  const validSingle = resolveAgentId(rawSingle);
 
   const rawMulti = Array.isArray(multi) && multi.length ? multi : stored.multi;
   const validMulti = Array.isArray(rawMulti)
-    ? Array.from(new Set(rawMulti.map((v) => String(v || "").trim()).filter((id) => id && ids.has(id))))
+    ? Array.from(new Set(rawMulti.map((v) => resolveAgentId(v)).filter(Boolean)))
     : [];
 
   if (!list.length) {
@@ -280,24 +332,27 @@ export function normalizeDestinationForAvailableAgents({
 
   const mobile = isLikelyPwaMobileRuntime(isMobile);
 
-  // If mobile has a stale single-agent id, do not keep it silently.
-  // This prevents the PWA from showing a different selected agent from an old install session.
   if (safeMode === "single") {
-    if (validSingle) return { mode: "single", single: validSingle, multi: validMulti };
+    if (validSingle) return { mode: "single", single: validSingle, multi: [] };
+    if (validMulti.length === 1) return { mode: "single", single: validMulti[0], multi: [] };
     return { mode: "team", single: "", multi: validMulti };
   }
 
   if (safeMode === "multi") {
     if (validMulti.length) return { mode: "multi", single: validSingle, multi: validMulti };
-    return { mode: "team", single: validSingle, multi: [] };
+    if (validSingle) return { mode: "single", single: validSingle, multi: [] };
+    return { mode: "team", single: "", multi: [] };
   }
 
+  // In Team mode we keep a valid single value in storage for Realtime fallback,
+  // but the visible mode remains Team unless the user explicitly selects a specialist.
   return {
     mode: mobile && !validSingle && !validMulti.length ? "team" : safeMode,
     single: validSingle,
     multi: validMulti,
   };
 }
+
 
 export function installPwaMobileResyncListeners(callback) {
   if (typeof callback !== "function") return () => {};
