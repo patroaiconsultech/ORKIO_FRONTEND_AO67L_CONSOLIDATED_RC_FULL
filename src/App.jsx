@@ -15,11 +15,7 @@ import AdminEvolutionCenter from "./routes/AdminEvolutionCenter.jsx";
 import BillingWalletCenter from "./routes/BillingWalletCenter.jsx";
 import PrivacySettings from "./routes/PrivacySettings.jsx";
 import BetaAccessGate from "./routes/BetaAccessGate.jsx";
-import Privacy from "./routes/legal/Privacy.jsx";
-import Terms from "./routes/legal/Terms.jsx";
-import Cookies from "./routes/legal/Cookies.jsx";
-import AiUsage from "./routes/legal/AiUsage.jsx";
-import AiGovernance from "./routes/legal/AiGovernance.jsx";
+import PatroaiLegal from "./routes/PatroaiLegal.jsx";
 
 export default function App() {
   return (
@@ -55,11 +51,15 @@ export default function App() {
         <Route path="/wallet" element={<BetaAccessGate><BillingWalletCenter /></BetaAccessGate>} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/privacy-settings" element={<PrivacySettings />} />
-        <Route path="/legal/privacy" element={<Privacy />} />
-        <Route path="/legal/terms" element={<Terms />} />
-        <Route path="/legal/cookies" element={<Cookies />} />
-        <Route path="/legal/ai-usage" element={<AiUsage />} />
-        <Route path="/legal/ai-governance" element={<AiGovernance />} />
+        <Route path="/termos" element={<PatroaiLegal />} />
+        <Route path="/privacidade" element={<PatroaiLegal />} />
+        <Route path="/cookies" element={<PatroaiLegal />} />
+        <Route path="/en/terms" element={<PatroaiLegal />} />
+        <Route path="/en/privacy" element={<PatroaiLegal />} />
+        <Route path="/en/cookies" element={<PatroaiLegal />} />
+        <Route path="/legal/terms" element={<PatroaiLegal />} />
+        <Route path="/legal/privacy" element={<PatroaiLegal />} />
+        <Route path="/legal/cookies" element={<PatroaiLegal />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
