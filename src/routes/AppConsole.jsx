@@ -3495,6 +3495,15 @@ useEffect(() => {
       if (lastErr) throw lastErr;
 
       const list = Array.isArray(data) ? data : [];
+
+      // EFATA777_V3: do not erase the visible conversation/sidebar on a transient
+      // empty thread response. Preserve the local list and active thread while the
+      // backend/auth/org context settles.
+      if (!list.length && threadsRef.current.length) {
+        setThreadsLoadState("ready");
+        return threadsRef.current;
+      }
+
       applyThreadsList(list);
       setThreadsLoadState(list.length ? "ready" : "empty");
 
@@ -3855,17 +3864,26 @@ useEffect(() => {
   async function loadAgents() {
     try {
       const { data } = await apiFetch("/api/agents", { token, org: tenant });
-      setAgents(data || []);
+      const list = Array.isArray(data) ? data : [];
+
+      // EFATA777_V3: keep the previous visible roster if a transient fetch returns
+      // empty. The selector must not collapse or lose Orion during reloads.
+      if (list.length) {
+        setAgents(list);
+      } else if (!(agents || []).length) {
+        setAgents([]);
+      }
+
       try {
         const m = new Map();
-        (data || []).forEach(a => { if (a?.name) m.set(String(a.name).trim(), a.id); });
+        (list.length ? list : (agents || [])).forEach(a => { if (a?.name) m.set(String(a.name).trim(), a.id); });
         agentsByNameRef.current = m;
       } catch {}
 
       // Preserve valid destination state, but do not let mobile PWA keep stale agent ids.
-      if (Array.isArray(data) && data.length) {
+      if (Array.isArray(list) && list.length) {
         const normalizedDestination = normalizeDestinationForAvailableAgents({
-          agents: data,
+          agents: list,
           mode: destMode,
           single: destSingle,
           multi: destMulti,
@@ -3873,27 +3891,34 @@ useEffect(() => {
         });
 
         setDestSingle((prev) => {
+          const prevId = String(prev || "").trim();
+          const prevStillExists = prevId && list.some((agent) => String(agent?.id || "") === prevId);
+          if (prevStillExists) return prev;
           const next = normalizedDestination.single || "";
           return String(prev || "") === next ? prev : next;
         });
 
         setDestMulti((prev) => {
-          const next = Array.isArray(normalizedDestination.multi) ? normalizedDestination.multi : [];
           const prevClean = Array.isArray(prev) ? prev.map((v) => String(v || "").trim()).filter(Boolean) : [];
-          if (JSON.stringify(prevClean) === JSON.stringify(next)) return prev;
+          const validPrev = prevClean.filter((id) => list.some((agent) => String(agent?.id || "") === id));
+          if (validPrev.length === prevClean.length && prevClean.length) return prev;
+          const next = Array.isArray(normalizedDestination.multi) ? normalizedDestination.multi : [];
+          if (JSON.stringify(validPrev) === JSON.stringify(next)) return validPrev;
           return next;
         });
 
         setDestMode((prev) => {
+          const current = String(prev || "team").trim().toLowerCase();
+          if (["team", "single", "multi"].includes(current)) return current;
           const next = normalizedDestination.mode || "team";
           return String(prev || "") === next ? prev : next;
         });
 
         try {
           persistPwaMobileDestinationState({
-            mode: normalizedDestination.mode || "team",
-            single: normalizedDestination.single || "",
-            multi: normalizedDestination.multi || [],
+            mode: destMode || normalizedDestination.mode || "team",
+            single: destSingle || normalizedDestination.single || "",
+            multi: Array.isArray(destMulti) && destMulti.length ? destMulti : (normalizedDestination.multi || []),
           });
         } catch {}
       }
@@ -4238,8 +4263,8 @@ function formatAgentOptionLabel(agent) {
   }
 
   function resolveRealtimeAgentId(modeOverride = null) {
-    // Realtime must honor the visible selected agent. The text chat may default
-    // to Orkio/Team, but voice cannot ignore a user-selected specialist.
+    // Realtime must honor the selected visible agent. The text chat may default
+    // to Team, but voice cannot ignore a user-selected specialist.
     if (publicBetaOrkioOnly) return resolveHostAgentId(modeOverride);
 
     const mode = String(modeOverride || destMode || "team").trim().toLowerCase();
@@ -4256,22 +4281,34 @@ function formatAgentOptionLabel(agent) {
       if (selected.length === 1 && selected[0]?.id) return selected[0].id;
     }
 
-    // Defensive fallback: if a single agent was selected/stored but destMode
-    // drifted back to team after refresh, keep the selected specialist for Realtime.
+    // Defensive fallback: if a single agent was selected/stored but destMode drifted
+    // back to Team after PWA refresh, keep the selected specialist for Realtime.
     const singleFallback = findAgentByRuntimeIdentity(destSingle);
-    if (singleFallback?.id) return singleFallback.id;
+    if (singleFallback?.id && canonicalAgentSlug(singleFallback?.name || singleFallback?.slug || singleFallback?.id) !== "team") {
+      return singleFallback.id;
+    }
 
     const multiFallback = (destMulti || [])
       .map((id) => findAgentByRuntimeIdentity(id))
       .filter(Boolean);
     if (multiFallback.length === 1 && multiFallback[0]?.id) return multiFallback[0].id;
 
+    // Admin safety: if Orion was the last selected single agent in local/PWA state,
+    // keep him as the Realtime host even if the visual mode briefly says Team.
+    try {
+      const storedSingle = String(readPwaMobileDestinationState()?.single || window.localStorage?.getItem("orkio_last_dest_single") || "").trim();
+      const storedAgent = findAgentByRuntimeIdentity(storedSingle);
+      if (storedAgent?.id && canonicalAgentSlug(storedAgent?.name || storedAgent?.slug || storedAgent?.id) === "orion") {
+        return storedAgent.id;
+      }
+    } catch {}
+
     return resolveHostAgentId(modeOverride);
   }
 
   function buildRealtimeAgentInstructions(agentObj = null) {
-    const name = String(agentObj?.name || "").trim() || "Orkio";
-    const slug = canonicalAgentSlug(name || agentObj?.slug || agentObj?.key || agentObj?.id);
+    const name = String(agentObj?.name || agentObj?.label || agentObj?.slug || agentObj?.key || agentObj?.id || "").trim() || "Orkio";
+    const slug = canonicalAgentSlug(agentObj?.slug || agentObj?.key || agentObj?.name || agentObj?.id || name);
     const base =
       "Você está em uma sessão de voz realtime dentro da plataforma Patroai. " +
       "Você deve reconhecer agentes internos da plataforma: Orkio, Team, Chris e Orion. " +
@@ -4312,6 +4349,158 @@ function formatAgentOptionLabel(agent) {
       "Identidade ativa: você é Orkio, copiloto executivo da Patroai. " +
       "Se o usuário solicitar Orion/CTO, reconheça Orion como agente interno e faça um handoff claro, sem sugerir e-mail ou contato externo."
     );
+  }
+
+
+  // EFATA777_V3 — realtime/selector guardrails.
+  function findAgentByCanonicalSlug(slug = "") {
+    const wanted = canonicalAgentSlug(slug);
+    if (!wanted) return null;
+    return (agents || []).find((agent) => {
+      const candidates = [
+        agent?.id,
+        agent?.name,
+        agent?.slug,
+        agent?.key,
+        agent?.code,
+        agent?.agent_id,
+        agent?.agent_slug,
+      ].map((value) => canonicalAgentSlug(value)).filter(Boolean);
+      return candidates.includes(wanted);
+    }) || null;
+  }
+
+  function persistDestinationState(next = {}) {
+    if (typeof window === "undefined") return;
+    try {
+      if (next.mode) window.localStorage?.setItem("orkio_last_dest_mode", String(next.mode));
+      if ("single" in next) {
+        if (next.single) window.localStorage?.setItem("orkio_last_dest_single", String(next.single));
+        else window.localStorage?.removeItem("orkio_last_dest_single");
+      }
+      if ("multi" in next) {
+        const clean = Array.isArray(next.multi) ? next.multi.map((v) => String(v || "").trim()).filter(Boolean) : [];
+        window.localStorage?.setItem("orkio_last_dest_multi", JSON.stringify(clean));
+      }
+    } catch {}
+    try { persistPwaMobileDestinationState(next); } catch {}
+  }
+
+  function selectSingleAgentForRuntime(agentIdOrSlug = "", source = "ui") {
+    const agent =
+      findAgentByRuntimeIdentity(agentIdOrSlug) ||
+      findAgentByCanonicalSlug(agentIdOrSlug) ||
+      null;
+    const nextId = String(agent?.id || agentIdOrSlug || "").trim();
+    if (!nextId) return false;
+
+    setDestMode("single");
+    setDestSingle(nextId);
+    setDestMulti([]);
+    persistDestinationState({ mode: "single", single: nextId, multi: [] });
+
+    try {
+      logRealtimeStep("destination:single_agent_selected", {
+        source,
+        agent_id: nextId,
+        agent_name: agent?.name || null,
+      });
+    } catch {}
+
+    return true;
+  }
+
+  function isRealtimeOrionHandoffIntent(rawText = "") {
+    const normalized = normalizeAgentLookupValue(rawText);
+    if (!normalized) return false;
+    return (
+      normalized.includes("orion") ||
+      normalized.includes("oria") ||
+      normalized.includes("orlan") ||
+      normalized.includes("auria") ||
+      normalized.includes("aurya") ||
+      normalized.includes("arian") ||
+      normalized.includes("aryan") ||
+      normalized.includes("warren") ||
+      normalized.includes("cto")
+    );
+  }
+
+  function maybeApplyRealtimeAgentHandoffFromTranscript(rawText = "", source = "transcript") {
+    if (!canAccessAdmin) return false;
+    if (!isRealtimeOrionHandoffIntent(rawText)) return false;
+
+    const orion = findAgentByCanonicalSlug("orion") || findAgentByRuntimeIdentity("orion");
+    if (!orion?.id) {
+      try {
+        logRealtimeStep("realtime:orion_handoff_skipped_missing_agent", {
+          source,
+          transcript: String(rawText || "").slice(0, 180),
+        });
+      } catch {}
+      return false;
+    }
+
+    rtcHostAgentIdRef.current = orion.id;
+    rtcHostAgentNameRef.current = String(orion.name || "Orion").trim() || "Orion";
+    selectSingleAgentForRuntime(orion.id, `realtime_${source}`);
+
+    const dc = rtcDcRef.current;
+    if (dc?.readyState === "open") {
+      try {
+        sendRealtimeClientEvent(dc, {
+          type: "session.update",
+          session: {
+            type: "realtime",
+            instructions: buildRealtimeAgentInstructions(orion),
+          },
+        }, "orion_handoff_session_update");
+      } catch (err) {
+        logRealtimeStep("realtime:orion_handoff_session_update_failed", {
+          source,
+          message: err?.message || null,
+        });
+      }
+    }
+
+    try {
+      setActiveRuntimeAgent("Orion");
+      setRuntimeHandoffLabel("Realtime direcionado para Orion — agente técnico/CTO interno.");
+      setUploadStatus("🛰️ Orion selecionado para assumir o Realtime.");
+      setTimeout(() => setUploadStatus(""), 2200);
+    } catch {}
+
+    try {
+      logRealtimeStep("realtime:orion_handoff_applied", {
+        source,
+        agent_id: orion.id,
+        agent_name: orion.name || "Orion",
+      });
+    } catch {}
+
+    return true;
+  }
+
+  function resolveRealtimeThreadId() {
+    const messageThreadId = String(messagesThreadIdRef.current || "").trim();
+    const activeId = String(activeThreadIdRef.current || "").trim();
+    const stateId = String(threadId || "").trim();
+    const requestedId = String(requestedThreadIdRef.current || "").trim();
+    const storedId = String(readStoredThreadId() || "").trim();
+    const knownThreadIds = new Set((threadsRef.current || []).map((t) => String(t?.id || "").trim()).filter(Boolean));
+    const hasVisibleMessages = Array.isArray(messagesRef.current) && messagesRef.current.length > 0;
+
+    // If the visible message panel already belongs to a loaded thread, it is the safest
+    // source for Realtime. This prevents Realtime from creating/promoting to a fresh
+    // thread while the user is looking at another conversation.
+    if (hasVisibleMessages && messageThreadId) return messageThreadId;
+
+    for (const candidate of [activeId, stateId, requestedId, storedId]) {
+      if (!candidate) continue;
+      if (!knownThreadIds.size || knownThreadIds.has(candidate)) return candidate;
+    }
+
+    return activeId || stateId || requestedId || storedId || "";
   }
 
   function appendToPlaceholder(delta) {
@@ -6590,7 +6779,7 @@ function scheduleRealtimeIdleFollowup() {
   // Mantém turnos finais do Realtime visíveis no chat após reload/reconciliação
   // Documentos agora são resolvidos pelo backend RTB-07 quando necessário.
   function getRealtimeInlineCacheKey(targetThreadId = "") {
-    const tid = String(targetThreadId || threadId || activeThreadIdRef.current || "").trim();
+    const tid = String(targetThreadId || resolveRealtimeThreadId() || threadId || activeThreadIdRef.current || "").trim();
     return tid ? `orkio_realtime_inline_turns_v1:${tid}` : "";
   }
 
@@ -6768,10 +6957,10 @@ function scheduleRealtimeIdleFollowup() {
         id: `rtc_${safeRole}_${Date.now()}_${Math.random().toString(16).slice(2)}`,
         role: safeRole,
         content: cleanText,
-        agent_id: safeRole === "assistant" ? "orkio" : null,
-        agent_name: safeRole === "assistant" ? "Orkio" : displayUserName,
-        final_speaker: safeRole === "assistant" ? "Orkio" : displayUserName,
-        visible_agent: safeRole === "assistant" ? "Orkio" : displayUserName,
+        agent_id: safeRole === "assistant" ? (rtcHostAgentIdRef.current || "orkio") : null,
+        agent_name: safeRole === "assistant" ? (String(rtcHostAgentNameRef.current || "Orkio").trim() || "Orkio") : displayUserName,
+        final_speaker: safeRole === "assistant" ? (String(rtcHostAgentNameRef.current || "Orkio").trim() || "Orkio") : displayUserName,
+        visible_agent: safeRole === "assistant" ? (String(rtcHostAgentNameRef.current || "Orkio").trim() || "Orkio") : displayUserName,
         created_at: now,
         meta: {
           ...(meta && typeof meta === "object" ? meta : {}),
@@ -6782,8 +6971,9 @@ function scheduleRealtimeIdleFollowup() {
         },
       };
 
-      try { cacheRealtimeInlineChatTurn(realtimeMessage, threadId || activeThreadIdRef.current || ""); } catch {}
-      try { void persistRealtimeInlineChatTurnToThread(realtimeMessage, threadId || activeThreadIdRef.current || ""); } catch {}
+      const realtimeTargetThreadId = resolveRealtimeThreadId() || rtcThreadIdRef.current || threadId || activeThreadIdRef.current || "";
+      try { cacheRealtimeInlineChatTurn(realtimeMessage, realtimeTargetThreadId); } catch {}
+      try { void persistRealtimeInlineChatTurnToThread(realtimeMessage, realtimeTargetThreadId); } catch {}
 
       return list.concat([realtimeMessage]);
     });
@@ -7888,8 +8078,9 @@ function scheduleRealtimeIdleFollowup() {
     const startNonce = ++rtcStartNonceRef.current;
 
     try {
-      try { console.log("REALTIME_START_BEGIN", { threadId, destSingle, sessionId: rtcSessionIdRef.current || null }); } catch {}
-      logRealtimeStep('start:begin', { threadId, destSingle, summitRuntimeMode: summitRuntimeModeRef.current, summitLanguageProfile: summitLanguageProfileRef.current });
+      const effectiveRealtimeThreadId = resolveRealtimeThreadId();
+      try { console.log("REALTIME_START_BEGIN", { threadId, effectiveRealtimeThreadId, destMode, destSingle, sessionId: rtcSessionIdRef.current || null }); } catch {}
+      logRealtimeStep('start:begin', { threadId, effectiveRealtimeThreadId, destMode, destSingle, summitRuntimeMode: summitRuntimeModeRef.current, summitLanguageProfile: summitLanguageProfileRef.current });
       setV2vError(null);
       setV2vPhase('connecting');
       setUploadStatus('⚡ Conectando Realtime (WebRTC)...');
@@ -7978,7 +8169,7 @@ function scheduleRealtimeIdleFollowup() {
 
       const realtimeStartPayload = {
         agent_id: agentIdToSend,
-        thread_id: threadId || null,
+        thread_id: effectiveRealtimeThreadId || null,
         voice: rtVoice,
         model: rtModel,
         ttl_seconds: effectiveRealtimeTtlSeconds,
@@ -8097,7 +8288,7 @@ function scheduleRealtimeIdleFollowup() {
       clearRealtimePendingAutoStop();
       try { console.log("REALTIME_SESSION_STARTED", { sessionId: start?.session_id || null, threadId: start?.thread_id || threadId || null, marker: ORKIO_AO66R_HF4_BUILD_MARKER }); } catch {}
       setLastRealtimeSessionId(start?.session_id || null);
-      rtcThreadIdRef.current = start?.thread_id || threadId || null;
+      rtcThreadIdRef.current = start?.thread_id || effectiveRealtimeThreadId || threadId || null;
 
       // ORKIO_AO60K_HF5_FRONTEND_MOBILE_REALTIME_RESTART_TRANSCRIPT_FIX
       // Show the visual timer immediately after /start 200 + backend timebox policy.
@@ -8125,12 +8316,12 @@ function scheduleRealtimeIdleFollowup() {
             force: true,
             source: "after_start_200_public_clock_open",
           });
-          updateRealtimePremiumStatus("connecting", "Relógio aberto. Orkio fará a saudação inicial por voz.");
+          updateRealtimePremiumStatus("connecting", `Relógio aberto. ${String(rtcHostAgentNameRef.current || "Orkio").trim() || "Orkio"} fará a saudação inicial por voz.`);
         } else {
           rtcPendingTimeboxSecondsRef.current = null;
           clearRealtimeTimeboxTimer();
           setRtcTimeboxRemaining(null);
-          updateRealtimePremiumStatus("connecting", "Realtime ao vivo. Orkio fará a saudação inicial por voz.");
+          updateRealtimePremiumStatus("connecting", `Realtime ao vivo. ${String(rtcHostAgentNameRef.current || "Orkio").trim() || "Orkio"} fará a saudação inicial por voz.`);
         }
         startRealtimeStartupWatchdog(rtcSessionIdRef.current, "after_start_200");
       } catch {}
@@ -8139,6 +8330,14 @@ function scheduleRealtimeIdleFollowup() {
       // o foco de uma conversa já ativa/escolhida pelo usuário.
       if (start?.thread_id && !threadId && !activeThreadIdRef.current) {
         try { activateThread(start.thread_id, { clearMessages: true }); } catch {}
+      } else if (effectiveRealtimeThreadId && start?.thread_id && String(start.thread_id) !== String(effectiveRealtimeThreadId)) {
+        // Do not let realtime steal the visible conversation focus.
+        try {
+          logRealtimeStep("start:backend_thread_id_ignored_for_focus", {
+            backend_thread_id: start.thread_id,
+            effective_realtime_thread_id: effectiveRealtimeThreadId,
+          });
+        } catch {}
       }
 
       rtcEventQueueRef.current = [];
@@ -8372,14 +8571,16 @@ function scheduleRealtimeIdleFollowup() {
             Math.ceil(Number(rtcTimeboxPolicyRef.current?.cooldownSeconds || REALTIME_PUBLIC_BETA_COOLDOWN_SECONDS))
           );
           const cooldownLabel = formatRealtimeDurationLabel(cooldownSeconds);
-          setUploadStatus(`⚡ Orkio em tempo real — até ${durationLabel}. Depois, nova voz em ${cooldownLabel}. Texto liberado.`);
+          const activeAgentLabel = String(rtcHostAgentNameRef.current || "Orkio").trim() || "Orkio";
+          setUploadStatus(`⚡ ${activeAgentLabel} em tempo real — até ${durationLabel}. Depois, nova voz em ${cooldownLabel}. Texto liberado.`);
           setTimeout(() => setUploadStatus(''), 3500);
           if (!rtcPendingTimeboxSecondsRef.current) {
             rtcPendingTimeboxSecondsRef.current = resolveRealtimeStartTimeboxSeconds({ timebox: rtcTimeboxPolicyRef.current });
           }
           setRtcTimeboxRemaining(rtcPendingTimeboxSecondsRef.current || activeTimeboxSeconds);
         } else {
-          setUploadStatus('⚡ Orkio em tempo real ativo.');
+          const activeAgentLabel = String(rtcHostAgentNameRef.current || "Orkio").trim() || "Orkio";
+          setUploadStatus(`⚡ ${activeAgentLabel} em tempo real ativo.`);
           setTimeout(() => setUploadStatus(''), 1500);
           rtcPendingTimeboxSecondsRef.current = null;
           clearRealtimeTimeboxTimer();
@@ -8454,7 +8655,7 @@ function scheduleRealtimeIdleFollowup() {
                     threshold: REALTIME_SERVER_VAD_THRESHOLD,
                     silence_duration_ms: REALTIME_SERVER_VAD_SILENCE_MS,
                     prefix_padding_ms: REALTIME_SERVER_VAD_PREFIX_MS,
-                    create_response: true,
+                    create_response: isRealtimeTimeboxLimitedUser(),
                     interrupt_response: true
                   }
                 },
@@ -8541,6 +8742,7 @@ function scheduleRealtimeIdleFollowup() {
             queueRealtimeEvent({ event_type: 'transcript.final', role: 'user', content: raw, is_final: true });
             try {} catch {}
             rtcLastFinalTranscriptRef.current = raw;
+            const realtimeAgentHandoffApplied = maybeApplyRealtimeAgentHandoffFromTranscript(raw, "input_audio_transcription.completed");
             appendRealtimeTranscriptTurn("user", raw, { source: "input_audio_transcription.completed" });
             appendRealtimeInlineChatTurn("user", raw, { source: "input_audio_transcription.completed" });
             markRealtimeUserActivity();
@@ -8595,9 +8797,20 @@ function scheduleRealtimeIdleFollowup() {
                     scheduleRealtimeAutoResponseFallback(raw, "public_beta_force_audio_retry");
                   }
                 } else {
-                  // Admin/unlimited sessions preserve the existing behavior to avoid
-                  // duplicating backend multi-agent responses such as Chris/Orion.
-                  scheduleRealtimeAutoResponseFallback(raw, "input_audio_transcription.completed_force_audio");
+                  // Admin/unlimited sessions use client-controlled response.create so
+                  // handoff requests can switch to Orion before the model answers.
+                  if (realtimeAgentHandoffApplied) {
+                    try {
+                      triggerRealtimeResponse("agent_handoff_orion");
+                    } catch (err) {
+                      logRealtimeStep("realtime:orion_handoff_trigger_failed", {
+                        message: err?.message || null,
+                      });
+                      scheduleRealtimeAutoResponseFallback(raw, "orion_handoff_fallback");
+                    }
+                  } else {
+                    scheduleRealtimeAutoResponseFallback(raw, "input_audio_transcription.completed_force_audio");
+                  }
                 }
               }
             });
@@ -8648,7 +8861,7 @@ function scheduleRealtimeIdleFollowup() {
             rtcActivationProbeSentRef.current = false;
             rtcResponseInFlightRef.current = true;
             setV2vPhase('responding');
-            updateRealtimePremiumStatus("responding", "Orkio está respondendo por voz.");
+            updateRealtimePremiumStatus("responding", `${String(rtcHostAgentNameRef.current || "Orkio").trim() || "Orkio"} está respondendo por voz.`);
             rtcTextBufRef.current = '';
             rtcAudioTranscriptBufRef.current = '';
             rtcLastAssistantFinalRef.current = '';
@@ -9003,10 +9216,17 @@ function scheduleRealtimeIdleFollowup() {
         reason,
         conversationItem: true,
         inputText: lastTranscript,
-        instructions: buildRealtimeVoiceInstruction(
-          rtcLanguageProfileRef.current,
-          lastTranscript
-        ),
+        instructions: [
+          buildRealtimeAgentInstructions(
+            findAgentByRuntimeIdentity(rtcHostAgentIdRef.current) ||
+            findAgentByRuntimeIdentity(rtcHostAgentNameRef.current) ||
+            null
+          ),
+          buildRealtimeVoiceInstruction(
+            rtcLanguageProfileRef.current,
+            lastTranscript
+          ),
+        ].filter(Boolean).join("\n\n"),
       });
       setRtcReadyToRespond(false);
       setV2vPhase("responding");
@@ -10747,7 +10967,7 @@ async function stopRealtime(reason = 'client_stop') {
 
   async function bridgeCachedThreadDocumentsToRealtime(reason = "data_channel_open") {
     try {
-      const tid = String(threadId || activeThreadIdRef.current || "").trim();
+      const tid = String(resolveRealtimeThreadId() || threadId || activeThreadIdRef.current || "").trim();
       if (!tid || !realtimeModeRef.current || !rtcSessionIdRef.current) return false;
       const dc = rtcDcRef.current;
       if (!dc || dc.readyState !== "open") return false;
@@ -10917,7 +11137,9 @@ async function stopRealtime(reason = 'client_stop') {
   const styles = {
     layout: {
       display: "flex",
+      height: "100dvh",
       minHeight: "100dvh",
+      overflow: "hidden",
       background:
         "radial-gradient(1200px 700px at 30% -10%, rgba(124,92,255,0.25), transparent 60%), linear-gradient(180deg, #05060a, #03030a)",
       color: "#fff",
@@ -10925,7 +11147,16 @@ async function stopRealtime(reason = 'client_stop') {
     },
     sidebar: {
       width: "330px",
+      height: "100dvh",
+      position: "sticky",
+      top: 0,
+      zIndex: 18,
+      overflow: "hidden",
+      flexShrink: 0,
       borderRight: "1px solid rgba(255,255,255,0.08)",
+      background: "rgba(5,6,10,0.96)",
+      backdropFilter: "blur(12px)",
+      boxShadow: "12px 0 40px rgba(0,0,0,0.16)",
       display: "flex",
       flexDirection: "column",
       padding: "16px",
@@ -11109,14 +11340,20 @@ async function stopRealtime(reason = 'client_stop') {
       lineHeight: 1.3,
     },
 
-    main: { flex: 1, display: "flex", flexDirection: "column" },
+    main: { flex: 1, minWidth: 0, height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden" },
     topbar: {
+      position: "sticky",
+      top: 0,
+      zIndex: 22,
       padding: "16px 18px",
       borderBottom: "1px solid rgba(255,255,255,0.08)",
+      background: "rgba(7,9,16,0.96)",
+      backdropFilter: "blur(14px)",
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",
       gap: "10px",
+      flexWrap: "wrap",
     },
     title: { fontSize: "16px", fontWeight: 900 },
     health: { fontSize: "12px", color: "rgba(255,255,255,0.6)" },
@@ -11236,12 +11473,39 @@ async function stopRealtime(reason = 'client_stop') {
       background: "rgba(255,255,255,0.05)",
       color: "#fff",
       fontSize: "12px",
-      minWidth: isMobile ? "132px" : "156px",
-      maxWidth: isMobile ? "min(74vw, 260px)" : "280px",
-      minHeight: "40px",
+      minWidth: isMobile ? "min(82vw, 250px)" : "180px",
+      width: isMobile ? "min(82vw, 250px)" : "auto",
+      maxWidth: isMobile ? "min(82vw, 250px)" : "340px",
+      minHeight: "42px",
       lineHeight: 1.25,
       flexShrink: 0,
       cursor: "pointer",
+    },
+    agentSelectorDock: {
+      display: "flex",
+      gap: "8px",
+      alignItems: "center",
+      flexWrap: "wrap",
+      justifyContent: isMobile ? "flex-start" : "flex-end",
+      minWidth: isMobile ? "100%" : "420px",
+      maxWidth: "100%",
+    },
+    quickAgentBtn: {
+      border: "1px solid rgba(255,255,255,0.13)",
+      background: "rgba(255,255,255,0.055)",
+      color: "#fff",
+      minHeight: "34px",
+      padding: "7px 10px",
+      borderRadius: "999px",
+      fontSize: "12px",
+      fontWeight: 850,
+      cursor: "pointer",
+      whiteSpace: "nowrap",
+    },
+    quickAgentBtnActive: {
+      border: "1px solid rgba(96,165,250,0.45)",
+      background: "linear-gradient(135deg, rgba(37,99,235,0.38), rgba(14,165,233,0.18))",
+      boxShadow: "0 10px 24px rgba(37,99,235,0.18)",
     },
     modalBack: {
       position: "fixed",
@@ -11756,7 +12020,7 @@ async function stopRealtime(reason = 'client_stop') {
             ) : null}
           </div>
 
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end", minWidth: isMobile ? 0 : 360 }}>
+          <div style={styles.agentSelectorDock}>
             {isMobile ? (
               <>
                 <button
@@ -11821,7 +12085,13 @@ async function stopRealtime(reason = 'client_stop') {
                   value={destMode}
                   onChange={(e) => {
                     const nextMode = String(e.target.value || "team").trim().toLowerCase();
-                    setDestMode(["team", "single", "multi"].includes(nextMode) ? nextMode : "team");
+                    const safeMode = ["team", "single", "multi"].includes(nextMode) ? nextMode : "team";
+                    setDestMode(safeMode);
+                    if (safeMode === "single" && !destSingle) {
+                      const defaultAgent = visibleAgents.find((a) => canonicalAgentSlug(a?.name || a?.slug || a?.id) === "orkio") || visibleAgents[0] || null;
+                      if (defaultAgent?.id) setDestSingle(defaultAgent.id);
+                    }
+                    persistDestinationState({ mode: safeMode });
                   }}
                 >
                   <option value="team">Team</option>
@@ -11830,7 +12100,16 @@ async function stopRealtime(reason = 'client_stop') {
                 </select>
 
                 {effectiveDestMode === "single" ? (
-                  <select style={styles.select} value={destSingle} onChange={(e) => setDestSingle(e.target.value)}>
+                  <select
+                    style={styles.select}
+                    value={destSingle}
+                    onChange={(e) => {
+                      const nextAgentId = String(e.target.value || "").trim();
+                      setDestSingle(nextAgentId);
+                      setDestMode("single");
+                      persistDestinationState({ mode: "single", single: nextAgentId });
+                    }}
+                  >
                     {visibleAgents.map(a => <option key={a.id} value={a.id}>{formatAgentOptionLabel(a)}</option>)}
                   </select>
                 ) : null}
@@ -11841,6 +12120,42 @@ async function stopRealtime(reason = 'client_stop') {
                       {destMulti.length ? `${destMulti.length} agentes selecionados` : "Selecionar no envio..."}
                     </option>
                   </select>
+                ) : null}
+
+                {canAccessAdmin ? (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                    {["Team", "Orkio", "Chris", "Orion"].map((agentLabel) => {
+                      const agentSlug = canonicalAgentSlug(agentLabel);
+                      const selectedAgent = findAgentByRuntimeIdentity(destSingle);
+                      const activeSlug = destMode === "team" ? "team" : canonicalAgentSlug(selectedAgent?.name || selectedAgent?.slug || selectedAgent?.id || "");
+                      const isActive = activeSlug === agentSlug;
+                      return (
+                        <button
+                          key={agentLabel}
+                          type="button"
+                          onClick={() => {
+                            if (agentSlug === "team") {
+                              setDestMode("team");
+                              persistDestinationState({ mode: "team" });
+                              return;
+                            }
+                            const ok = selectSingleAgentForRuntime(agentSlug, "quick_agent_button");
+                            if (!ok) {
+                              setUploadStatus(`Agente ${agentLabel} ainda não apareceu no roster.`);
+                              setTimeout(() => setUploadStatus(""), 1800);
+                            }
+                          }}
+                          style={{
+                            ...styles.quickAgentBtn,
+                            ...(isActive ? styles.quickAgentBtnActive : {}),
+                          }}
+                          title={`Selecionar ${agentLabel}`}
+                        >
+                          {agentLabel}
+                        </button>
+                      );
+                    })}
+                  </div>
                 ) : null}
               </>
             ) : (
