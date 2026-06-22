@@ -2997,6 +2997,9 @@ const rtcLastUserActivityAtRef = useRef(0);
   const rtcEventQueueRef = useRef([]);
   const realtimeBridgeBusyRef = useRef(false);
   const realtimeBridgeLastKeyRef = useRef("");
+  const rtcMeetingDirectiveBusyRef = useRef(false);
+  const rtcMeetingDirectiveLastKeyRef = useRef("");
+  const rtcMeetingDirectiveLastAppliedAtRef = useRef(0);
   const rtcFlushTimerRef = useRef(null);
   const rtcLivePollTimerRef = useRef(null);
   const rtcSeenBackendResponseIdsRef = useRef(new Set());
@@ -4550,7 +4553,7 @@ function formatAgentOptionLabel(agent) {
           },
         }, `${targetSlug}_handoff_session_update`);
 
-        // EFATA777 V7:
+        // EFATA777 V8:
         // Do not fire response.create inside the handoff helper.
         // The transcript handler will call triggerRealtimeResponse exactly once
         // after guard checks. This prevents duplicate answers and the old agent
@@ -8321,7 +8324,7 @@ function scheduleRealtimeIdleFollowup() {
         visible_agent: rtcHostAgentNameRef.current || selectedAgentObj?.name || null,
         target_agent_slug: canonicalAgentSlug(selectedAgentObj?.slug || selectedAgentObj?.key || selectedAgentObj?.name || agentIdToSend),
         agent_ids: String(destMode || "").trim().toLowerCase() === "multi" ? destMulti : null,
-        // EFATA777 V7:
+        // EFATA777 V8:
         // Admin/founder Realtime is client-controlled so the frontend can inspect
         // the final transcript, apply the voice handoff, and only then create one
         // spoken response. This prevents duplicate/old-speaker answers.
@@ -8890,7 +8893,19 @@ function scheduleRealtimeIdleFollowup() {
               });
             } catch {}
             updateRealtimePremiumStatus("transcribing", "📝 Transcrição ativa");
-            queueRealtimeEvent({ event_type: 'transcript.final', role: 'user', content: raw, is_final: true });
+            queueRealtimeEvent({
+              event_type: 'transcript.final',
+              role: 'user',
+              content: raw,
+              is_final: true,
+              meta: {
+                agent_name: rtcHostAgentNameRef.current || activeRuntimeAgent || "",
+                active_agent: rtcHostAgentNameRef.current || activeRuntimeAgent || "",
+                agent_id: rtcHostAgentIdRef.current || null,
+                dest_mode: destMode,
+                meeting_orchestrator_client: true,
+              },
+            });
             try {} catch {}
             rtcLastFinalTranscriptRef.current = raw;
             const realtimeAgentHandoffApplied = maybeApplyRealtimeAgentHandoffFromTranscript(raw, "input_audio_transcription.completed");
@@ -8952,12 +8967,21 @@ function scheduleRealtimeIdleFollowup() {
                   // handoff requests can switch to Orion before the model answers.
                   if (realtimeAgentHandoffApplied) {
                     try {
-                      triggerRealtimeResponse("agent_handoff_orion");
+                      window.setTimeout(() => {
+                        try {
+                          triggerRealtimeResponse("agent_handoff_delayed");
+                        } catch (innerErr) {
+                          logRealtimeStep("realtime:agent_handoff_trigger_failed", {
+                            message: innerErr?.message || null,
+                          });
+                          scheduleRealtimeAutoResponseFallback(raw, "agent_handoff_fallback");
+                        }
+                      }, 520);
                     } catch (err) {
-                      logRealtimeStep("realtime:orion_handoff_trigger_failed", {
+                      logRealtimeStep("realtime:agent_handoff_schedule_failed", {
                         message: err?.message || null,
                       });
-                      scheduleRealtimeAutoResponseFallback(raw, "orion_handoff_fallback");
+                      scheduleRealtimeAutoResponseFallback(raw, "agent_handoff_fallback");
                     }
                   } else {
                     scheduleRealtimeAutoResponseFallback(raw, "input_audio_transcription.completed_force_audio");
@@ -9484,6 +9508,163 @@ function scheduleRealtimeIdleFollowup() {
     return batchResult?.rtb02_bridge || batchResult?.data?.rtb02_bridge || batchResult?.payload?.rtb02_bridge || null;
   }
 
+  function normalizeRealtimeMeetingDirective(batchResult) {
+    const payload = batchResult?.data || batchResult || {};
+    const directive =
+      payload?.meeting_orchestrator ||
+      payload?.meetingOrchestrator ||
+      payload?.realtime_meeting ||
+      null;
+
+    if (!directive || typeof directive !== "object") return null;
+    if (String(directive?.status || "").toLowerCase() !== "directive") return null;
+    return directive;
+  }
+
+  function buildRealtimeMeetingDirectiveInstructions(agentObj, directive = {}) {
+    const base = buildRealtimeAgentInstructions(agentObj);
+    const directiveInstructions = String(directive?.instructions || "").trim();
+    const target = directive?.target_agent || {};
+    const targetName = String(
+      target?.display_name ||
+      agentObj?.name ||
+      directive?.target_agent_slug ||
+      rtcHostAgentNameRef.current ||
+      "Orkio"
+    ).trim();
+
+    return [
+      base,
+      "",
+      "EFATA777_V8 — Meeting Orchestrator ativo.",
+      "Esta é uma sala de reunião por turnos. Não há sobreposição de vozes.",
+      `Agente ativo deste turno: ${targetName}.`,
+      `Tipo do turno: ${String(directive?.kind || "turn").trim() || "turn"}.`,
+      directive?.room_mode ? "Modo sala: ativo." : "Modo sala: inativo.",
+      "Regra crítica: fale apenas como o agente ativo deste turno.",
+      "Regra crítica: não diga que executou auditoria, deploy, push, PR, integração, chamada externa ou War Room real se isso não estiver confirmado nos eventos técnicos.",
+      directiveInstructions,
+    ].filter(Boolean).join("\n\n");
+  }
+
+  async function handleRealtimeMeetingOrchestratorDirective(batchResult) {
+    const directive = normalizeRealtimeMeetingDirective(batchResult);
+    if (!directive) return false;
+
+    const sid = String(directive?.session_id || "").trim();
+    if (sid && rtcSessionIdRef.current && sid !== String(rtcSessionIdRef.current)) return false;
+
+    const directiveKey = String(
+      directive?.dedupe_key ||
+      `${sid}:${directive?.kind || ""}:${directive?.target_agent_slug || ""}:${String(directive?.transcript || "").slice(0, 160)}`
+    ).toLowerCase();
+
+    if (!directiveKey) return false;
+    if (rtcMeetingDirectiveBusyRef.current) return false;
+    if (rtcMeetingDirectiveLastKeyRef.current === directiveKey) return false;
+
+    const targetSlug = canonicalAgentSlug(
+      directive?.target_agent_slug ||
+      directive?.active_agent_slug ||
+      directive?.target_agent?.slug ||
+      directive?.target_agent?.display_name ||
+      ""
+    );
+
+    const targetAgent =
+      findAgentByCanonicalSlug(targetSlug) ||
+      findAgentByRuntimeIdentity(targetSlug) ||
+      null;
+
+    if (!targetAgent?.id) {
+      try {
+        logRealtimeStep("meeting_orchestrator:missing_target_agent", {
+          targetSlug,
+          directiveKind: directive?.kind || null,
+        });
+      } catch {}
+      return false;
+    }
+
+    rtcMeetingDirectiveBusyRef.current = true;
+    rtcMeetingDirectiveLastKeyRef.current = directiveKey;
+    rtcMeetingDirectiveLastAppliedAtRef.current = Date.now();
+
+    try {
+      const targetName = canonicalizeSpeakerLabel(
+        directive?.target_agent?.display_name ||
+        targetAgent?.name ||
+        targetSlug
+      );
+
+      rtcHostAgentIdRef.current = targetAgent.id;
+      rtcHostAgentNameRef.current = targetName || targetAgent.name || targetSlug;
+      selectSingleAgentForRuntime(targetAgent.id, `meeting_orchestrator_${directive?.kind || "turn"}`);
+
+      const dc = rtcDcRef.current;
+      if (dc?.readyState === "open") {
+        sendRealtimeClientEvent(dc, {
+          type: "session.update",
+          session: {
+            type: "realtime",
+            instructions: buildRealtimeMeetingDirectiveInstructions(targetAgent, directive),
+          },
+        }, "meeting_orchestrator_session_update");
+      }
+
+      try {
+        appendExecutionTrace({
+          kind: "system",
+          label: "EFATA777 V8 Meeting Orchestrator",
+          detail: `Turno roteado para ${rtcHostAgentNameRef.current} (${directive?.kind || "turn"}).`,
+        });
+      } catch {}
+
+      try {
+        setActiveRuntimeAgent(rtcHostAgentNameRef.current);
+        setRuntimeHandoffLabel(`Sala realtime: turno com ${rtcHostAgentNameRef.current}.`);
+        setUploadStatus(`🛰️ Turno realtime encaminhado para ${rtcHostAgentNameRef.current}.`);
+        setTimeout(() => setUploadStatus(""), 2200);
+      } catch {}
+
+      try {
+        queueRealtimeTelemetry("meeting_orchestrator_directive_applied", {
+          target_agent_slug: targetSlug,
+          agent_id: targetAgent.id,
+          agent_name: rtcHostAgentNameRef.current,
+          kind: directive?.kind || "turn",
+          room_mode: Boolean(directive?.room_mode),
+        });
+      } catch {}
+
+      if (directive?.should_create_response !== false) {
+        setRtcReadyToRespond(true);
+        window.setTimeout(() => {
+          try {
+            triggerRealtimeResponse(`meeting_orchestrator_${directive?.kind || "turn"}`);
+          } catch (err) {
+            try {
+              logRealtimeStep("meeting_orchestrator:trigger_failed", {
+                message: err?.message || null,
+                target: targetSlug,
+              });
+            } catch {}
+            scheduleRealtimeAutoResponseFallback(
+              String(directive?.transcript || rtcLastFinalTranscriptRef.current || ""),
+              "meeting_orchestrator_trigger_fallback"
+            );
+          }
+        }, 520);
+      }
+
+      return true;
+    } finally {
+      window.setTimeout(() => {
+        rtcMeetingDirectiveBusyRef.current = false;
+      }, 900);
+    }
+  }
+
   function buildRealtimeOrchestrationBridgePrompt(bridge) {
     const rawText = String(bridge?.text || "").trim();
     if (!rawText) return "";
@@ -9557,7 +9738,10 @@ function scheduleRealtimeIdleFollowup() {
     rtcEventQueueRef.current = [];
     try {
       const batchResult = await postRealtimeEventsBatch({ session_id: sid, events: q });
-      await handleRealtimeOrchestrationBridgeCandidate(batchResult);
+      const meetingHandled = await handleRealtimeMeetingOrchestratorDirective(batchResult);
+      if (!meetingHandled) {
+        await handleRealtimeOrchestrationBridgeCandidate(batchResult);
+      }
     } catch (err) {
       // On failure, put events back to try later (best-effort)
       rtcEventQueueRef.current = q.concat(rtcEventQueueRef.current || []);
@@ -9701,7 +9885,9 @@ function scheduleRealtimeIdleFollowup() {
             .replace(/[\u0300-\u036f]/g, "")
             .toLowerCase() === normalizedContentKey;
           const sameRealtime = Boolean(m?.meta?.realtime_assistant_transcript || m?.meta?.realtime_inline_turn);
-          return sameRole && sameRealtime && sameContent;
+          const createdAt = Number(m?.created_at || 0);
+          const recentEnough = !createdAt || Math.abs(Math.floor(Date.now() / 1000) - createdAt) <= 45;
+          return sameRole && sameContent && (sameRealtime || recentEnough);
         });
         if (exists) return prev;
         const backendRealtimeMessage = {
@@ -9936,14 +10122,34 @@ function scheduleRealtimeIdleFollowup() {
     appendRealtimeTranscriptTurn("assistant", finalText, { source });
     try { rtcRealtimeInlineAssistantKeyRef.current = buildRealtimeInlineDedupeKey("assistant", finalText); } catch {}
 
-    queueRealtimeEvent({ event_type: 'response.final', role: 'assistant', content: finalText, is_final: true, meta: { source, hf4: true, upgraded: isMeaningfulUpgrade } });
+    queueRealtimeEvent({
+      event_type: 'response.final',
+      role: 'assistant',
+      content: finalText,
+      is_final: true,
+      meta: {
+        source,
+        hf4: true,
+        upgraded: isMeaningfulUpgrade,
+        agent_name: rtcHostAgentNameRef.current || activeRuntimeAgent || "",
+        active_agent: rtcHostAgentNameRef.current || activeRuntimeAgent || "",
+        agent_id: rtcHostAgentIdRef.current || null,
+        meeting_orchestrator_client: true,
+      },
+    });
 
     try {
       const selectedAgentObj2 = (agents || []).find(a => String(a.id) === String(destSingle || "")) || findAgentByRuntimeIdentity(rtcHostAgentIdRef.current) || null;
-      // EFATA777 V7:
+      // EFATA777 V8:
       // Admin/founder Realtime must preserve the actual active speaker.
       // Do not collapse Orion/Chris back to Orkio when the session has switched.
-      const agentName2 = inferRealtimeAgentNameForContent(finalText);
+      const inferredAgentName2 = inferRealtimeAgentNameForContent(finalText);
+      const agentName2 = canonicalizeSpeakerLabel(
+        rtcHostAgentNameRef.current ||
+        selectedAgentObj2?.name ||
+        inferredAgentName2 ||
+        "Orkio"
+      );
       const agentId2 = selectedAgentObj2?.id || rtcHostAgentIdRef.current || (destSingle || null);
 
       if (isMeaningfulUpgrade && existingMessageId) {
