@@ -1,6 +1,7 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import usePatroaiSeo from "../lib/usePatroaiSeo.js";
+import { PATROAI_LEGAL_IDENTITY as LEGAL } from "../lib/patroaiLegalIdentity.js";
 
 const POSTS = {
   pt: [
@@ -87,7 +88,7 @@ const TEXT = {
     subtitle:
       "Inteligência de mercado, IA aplicada, ESG, novos negócios e governança para líderes que pensam em longo prazo.",
     note:
-      "Os conteúdos têm caráter institucional e estratégico. Não constituem recomendação de investimento, oferta pública ou promessa de resultado.",
+      "Conteúdo exclusivamente informativo e editorial. Não constitui consultoria jurídica, financeira, contábil, fiscal, regulatória, societária, tecnológica ou recomendação de investimento.",
     back: "Voltar para a página inicial",
     badge: "Patroai Insights",
   },
@@ -96,7 +97,7 @@ const TEXT = {
     subtitle:
       "Market intelligence, applied AI, ESG, new ventures and governance for leaders with a long-term perspective.",
     note:
-      "Content is institutional and strategic. It does not constitute investment advice, public offering or a promise of results.",
+      "Content is informational and editorial only. It does not constitute legal, financial, accounting, tax, regulatory, corporate or technology consulting, nor investment advice.",
     back: "Back to home",
     badge: "Patroai Insights",
   },
@@ -111,21 +112,24 @@ export default function PatroaiBlog() {
   const t = TEXT[locale];
   const homeHref = isEnglish ? "/en" : "/";
   const languageHref = isEnglish ? "/blog" : "/en/blog";
+  const termsHref = isEnglish ? "/en/terms" : "/termos";
+  const privacyHref = isEnglish ? "/en/privacy" : "/privacidade";
+  const cookiesHref = isEnglish ? "/en/cookies" : "/cookies";
 
   return (
     <main className="min-h-screen bg-[#060813] text-white">
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(52,211,153,0.16),transparent_34%),radial-gradient(circle_at_80%_0%,rgba(125,92,255,0.15),transparent_30%),linear-gradient(180deg,#060813,#090d16_45%,#05060b)]" />
 
       <header className="border-b border-white/10 bg-[#060813]/82 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 md:py-4">
-          <Link to={homeHref} className="flex min-w-0 items-center gap-3">
-            <img src="/patroai-assets/logo-patroai-novo.png" alt="Grupo Patroai" className="h-12 w-auto shrink-0 md:h-14" />
-            <div className="min-w-0">
-              <div className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.22em] text-white sm:text-xs">GRUPO PATROAI</div>
-              <div className="hidden text-[11px] font-semibold text-white/45 sm:block">Consultech • Holding • AI Factory</div>
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 md:gap-4 md:py-4">
+          <Link to={homeHref} className="flex min-w-[190px] max-w-full items-center gap-3 md:min-w-[260px]">
+            <img src="/patroai-assets/logo-patroai-novo.png" alt="Grupo Patroai" className="h-14 w-auto max-w-[64px] shrink-0 object-contain md:h-16 md:max-w-[74px]" style={{ height: "64px", width: "auto", maxWidth: "74px", objectFit: "contain" }} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[11px] font-black uppercase tracking-[0.18em] text-white sm:text-xs md:tracking-[0.22em]">GRUPO PATROAI</div>
+              <div className="hidden truncate text-[11px] font-semibold text-white/45 sm:block">Consultech • Holding • AI Factory</div>
             </div>
           </Link>
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2 sm:flex-nowrap">
             <Link to={homeHref} className="whitespace-nowrap rounded-full border border-white/12 bg-white/[0.055] px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-white/75">
               {t.back}
             </Link>
@@ -163,9 +167,35 @@ export default function PatroaiBlog() {
       </section>
 
       <footer className="border-t border-white/10 px-4 py-10">
-        <div className="mx-auto max-w-7xl text-sm text-white/45">
-          <div className="font-semibold text-white/60">“Ele muda os tempos e as estações; dá sabedoria aos sábios e conhecimento aos entendidos.” — Daniel 2:21</div>
-          <div className="mt-3">© 2026 Grupo Patroai. Todos os direitos reservados.</div>
+        <div className="mx-auto flex max-w-7xl flex-col gap-6 md:flex-row md:items-end md:justify-between">
+          <div className="max-w-3xl text-sm text-white/45">
+            <div className="font-semibold text-white/60">
+              {isEnglish
+                ? "“He changes times and seasons; He gives wisdom to the wise and knowledge to those who have understanding.” — Daniel 2:21"
+                : "“Ele muda os tempos e as estações; dá sabedoria aos sábios e conhecimento aos entendidos.” — Daniel 2:21"}
+            </div>
+            <div className="mt-3">© 2026 Grupo Patroai. {isEnglish ? "All rights reserved." : "Todos os direitos reservados."}</div>
+            <div className="mt-3 text-xs leading-6 text-white/34">
+              <div>{LEGAL.legalName} — {isEnglish ? `Brazilian CNPJ ${LEGAL.cnpj}` : `CNPJ ${LEGAL.cnpj}`}</div>
+              <div>{LEGAL.address.full}</div>
+              <div>
+                {isEnglish ? "Contact" : "Contato"}:{" "}
+                <a href={`mailto:${LEGAL.emails.contact}`} className="text-white/55 underline underline-offset-4 hover:text-white">{LEGAL.emails.contact}</a>{" "}
+                · {isEnglish ? "Privacy" : "Privacidade"}:{" "}
+                <a href={`mailto:${LEGAL.emails.privacy}`} className="text-white/55 underline underline-offset-4 hover:text-white">{LEGAL.emails.privacy}</a>
+              </div>
+              <div className="mt-3">
+                {isEnglish
+                  ? "Blog content is informational and editorial. It does not replace qualified professional advice."
+                  : "Os conteúdos do blog têm finalidade informativa e editorial. Não substituem orientação profissional qualificada."}
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-4 text-xs font-bold uppercase tracking-[0.16em] text-white/42">
+            <Link to={termsHref} className="hover:text-white">{isEnglish ? "Terms" : "Termos"}</Link>
+            <Link to={privacyHref} className="hover:text-white">{isEnglish ? "Privacy" : "Privacidade"}</Link>
+            <Link to={cookiesHref} className="hover:text-white">Cookies</Link>
+          </div>
         </div>
       </footer>
     </main>
