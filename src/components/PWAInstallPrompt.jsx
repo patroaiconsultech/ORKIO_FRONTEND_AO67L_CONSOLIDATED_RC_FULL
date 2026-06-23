@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-const DISMISS_KEY = "patroai_pwa_install_dismissed_at_v16";
+const DISMISS_KEY = "patroai_pwa_install_dismissed_at_v17";
 const DISMISS_TTL_MS = 1000 * 60 * 60 * 24 * 3;
 
 function detectPreferredLanguage() {
@@ -75,8 +75,13 @@ function isSamsungInternet() {
   return /SamsungBrowser/i.test(userAgent());
 }
 
+function isChromiumDesktopLike() {
+  const ua = userAgent();
+  return /Chrome|Chromium|Edg/i.test(ua) && !/Android|iPhone|iPad|iPod/i.test(ua);
+}
+
 function hasKnownInstallSurface() {
-  return isIosSafariLike() || isAndroidLike();
+  return isIosSafariLike() || isAndroidLike() || isChromiumDesktopLike();
 }
 
 export default function PWAInstallPrompt() {
@@ -98,7 +103,7 @@ export default function PWAInstallPrompt() {
       if (!isStandalone() && hasKnownInstallSurface()) {
         setManualHintVisible(true);
       }
-    }, 2500);
+    }, 4000);
 
     const onBeforeInstallPrompt = (event) => {
       try {
