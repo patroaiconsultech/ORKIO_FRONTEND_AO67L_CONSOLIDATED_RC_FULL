@@ -24,32 +24,38 @@
   ],
   "icons": [
     {
-      "src": "/favicon-192x192.png",
+      "src": "/icons/patroai-pwa-192-v18.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icon-192.png",
+      "src": "/icons/patroai-maskable-192-v18.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "/icon-512.png",
+      "src": "/icons/patroai-pwa-512-v18.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icon-512.png",
+      "src": "/icons/patroai-maskable-512-v18.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "/patroai-assets/logo-patroai-novo.png",
-      "sizes": "713x712",
+      "src": "/apple-touch-icon.png?v=18",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon-192x192.png?v=18",
+      "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     }
@@ -62,7 +68,7 @@
       "url": "/app?source=pwa_shortcut",
       "icons": [
         {
-          "src": "/icon-192.png",
+          "src": "/icons/patroai-pwa-192-v18.png",
           "sizes": "192x192",
           "type": "image/png"
         }
@@ -75,7 +81,7 @@
       "url": "/auth?source=pwa_shortcut",
       "icons": [
         {
-          "src": "/icon-192.png",
+          "src": "/icons/patroai-pwa-192-v18.png",
           "sizes": "192x192",
           "type": "image/png"
         }
