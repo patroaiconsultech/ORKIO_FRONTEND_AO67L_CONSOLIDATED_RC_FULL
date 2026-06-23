@@ -1,4 +1,4 @@
-// EFATA777 V18 — conservative installability Service Worker registration
+// EFATA777 V19 — conservative installability Service Worker registration
 // Reabilita PWA install com SW network-only.
 // Não usa cache agressivo. Não faz warmAppShell. Não compete com o primeiro render.
 
@@ -22,7 +22,7 @@ export function registerServiceWorker() {
 
   const params = new URLSearchParams(window.location.search || "");
   if (params.get("sw") === "off") {
-    console.info("[PWA] EFATA777 V18: Service Worker pulado por sw=off.");
+    console.info("[PWA] EFATA777 V19: Service Worker pulado por sw=off.");
     return;
   }
 
@@ -56,12 +56,12 @@ export function registerServiceWorker() {
     try {
       await clearLegacyCaches();
 
-      const registration = await navigator.serviceWorker.register("/sw.js?v=18", {
+      const registration = await navigator.serviceWorker.register("/sw.js?v=19", {
         scope: "/",
         updateViaCache: "none",
       });
 
-      console.info("[PWA] EFATA777 V18: Service Worker installability/network-only registrado:", registration.scope);
+      console.info("[PWA] EFATA777 V19: Service Worker installability/network-only registrado:", registration.scope);
 
       try {
         registration.active?.postMessage?.({ type: "EFATA777_CLEAR_LEGACY_CACHES" });
@@ -84,12 +84,12 @@ export function registerServiceWorker() {
 
         installing.addEventListener?.("statechange", () => {
           if (installing.state === "installed") {
-            console.info("[PWA] EFATA777 V18: nova versão do SW instalada.");
+            console.info("[PWA] EFATA777 V19: nova versão do SW instalada.");
           }
         });
       });
     } catch (error) {
-      console.warn("[PWA] EFATA777 V18: Service Worker não registrado:", error?.message || error);
+      console.warn("[PWA] EFATA777 V19: Service Worker não registrado:", error?.message || error);
       await exposeDiagnostic(null);
     }
   };
@@ -105,7 +105,7 @@ export function registerServiceWorker() {
   }
 
   navigator.serviceWorker.addEventListener?.("controllerchange", () => {
-    console.info("[PWA] EFATA777 V18: controller atualizado. Recarregue uma vez se o botão de instalação ainda não aparecer.");
+    console.info("[PWA] EFATA777 V19: controller atualizado. Recarregue uma vez se o botão de instalação ainda não aparecer.");
     exposeDiagnostic(null);
   });
 }
