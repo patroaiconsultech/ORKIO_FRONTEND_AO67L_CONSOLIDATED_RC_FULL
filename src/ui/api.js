@@ -1150,7 +1150,7 @@ export async function savePrechatContext(payload = {}, opts = {}) {
 
 export async function submitEnterpriseLead(payload = {}, opts = {}) {
   const body = {
-    source: "orkio_public_prechat",
+    source: "patroai_public_prechat",
     ...payload,
     created_at: payload.created_at || new Date().toISOString(),
   };
@@ -1172,8 +1172,7 @@ export function buildSignupUrlFromPrechat(base = "/auth") {
   const context = readPrechatContext();
   const qs = new URLSearchParams();
   qs.set("mode", "register");
-  qs.set("trial", "7");
-  qs.set("source", "orkio-prechat");
+  qs.set("source", "patroai-prechat");
   if (context?.prechat_id) qs.set("prechat_id", context.prechat_id);
   return `${base}?${qs.toString()}`;
 }
