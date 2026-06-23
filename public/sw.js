@@ -1,74 +1,70 @@
-// EFATA777 V15 — HARD cache/SW expulsion for landing recovery
-// Escopo temporário: matar SW antigo, limpar caches e não interceptar nenhum request.
-// Não reativar cache/PWA até a landing estabilizar.
+// EFATA777 V16 — conservative PWA re-enable with official Patroai icon
+// Objetivo: reabilitar installability sem cache agressivo e sem controlar/interceptar a landing.
+// Não faz precache. Não cacheia API. Não usa warmAppShell.
 
-const EFATA777_SW_RECOVERY_VERSION = "v15-hard-cache-expulsion";
+const EFATA777_SW_VERSION = "v16-conservative-pwa";
 
-async function clearAllCaches() {
+async function clearLegacyCaches() {
   try {
     if (!self.caches) return;
     const keys = await caches.keys();
-    await Promise.all(keys.map((key) => caches.delete(key)));
-  } catch {}
-}
-
-async function navigateClientsOnce() {
-  try {
-    const clients = await self.clients.matchAll({
-      type: "window",
-      includeUncontrolled: true,
-    });
-
     await Promise.all(
-      clients.map((client) => {
-        try {
-          const url = new URL(client.url);
-          if (url.searchParams.get("sw_recovered") === "v15") return Promise.resolve();
-          url.searchParams.set("sw_recovered", "v15");
-          return client.navigate(url.toString());
-        } catch {
-          return Promise.resolve();
-        }
-      })
+      keys
+        .filter((key) => /orkio|patroai|efata777/i.test(String(key || "")))
+        .map((key) => caches.delete(key))
     );
   } catch {}
 }
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
-  event.waitUntil(clearAllCaches());
+  event.waitUntil(Promise.resolve());
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
-      await clearAllCaches();
-
+      await clearLegacyCaches();
       try {
-        await self.registration.unregister();
+        await self.clients.claim();
       } catch {}
-
-      await navigateClientsOnce();
     })()
   );
 });
 
-// Intencionalmente vazio.
-// Não usar event.respondWith aqui.
-self.addEventListener("fetch", () => {});
+// Fetch listener conservador:
+// - mantém installability;
+// - não intercepta a landing "/" nem assets;
+// - só faz pass-through explícito de navegação do /app;
+// - sem cache, sem fallback, sem warmAppShell.
+self.addEventListener("fetch", (event) => {
+  try {
+    const request = event.request;
+    if (!request || request.method !== "GET") return;
+
+    const url = new URL(request.url);
+    if (url.origin !== self.location.origin) return;
+    if (url.pathname.startsWith("/api/")) return;
+    if (url.pathname === "/env.js") return;
+
+    const isAppNavigation =
+      request.mode === "navigate" && url.pathname.startsWith("/app");
+
+    if (!isAppNavigation) return;
+
+    event.respondWith(fetch(request));
+  } catch {}
+});
 
 self.addEventListener("message", (event) => {
   try {
-    if (event?.data?.type === "EFATA777_CLEAR_SW") {
-      event.waitUntil(
-        (async () => {
-          await clearAllCaches();
-          try {
-            await self.registration.unregister();
-          } catch {}
-          await navigateClientsOnce();
-        })()
-      );
+    if (event?.data?.type === "SKIP_WAITING") {
+      self.skipWaiting();
+      return;
+    }
+
+    if (event?.data?.type === "EFATA777_CLEAR_LEGACY_CACHES") {
+      event.waitUntil(clearLegacyCaches());
     }
   } catch {}
 });
