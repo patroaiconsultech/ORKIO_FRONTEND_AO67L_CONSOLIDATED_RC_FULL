@@ -1,8 +1,11 @@
-// EFATA777 V16 — conservative PWA re-enable with official Patroai icon
-// Objetivo: reabilitar installability sem cache agressivo e sem controlar/interceptar a landing.
-// Não faz precache. Não cacheia API. Não usa warmAppShell.
+// EFATA777 V17 — installability network-only Service Worker
+// Objetivo:
+// - satisfazer critérios Chromium de installability com fetch handler real;
+// - manter landing rápida e sem cache agressivo;
+// - não fazer precache, não fazer warmAppShell, não cachear API;
+// - limpar caches legados e responder sempre pela rede.
 
-const EFATA777_SW_VERSION = "v16-conservative-pwa";
+const EFATA777_SW_VERSION = "v17-installability-network-only";
 
 async function clearLegacyCaches() {
   try {
@@ -18,7 +21,7 @@ async function clearLegacyCaches() {
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
-  event.waitUntil(Promise.resolve());
+  event.waitUntil(clearLegacyCaches());
 });
 
 self.addEventListener("activate", (event) => {
@@ -32,39 +35,70 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Fetch listener conservador:
-// - mantém installability;
-// - não intercepta a landing "/" nem assets;
-// - só faz pass-through explícito de navegação do /app;
-// - sem cache, sem fallback, sem warmAppShell.
-self.addEventListener("fetch", (event) => {
+function shouldNetworkHandle(request) {
   try {
-    const request = event.request;
-    if (!request || request.method !== "GET") return;
+    if (!request || request.method !== "GET") return false;
 
     const url = new URL(request.url);
-    if (url.origin !== self.location.origin) return;
-    if (url.pathname.startsWith("/api/")) return;
-    if (url.pathname === "/env.js") return;
+    if (url.origin !== self.location.origin) return false;
 
-    const isAppNavigation =
-      request.mode === "navigate" && url.pathname.startsWith("/app");
+    // Nunca interceptar API/eventos/sockets/transcrições/env runtime.
+    if (url.pathname.startsWith("/api/")) return false;
+    if (url.pathname === "/env.js") return false;
+    if (url.pathname.startsWith("/sockjs")) return false;
 
-    if (!isAppNavigation) return;
+    // Critério de installability Chromium: SW precisa ter fetch handler real.
+    // Usamos network-only para todos os GET same-origin elegíveis.
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-    event.respondWith(fetch(request));
-  } catch {}
+// Fetch handler real, porém conservador:
+// - event.respondWith(fetch(...)) somente para GET same-origin elegíveis;
+// - sem cache, sem fallback offline, sem shell pré-carregado;
+// - evita pending por cache antigo e satisfaz installability.
+self.addEventListener("fetch", (event) => {
+  const request = event.request;
+  if (!shouldNetworkHandle(request)) return;
+
+  event.respondWith(
+    fetch(request).catch(() => {
+      // Sem fallback HTML para não mascarar erro real nem travar landing.
+      return new Response("", {
+        status: 503,
+        statusText: "Network unavailable",
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "X-EFATA777-SW": EFATA777_SW_VERSION,
+        },
+      });
+    })
+  );
 });
 
 self.addEventListener("message", (event) => {
   try {
-    if (event?.data?.type === "SKIP_WAITING") {
+    const type = event?.data?.type;
+
+    if (type === "SKIP_WAITING") {
       self.skipWaiting();
       return;
     }
 
-    if (event?.data?.type === "EFATA777_CLEAR_LEGACY_CACHES") {
+    if (type === "EFATA777_CLEAR_LEGACY_CACHES") {
       event.waitUntil(clearLegacyCaches());
+      return;
+    }
+
+    if (type === "EFATA777_PWA_DIAGNOSTIC") {
+      event?.source?.postMessage?.({
+        type: "EFATA777_PWA_DIAGNOSTIC_RESULT",
+        sw_version: EFATA777_SW_VERSION,
+        cache_policy: "network-only",
+        cache_keys_cleared: true,
+      });
     }
   } catch {}
 });
