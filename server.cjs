@@ -50,19 +50,19 @@ function setHardNoStore(res) {
   res.setHeader("Surrogate-Control", "no-store");
   res.setHeader("CDN-Cache-Control", "no-store");
   res.setHeader("Vary", "Accept-Encoding");
-  res.setHeader("X-EFATA777-Recovery", "v17-installability-network-only");
+  res.setHeader("X-EFATA777-Recovery", "v20-polish-pwa-network-only");
 }
 
 function setHtmlRevalidate(res) {
   res.setHeader("Cache-Control", HTML_REVALIDATE);
   res.setHeader("Vary", "Accept-Encoding");
-  res.setHeader("X-EFATA777-Recovery", "v17-installability-network-only");
+  res.setHeader("X-EFATA777-Recovery", "v20-polish-pwa-network-only");
 }
 
 function setManifestRevalidate(res) {
   res.setHeader("Cache-Control", MANIFEST_REVALIDATE);
   res.setHeader("Vary", "Accept-Encoding");
-  res.setHeader("X-EFATA777-Recovery", "v17-installability-network-only");
+  res.setHeader("X-EFATA777-Recovery", "v20-polish-pwa-network-only");
 }
 
 function sendFileWithHeaders(res, absolutePath, contentType, setHeaders, fallbackBody = null) {
@@ -80,14 +80,14 @@ function sendFileWithHeaders(res, absolutePath, contentType, setHeaders, fallbac
   return res.status(404).send("Not found");
 }
 
-const CONSERVATIVE_SW = `// EFATA777 V17 — installability network-only Service Worker
+const CONSERVATIVE_SW = `// EFATA777 V20 — installability network-only Service Worker
 // Objetivo:
 // - satisfazer critérios Chromium de installability com fetch handler real;
 // - manter landing rápida e sem cache agressivo;
 // - não fazer precache, não fazer warmAppShell, não cachear API;
 // - limpar caches legados e responder sempre pela rede.
 
-const EFATA777_SW_VERSION = "v17-installability-network-only";
+const EFATA777_SW_VERSION = "v20-polish-pwa-network-only";
 
 async function clearLegacyCaches() {
   try {
@@ -190,7 +190,7 @@ app.get("/healthz", (_req, res) => {
   res.status(200).json({ ok: true });
 });
 
-// EFATA777 V16: /sw.js continua anti-cache forte, mas volta a ser SW conservador.
+// EFATA777 V20: /sw.js anti-cache forte com SW conservador network-only.
 // Importante: Service-Worker-Allowed permite scope "/" sem cache agressivo.
 app.get("/sw.js", (_req, res) => {
   setHardNoStore(res);
@@ -231,8 +231,10 @@ app.get("/manifest.webmanifest", (_req, res) => {
       theme_color: "#030713",
       background_color: "#030713",
       icons: [
-        { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" },
-        { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }
+        { src: "/icons/patroai-pwa-192-v18.png", sizes: "192x192", type: "image/png", purpose: "any" },
+        { src: "/icons/patroai-maskable-192-v18.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
+        { src: "/icons/patroai-pwa-512-v18.png", sizes: "512x512", type: "image/png", purpose: "any" },
+        { src: "/icons/patroai-maskable-512-v18.png", sizes: "512x512", type: "image/png", purpose: "maskable" }
       ]
     })
   );
