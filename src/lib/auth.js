@@ -293,7 +293,10 @@ export function isApproved(user) {
       (typeof user.usage_tier === "string" &&
         user.usage_tier.startsWith("summit")) ||
       user.signup_source === "investor" ||
-      user.signup_code_label === "efata777"
+      user.signup_source === "amcham_rs_partner" ||
+      user.signup_code_label === "efata777" ||
+      user.signup_code_label === "amcham_rs_partner_access" ||
+      user.signup_code_label === "amcham_rs_orkio_only"
   );
 }
 
