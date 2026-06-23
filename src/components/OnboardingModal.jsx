@@ -140,6 +140,22 @@ function suggestLanguage(country) {
   return DEFAULT_LANGUAGE_BY_COUNTRY[code] || "pt-BR";
 }
 
+function isAmchamPartnerAccess(user, prechat) {
+  const userSource = String(user?.signup_source || "").trim().toLowerCase();
+  const userLabel = String(user?.signup_code_label || "").trim().toLowerCase();
+  const prechatSource = String(prechat?.source || "").trim().toLowerCase();
+  const prechatLabel = String(prechat?.signup_code_label || "").trim().toLowerCase();
+  return (
+    userSource === "amcham_rs_partner" ||
+    userLabel === "amcham_rs_partner_access" ||
+    userLabel === "amcham_rs_orkio_only" ||
+    prechatSource === "amcham_rs_partner_access" ||
+    prechatSource.includes("amcham") ||
+    prechatLabel === "amcham_rs_partner_access" ||
+    prechatLabel === "amcham_rs_orkio_only"
+  );
+}
+
 function sanitizeOnboardingPayload(payload, prechat) {
   const answers = prechat?.answers || {};
   const country = String(payload?.country || "").trim().toUpperCase() || "BR";
@@ -150,7 +166,7 @@ function sanitizeOnboardingPayload(payload, prechat) {
   const goal = String(answers.goal || "").trim();
 
   const notesFromPrechat = [
-    diagnosis ? `Diagnóstico inicial Orkio: ${diagnosis}` : "",
+    diagnosis ? `Diagnóstico inicial Patroai: ${diagnosis}` : "",
     challenge ? `Desafio principal: ${challenge}` : "",
     segment ? `Segmento: ${segment}` : "",
     systems ? `Sistemas/automações existentes: ${systems}` : "",
@@ -353,7 +369,8 @@ export default function OnboardingModal({ user, onComplete, onClose, entrySource
 
 
   const hasPrechat = !!(prechat?.answers || prechat?.diagnosis);
-  const trialDays = Number(prechat?.trial_days || 7);
+  const isAmchamAccess = isAmchamPartnerAccess(user, prechat);
+  const trialDays = isAmchamAccess ? 0 : Number(prechat?.trial_days || user?.trial_days || 0);
   const isAvatarEntry = String(entrySource || "").trim().toLowerCase() === "avatar";
   const autoSpeakDoneRef = useRef(false);
   const onboardingAudioRef = useRef(null);
@@ -365,8 +382,8 @@ export default function OnboardingModal({ user, onComplete, onClose, entrySource
     let cancelled = false;
 
     const intro = isAvatarEntry
-      ? "Olá. Eu sou Orkio. Vou conduzir seu onboarding inicial com a mesma voz do avatar, clareza e presença."
-      : "Olá. Vamos concluir seu onboarding inicial para personalizar sua experiência nOrkio.";
+      ? "Olá. Eu sou a Patroai. Vou conduzir seu onboarding inicial com a mesma clareza, presença e continuidade."
+      : "Olá. Vamos concluir seu onboarding inicial para personalizar sua experiência na Patroai.";
 
     async function speakIntro() {
       autoSpeakDoneRef.current = true;
@@ -532,15 +549,15 @@ export default function OnboardingModal({ user, onComplete, onClose, entrySource
               fontWeight: 800,
             }}
           >
-            {isAvatarEntry ? "Avatar onboarding · Orkio OS" : "Orkio OS · 7 dias grátis"}
+            {isAmchamAccess ? "Acesso institucional AmCham RS" : (isAvatarEntry ? "Onboarding Patroai" : "Patroai Console")}
           </div>
           <h2 style={{ margin: "8px 0 6px", fontSize: 30, lineHeight: 1.1 }}>
             {fullName ? `Bem-vindo, ${fullName}` : (isAvatarEntry ? "Seu onboarding com avatar começa aqui" : "Complete seu onboarding")}
           </h2>
           <p style={{ margin: 0, color: "#475569", lineHeight: 1.55 }}>
             {hasPrechat
-              ? "Importei o contexto da conversa inicial com Orkio. Revise os dados abaixo para continuarmos a experiência dentro da plataforma."
-              : (isAvatarEntry ? "Recebi sua entrada pelo avatar de Orkio. Confirme seus dados para iniciarmos uma experiência guiada dentro da plataforma." : "Conte um pouco sobre seu contexto para personalizarmos sua primeira experiência dentro dOrkio OS.")}
+              ? "Importei o contexto da conversa inicial. Revise os dados abaixo para continuarmos a experiência dentro da plataforma."
+              : (isAvatarEntry ? "Recebi sua entrada pelo avatar da Patroai. Confirme seus dados para iniciarmos uma experiência guiada dentro da plataforma." : "Conte um pouco sobre seu contexto para personalizarmos sua primeira experiência dentro da Patroai.")}
           </p>
           <div
             style={{
@@ -556,7 +573,7 @@ export default function OnboardingModal({ user, onComplete, onClose, entrySource
             }}
           >
             Vou usar essas respostas para personalizar sua primeira conversa. Depois de salvar,
-            Orkio mostrará o contexto recebido e sugerirá um próximo passo.
+            A Patroai mostrará o contexto recebido e sugerirá um próximo passo.
           </div>
         </div>
 
@@ -577,10 +594,16 @@ export default function OnboardingModal({ user, onComplete, onClose, entrySource
             <strong style={{ display: "block", color: "#14532d", marginBottom: 6 }}>
               Diagnóstico inicial importado da landing
             </strong>
-            {prechat?.diagnosis || "Orkio iniciou um primeiro mapa estratégico com base nas suas respostas."}
-            <div style={{ marginTop: 10, color: "#166534", fontWeight: 800 }}>
-              Trial ativo: {trialDays} dias gratuitos.
-            </div>
+            {prechat?.diagnosis || "A Patroai iniciou um primeiro mapa estratégico com base nas suas respostas."}
+            {isAmchamAccess ? (
+              <div style={{ marginTop: 10, color: "#166534", fontWeight: 800 }}>
+                Acesso institucional reconhecido.
+              </div>
+            ) : trialDays > 0 ? (
+              <div style={{ marginTop: 10, color: "#166534", fontWeight: 800 }}>
+                Acesso inicial ativo.
+              </div>
+            ) : null}
           </div>
         )}
 
@@ -769,7 +792,7 @@ export default function OnboardingModal({ user, onComplete, onClose, entrySource
               boxShadow: "0 12px 28px rgba(37,99,235,0.22)",
             }}
           >
-            {busy ? "Salvando..." : "Salvar contexto e entrar nOrkio"}
+            {busy ? "Salvando..." : "Salvar contexto e entrar na Patroai"}
           </button>
         </div>
       </form>
