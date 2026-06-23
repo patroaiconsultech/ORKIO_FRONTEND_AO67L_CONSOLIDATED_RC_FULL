@@ -30,7 +30,7 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192x192.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <link rel="manifest" href="/manifest.webmanifest?v=14" />
+    <link rel="manifest" href="/manifest.webmanifest?v=15" />
 
     <meta property="og:title" content="Grupo Patroai | Consultech, Holding e AI Factory" />
     <meta
@@ -67,12 +67,13 @@
     </script>
 
 
-    <!-- EFATA777 V14: hard recovery for stale Service Worker.
+    <!-- EFATA777 V15: hard cache/SW expulsion for stale Service Worker.
          Runs before app scripts to unregister old SW/controllers and clear stale caches. -->
-    <script data-efata777="v14-hard-sw-kill">
+    <script data-efata777="v15-hard-cache-expulsion">
       (function () {
         try {
-          var KEY = "patroai_sw_kill_v14_done";
+          window.__PATROAI_SW_RECOVERY_VERSION__ = "v15";
+          var KEY = "patroai_sw_kill_v15_done";
           var hasSW = "serviceWorker" in navigator;
           if (!hasSW) return;
 
