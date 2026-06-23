@@ -1,4 +1,6 @@
-// EFATA777 V11 — robust PWA Service Worker registration
+// EFATA777 V13 — safe PWA Service Worker registration
+// Registra /sw.js sem cache e tenta ativar a versão nova sem recarregar em loop.
+
 export function registerServiceWorker() {
   if (typeof window === "undefined") return;
   if (!("serviceWorker" in navigator)) return;
@@ -41,16 +43,16 @@ export function registerServiceWorker() {
         if (!installing) return;
 
         installing.addEventListener?.("statechange", () => {
-          if (installing.state === "installed" && navigator.serviceWorker.controller) {
-            console.info("[PWA] Nova versão instalada e pronta para ativação.");
+          if (installing.state === "installed") {
+            try {
+              registration.waiting?.postMessage({ type: "SKIP_WAITING" });
+            } catch {}
+            console.info("[PWA] Nova versão do Service Worker instalada.");
           }
         });
       });
     } catch (error) {
-      console.warn(
-        "[PWA] Service Worker não registrado:",
-        error?.message || error
-      );
+      console.warn("[PWA] Service Worker não registrado:", error?.message || error);
     }
   };
 
