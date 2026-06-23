@@ -1,8 +1,6 @@
-// EFATA777 V13 — PWA landing recovery / network-first kill switch
-// Motivo: recuperar landing quando um Service Worker anterior prende fetch/precache.
-// Escopo: não intercepta respostas. Mantém registro PWA, limpa caches antigos e deixa tudo ir para a rede.
-
-const CACHE_NAME = "patroai-pwa-shell-v13-network-recovery";
+// EFATA777 V14 — HARD Service Worker kill / landing recovery
+// Objetivo: retirar imediatamente controle de SW antigo que trava JS/CSS/landing.
+// Escopo temporário: sem cache, sem precache, sem respondWith.
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
@@ -15,24 +13,35 @@ self.addEventListener("activate", (event) => {
       try {
         const keys = await caches.keys();
         await Promise.all(keys.map((key) => caches.delete(key)));
-      } catch {
-        // Best-effort cache cleanup.
-      }
+      } catch {}
 
       try {
-        await self.clients.claim();
-      } catch {
-        // Best-effort immediate control.
-      }
+        await self.registration.unregister();
+      } catch {}
+
+      try {
+        const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+        await Promise.all(
+          clients.map((client) => {
+            try {
+              return client.navigate(client.url);
+            } catch {
+              return Promise.resolve();
+            }
+          })
+        );
+      } catch {}
     })()
   );
 });
 
+// Deliberadamente sem respondWith.
+// Um fetch listener vazio evita cache agressivo e não intercepta recursos.
+self.addEventListener("fetch", () => {});
+
 self.addEventListener("message", (event) => {
   try {
-    if (event?.data?.type === "SKIP_WAITING") {
-      self.skipWaiting();
-    }
+    if (event?.data?.type === "SKIP_WAITING") self.skipWaiting();
     if (event?.data?.type === "CLEAR_PATROAI_CACHES") {
       event.waitUntil(
         caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
@@ -40,10 +49,3 @@ self.addEventListener("message", (event) => {
     }
   } catch {}
 });
-
-// Importante:
-// Não chamar event.respondWith aqui.
-// Isso devolve o controle total ao navegador/rede e evita travar JS/CSS/landing/PWA.
-// Manter um fetch listener sem respondWith preserva compatibilidade com navegadores
-// que esperam Service Worker registrado para installability, sem criar cache agressivo.
-self.addEventListener("fetch", () => {});
