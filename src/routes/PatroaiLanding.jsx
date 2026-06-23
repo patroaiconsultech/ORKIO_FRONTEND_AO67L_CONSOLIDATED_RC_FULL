@@ -797,8 +797,8 @@ export default function PatroaiLanding() {
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(52,211,153,0.16),transparent_34%),radial-gradient(circle_at_80%_0%,rgba(125,92,255,0.15),transparent_30%),linear-gradient(180deg,#060813,#090d16_45%,#05060b)]" />
 
       <header className="patroai-header sticky top-0 z-40 border-b border-white/10 bg-[#060813]/90 backdrop-blur-xl">
-        <div className="patroai-header-inner mx-auto flex max-w-7xl flex-col gap-2 px-4 py-2 sm:px-5 md:flex-row md:items-center md:justify-between md:gap-4 md:px-6 md:py-3 lg:px-8 xl:flex-nowrap">
-          <div className="flex w-full items-center justify-between gap-3 md:w-auto md:min-w-[300px]">
+        <div className="patroai-header-inner mx-auto flex w-full max-w-[1480px] flex-col gap-2 px-4 py-2 sm:px-5 md:flex-row md:items-center md:justify-between md:gap-3 md:px-6 md:py-3 lg:px-8 xl:gap-4 2xl:flex-nowrap">
+          <div className="flex w-full items-center justify-between gap-3 md:w-auto md:min-w-[240px] lg:min-w-[270px] 2xl:min-w-[300px]">
             <a href="#top" className="patroai-brand-lockup flex min-w-0 flex-1 items-center gap-3">
               <img
                 src="/patroai-assets/logo-patroai-novo.png"
@@ -807,13 +807,13 @@ export default function PatroaiLanding() {
                 style={{ height: "clamp(56px, 13vw, 76px)", width: "auto", maxWidth: "104px", objectFit: "contain" }}
               />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[10px] font-black uppercase tracking-[0.14em] text-white sm:text-xs md:tracking-[0.22em]">{t.brand}</div>
+                <div className="truncate text-[10px] font-black uppercase tracking-[0.14em] text-white sm:text-xs md:tracking-[0.17em] 2xl:tracking-[0.22em]">{t.brand}</div>
                 <div className="mt-0.5 truncate text-[10px] font-semibold text-white/45 sm:text-[11px]">{t.pillars}</div>
               </div>
             </a>
           </div>
 
-          <nav className="hidden items-center gap-4 text-[11px] font-bold uppercase tracking-[0.12em] text-white/54 xl:flex">
+          <nav className="hidden items-center gap-3 text-[10px] font-bold uppercase tracking-[0.10em] text-white/54 2xl:flex">
             <a href="#scope" className="hover:text-white">{t.nav.about}</a>
             <a href="#consultech" className="hover:text-white">{t.nav.consultech}</a>
             <a href="#holding" className="hover:text-white">{t.nav.holding}</a>
@@ -824,7 +824,7 @@ export default function PatroaiLanding() {
             <a href="#strategic-intake" className="hover:text-white">{t.nav.contact}</a>
           </nav>
 
-          <div className="patroai-header-actions grid w-full grid-cols-4 gap-2 md:w-auto md:flex md:min-w-0 md:shrink-0 md:flex-nowrap md:items-center md:justify-end md:pr-1 lg:pr-2">
+          <div className="patroai-header-actions grid w-full grid-cols-4 gap-2 md:w-auto md:flex md:min-w-0 md:shrink-0 md:flex-nowrap md:items-center md:justify-end md:gap-1.5 md:pr-4 lg:gap-2 lg:pr-6 xl:pr-8 2xl:pr-2">
             <a
               href={PATROAI_WHATSAPP_URL}
               target="_blank"
