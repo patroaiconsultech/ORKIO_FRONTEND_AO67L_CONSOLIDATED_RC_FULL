@@ -218,6 +218,11 @@ function normalizeAccessCode(value) {
   return String(value || "").trim().toUpperCase();
 }
 
+function isAmchamPartnerAccessCode(value) {
+  const code = normalizeAccessCode(value);
+  return code === "AMCHAMRS" || code === "AMCHAMRSORKIO";
+}
+
 function readPrechatContext() {
   try {
     const raw =
@@ -326,7 +331,7 @@ function getAuthPresentation({ mode, otpMode, journey }) {
         "Digite o código enviado para seu e-mail. Essa etapa protege sua sessão e preserva a continuidade da jornada.",
       panelTitle: "Validação com segurança",
       panelBody:
-        "Orkio mantém o contexto preparado enquanto você conclui a verificação. Depois disso, seguimos para o ambiente certo.",
+        "A Patroai mantém o contexto preparado enquanto você conclui a verificação. Depois disso, seguimos para o ambiente certo.",
       steps: ["Código por e-mail", "Sessão validada", "Continuidade preservada"],
     };
   }
@@ -350,7 +355,7 @@ function getAuthPresentation({ mode, otpMode, journey }) {
       subtitle: "Crie uma nova senha para recuperar seu acesso à plataforma.",
       panelTitle: "Acesso restaurado",
       panelBody:
-        "Após atualizar a senha, você poderá entrar novamente e continuar no ambiente Orkio.",
+        "Após atualizar a senha, você poderá entrar novamente e continuar no ambiente Patroai.",
       steps: ["Nova senha", "Conta protegida", "Login liberado"],
     };
   }
@@ -358,13 +363,13 @@ function getAuthPresentation({ mode, otpMode, journey }) {
   if (safeMode === "register") {
     if (fromAvatar) {
       return {
-        badge: "Orkio iniciou o contexto",
-        title: "Preserve sua conversa com Orkio",
+        badge: "Patroai iniciou o contexto",
+        title: "Preserve sua conversa com a Patroai",
         subtitle:
           "Crie seu acesso para salvar o diagnóstico iniciado, manter memória contextual e continuar a jornada com a sobriedade de um copiloto que sabe reparar falhas.",
         panelTitle: "Sua conversa não precisa recomeçar",
         panelBody:
-          "Orkio reconhece de onde você veio. Agora o cadastro cria uma sessão segura para transformar conversa em diagnóstico, plano e execução — com continuidade, polidez e reparação quando algo falhar.",
+          "A Patroai reconhece de onde você veio. Agora o cadastro cria uma sessão segura para transformar conversa em diagnóstico, plano e execução — com continuidade, polidez e reparação quando algo falhar.",
         steps: ["Contexto recebido", "Conta criada", "Diagnóstico continuado"],
       };
     }
@@ -384,13 +389,13 @@ function getAuthPresentation({ mode, otpMode, journey }) {
 
     if (fromPatroai || fromOrkio || onboarding) {
       return {
-        badge: fromPatroai ? "Patroai Consultech" : "Orkio OS",
+        badge: "Patroai Consultech",
         title: "Crie seu acesso inteligente",
         subtitle:
-          "Entre na plataforma para iniciar diagnóstico, conversar com Orkio e transformar contexto em plano de evolução com clareza, elegância e continuidade.",
+          "Entre na plataforma para iniciar diagnóstico, preservar contexto e transformar intenção em plano de evolução com clareza, elegância e continuidade.",
         panelTitle: "Uma entrada com continuidade",
         panelBody:
-          "A jornada começa antes do formulário: origem, intenção e próximo passo acompanham o usuário até o app. Se algo se perder, Orkio deve reconhecer, pedir perdão e reorganizar o caminho.",
+          "A jornada começa antes do formulário: origem, intenção e próximo passo acompanham o usuário até o app. Se algo se perder, a plataforma deve reconhecer, pedir perdão e reorganizar o caminho.",
         steps: ["Cadastro simples", "Diagnóstico inicial", "Acesso ao app"],
       };
     }
@@ -399,7 +404,7 @@ function getAuthPresentation({ mode, otpMode, journey }) {
       badge: "Novo acesso",
       title: "Crie sua conta",
       subtitle:
-        "Comece com um acesso gratuito para conhecer Orkio: uma inteligência que organiza, conduz com calma e preserva a dignidade da conversa.",
+        "Crie seu acesso para conhecer a Patroai: uma plataforma que organiza, conduz com calma e preserva a dignidade da conversa.",
       panelTitle: "Comece com clareza",
       panelBody:
         "A criação da conta prepara seu espaço para conversas, diagnósticos e evolução operacional — com memória, gentileza firme e próximos passos claros.",
@@ -533,6 +538,8 @@ export default function AuthPage() { usePatroaiSeo();
   const [accessCode, setAccessCode] = useState("");
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState("free_trial");
+  const normalizedAccessCodeForUi = normalizeAccessCode(accessCode);
+  const isAmchamPartnerAccess = isAmchamPartnerAccessCode(normalizedAccessCodeForUi);
 
   const [otpCode, setOtpCode] = useState("");
   const [pendingEmail, setPendingEmail] = useState("");
@@ -723,11 +730,14 @@ export default function AuthPage() { usePatroaiSeo();
       marketing_consent: false,
     };
 
+    const isAmchamRegistration = isAmchamPartnerAccessCode(accessCodeValue);
+
     stagePrechatImport({
       email: emailValue,
       name: nameValue,
-      trial_days: 7,
-      source: "auth-register",
+      trial_days: isAmchamRegistration ? 0 : 7,
+      source: isAmchamRegistration ? "amcham_rs_partner_access" : "auth-register",
+      signup_code_label: isAmchamRegistration ? "amcham_rs_partner_access" : undefined,
     });
 
     await apiFetch("/api/auth/register", {
@@ -843,7 +853,7 @@ export default function AuthPage() { usePatroaiSeo();
     setStatus("Criando sua conta e preparando a continuidade da jornada...");
 
     try {
-      if (selectedPlan && selectedPlan !== "free_trial") {
+      if (!isAmchamPartnerAccess && selectedPlan && selectedPlan !== "free_trial") {
         await startPaidCheckout({
           nameValue: nameNormalized,
           emailValue: emailNormalized,
@@ -1263,20 +1273,42 @@ export default function AuthPage() { usePatroaiSeo();
             placeholder="Opcional"
             autoComplete="off"
           />
+          {isAmchamPartnerAccess ? (
+            <div style={{ ...muted, marginTop: 8, color: palette.goldSoft, fontWeight: 800 }}>
+              Código reconhecido: acesso institucional AmCham RS.
+            </div>
+          ) : null}
         </div>
 
         <div>
           <label style={label}>Tipo de acesso</label>
-          <select
-            style={input}
-            value={selectedPlan}
-            onChange={(event) => setSelectedPlan(event.target.value)}
-          >
-            <option value="free_trial">Diagnóstico inicial gratuito</option>
-            <option value="founder_access">Founder Access</option>
-            <option value="pro_access">Pro Access</option>
-            <option value="team_access">Team Access</option>
-          </select>
+          {isAmchamPartnerAccess ? (
+            <div
+              style={{
+                ...input,
+                display: "flex",
+                alignItems: "center",
+                minHeight: 46,
+                color: "#0f172a",
+                background: "rgba(247,200,98,0.12)",
+                borderColor: "rgba(247,200,98,0.55)",
+                fontWeight: 800,
+              }}
+            >
+              Acesso institucional AmCham RS
+            </div>
+          ) : (
+            <select
+              style={input}
+              value={selectedPlan}
+              onChange={(event) => setSelectedPlan(event.target.value)}
+            >
+              <option value="free_trial">Diagnóstico inicial</option>
+              <option value="founder_access">Founder Access</option>
+              <option value="pro_access">Pro Access</option>
+              <option value="team_access">Team Access</option>
+            </select>
+          )}
         </div>
 
         <label style={{ ...muted, display: "flex", gap: 10, alignItems: "flex-start" }}>
@@ -1470,7 +1502,7 @@ export default function AuthPage() { usePatroaiSeo();
                   fontWeight: 950,
                 }}
               >
-                PatroAI + Orkio
+                Patroai Console
               </div>
               <div style={{ fontSize: 30, lineHeight: 1.04, fontWeight: 950, maxWidth: 420 }}>
                 {presentation.panelTitle}
@@ -1569,12 +1601,12 @@ export default function AuthPage() { usePatroaiSeo();
             >
               <strong style={{ color: palette.goldSoft }}>Origem reconhecida:</strong>{" "}
               {journey.fromAvatar
-                ? "avatar Orkio / pré-chat"
+                ? "avatar Patroai / pré-chat"
                 : journey.fromDemo
                 ? "demonstração Patroai"
                 : journey.fromPatroai
                 ? "landing Patroai"
-                : "landing Orkio OS"}
+                : "landing Patroai"}
               . Vamos manter essa intenção durante o acesso, com continuidade e cuidado.
             </div>
           ) : null}
