@@ -1,11 +1,11 @@
-// EFATA777 V17 — installability network-only Service Worker
+// EFATA777 V18 — installability network-only Service Worker com ícone Patroai
 // Objetivo:
 // - satisfazer critérios Chromium de installability com fetch handler real;
 // - manter landing rápida e sem cache agressivo;
 // - não fazer precache, não fazer warmAppShell, não cachear API;
 // - limpar caches legados e responder sempre pela rede.
 
-const EFATA777_SW_VERSION = "v17-installability-network-only";
+const EFATA777_SW_VERSION = "v18-installability-network-only-patroai-icon";
 
 async function clearLegacyCaches() {
   try {
