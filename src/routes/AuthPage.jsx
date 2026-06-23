@@ -215,7 +215,27 @@ function normalizeEmail(value) {
 }
 
 function normalizeAccessCode(value) {
-  return String(value || "").trim().toUpperCase();
+  return String(value || "").replace(/\s+/g, "").trim().toUpperCase();
+}
+
+function readStoredAccessCode() {
+  try {
+    const keys = [
+      "patroai_private_access_code",
+      "patroai_private_access_code_last",
+      "patroai_signup_access_code",
+      "orkio_signup_access_code",
+    ];
+
+    const stores = [window.sessionStorage, window.localStorage].filter(Boolean);
+    for (const store of stores) {
+      for (const key of keys) {
+        const value = normalizeAccessCode(store.getItem(key));
+        if (value) return value;
+      }
+    }
+  } catch {}
+  return "";
 }
 
 function isAmchamPartnerAccessCode(value) {
@@ -535,7 +555,7 @@ export default function AuthPage() { usePatroaiSeo();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
-  const [accessCode, setAccessCode] = useState("");
+  const [accessCode, setAccessCode] = useState(() => readStoredAccessCode());
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState("free_trial");
   const normalizedAccessCodeForUi = normalizeAccessCode(accessCode);
