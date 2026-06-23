@@ -1,20 +1,55 @@
 import usePatroaiSeo from "../lib/usePatroaiSeo.js"; import React, { useMemo, useState } from "react";
 
-const PUBLIC_CODE = "EFATAH777";
+const PUBLIC_CODES = ["EFATAH777", "AMCHAMRS", "AMCHAMRSORKIO"];
 const STORAGE_KEY = "patroai_private_gate_passed";
-const BETA_ACCESS_CODE_STORAGE_KEY = "patroai_private_access_code";
+const BETA_ACCESS_CODE_STORAGE_KEYS = [
+  "patroai_private_access_code",
+  "patroai_private_access_code_last",
+  "patroai_signup_access_code",
+  "orkio_signup_access_code",
+];
 
 function normalize(value) {
   return String(value || "").replace(/\s+/g, "").trim().toUpperCase();
 }
 
 function getAllowedCodes() {
-  const raw = import.meta.env.VITE_PATROAI_PRIVATE_ACCESS_CODES || PUBLIC_CODE;
+  const raw = import.meta.env.VITE_PATROAI_PRIVATE_ACCESS_CODES || "";
 
-  return String(raw || "")
-    .split(/[;,\n]/g)
-    .map(normalize)
-    .filter(Boolean);
+  return Array.from(
+    new Set([
+      ...PUBLIC_CODES,
+      ...String(raw || "")
+        .split(/[;,\n]/g)
+        .map(normalize)
+        .filter(Boolean),
+    ])
+  );
+}
+
+function readStoredBetaAccessCode() {
+  try {
+    const stores = [sessionStorage, localStorage].filter(Boolean);
+    for (const store of stores) {
+      for (const key of BETA_ACCESS_CODE_STORAGE_KEYS) {
+        const value = normalize(store.getItem(key));
+        if (value) return value;
+      }
+    }
+  } catch {}
+  return "";
+}
+
+function persistBetaAccessCode(value) {
+  const safe = normalize(value);
+  if (!safe) return;
+
+  try {
+    for (const key of BETA_ACCESS_CODE_STORAGE_KEYS) {
+      sessionStorage.setItem(key, safe);
+      localStorage.setItem(key, safe);
+    }
+  } catch {}
 }
 
 function isAllowed(value) {
@@ -57,7 +92,7 @@ export default function BetaAccessGate({ children = null }) { usePatroaiSeo();
     }
   });
 
-  const [code, setCode] = useState("");
+  const [code, setCode] = useState(() => readStoredBetaAccessCode());
   const [waitlistOpen, setWaitlistOpen] = useState(false);
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
@@ -96,9 +131,7 @@ export default function BetaAccessGate({ children = null }) { usePatroaiSeo();
       return;
     }
 
-    try {
-      sessionStorage.setItem(BETA_ACCESS_CODE_STORAGE_KEY, safe);
-    } catch {}
+    persistBetaAccessCode(safe);
 
     setError("");
     setWaitlistOpen(false);
