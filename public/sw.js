@@ -1,29 +1,68 @@
-const CACHE_NAME = "patroai-executive-shell-v1";
+// EFATA777 V12 — PWA installability + official Patroai logo
+// Scope: public shell only. API/realtime requests are never cached.
 
+const CACHE_NAME = "patroai-pwa-shell-v12-logo-patroai";
 const APP_SHELL = [
   "/",
   "/app",
   "/auth",
   "/manifest.webmanifest",
   "/favicon.ico",
+  "/favicon-48x48.png",
+  "/favicon-192x192.png",
   "/apple-touch-icon.png",
   "/icon-192.png",
   "/icon-512.png",
+  "/patroai-assets/logo-patroai-novo.png",
+  "/icons/patroai-192.png",
+  "/icons/patroai-512.png"
 ];
 
-async function cacheAppShell() {
-  const cache = await caches.open(CACHE_NAME);
+function isSameOrigin(url) {
+  try {
+    return new URL(url).origin === self.location.origin;
+  } catch {
+    return false;
+  }
+}
 
+function shouldBypass(request) {
+  try {
+    const url = new URL(request.url);
+    if (url.origin !== self.location.origin) return true;
+    if (url.pathname.startsWith("/api/")) return true;
+    if (url.pathname.startsWith("/realtime/")) return true;
+    if (url.pathname === "/env.js") return true;
+    if (url.pathname.includes("sockjs-node")) return true;
+    if (url.pathname.includes("__vite")) return true;
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+async function putIfCacheable(cache, request, response) {
+  try {
+    if (!response || response.status !== 200) return;
+    if (response.type && !["basic", "default"].includes(response.type)) return;
+    await cache.put(request, response.clone());
+  } catch {
+    // Cache is best-effort only.
+  }
+}
+
+async function warmAppShell() {
+  const cache = await caches.open(CACHE_NAME);
   await Promise.allSettled(
     APP_SHELL.map(async (url) => {
       try {
-        const response = await fetch(url, { cache: "reload" });
-
-        if (!response || !response.ok) return;
-
-        await cache.put(url, response);
+        const response = await fetch(url, {
+          cache: "reload",
+          credentials: "same-origin"
+        });
+        await putIfCacheable(cache, url, response);
       } catch {
-        // Non-critical asset. Do not block Service Worker installation.
+        // Never block Service Worker installation because one shell asset failed.
       }
     })
   );
@@ -31,8 +70,7 @@ async function cacheAppShell() {
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
-
-  event.waitUntil(cacheAppShell());
+  event.waitUntil(warmAppShell());
 });
 
 self.addEventListener("activate", (event) => {
@@ -50,51 +88,55 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+self.addEventListener("message", (event) => {
+  try {
+    if (event?.data?.type === "SKIP_WAITING") {
+      self.skipWaiting();
+    }
+  } catch {}
+});
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
 
   if (!request || request.method !== "GET") return;
-
-  const url = new URL(request.url);
-
-  if (url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith("/api/")) return;
-  if (url.pathname.startsWith("/realtime/")) return;
-  if (url.pathname === "/env.js") return;
+  if (!isSameOrigin(request.url)) return;
+  if (shouldBypass(request)) return;
 
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request).catch(async () => {
-        return (
-          (await caches.match("/app")) ||
-          (await caches.match("/")) ||
-          Response.error()
-        );
-      })
+      (async () => {
+        const cache = await caches.open(CACHE_NAME);
+
+        try {
+          const fresh = await fetch(request);
+          await putIfCacheable(cache, request, fresh);
+          return fresh;
+        } catch {
+          return (
+            (await cache.match(request)) ||
+            (await cache.match("/app")) ||
+            (await cache.match("/")) ||
+            new Response(
+              "<!doctype html><title>Patroai offline</title><meta name='viewport' content='width=device-width,initial-scale=1'><body style='font-family:sans-serif;background:#030713;color:white;padding:24px'>Patroai temporariamente offline. Verifique a conexão e tente novamente.</body>",
+              { headers: { "Content-Type": "text/html; charset=utf-8" } }
+            )
+          );
+        }
+      })()
     );
     return;
   }
 
   event.respondWith(
-    caches.match(request).then((cached) => {
+    (async () => {
+      const cache = await caches.open(CACHE_NAME);
+      const cached = await cache.match(request);
       if (cached) return cached;
 
-      return fetch(request)
-        .then((response) => {
-          if (!response || response.status !== 200 || response.type !== "basic") {
-            return response;
-          }
-
-          const copy = response.clone();
-
-          caches
-            .open(CACHE_NAME)
-            .then((cache) => cache.put(request, copy))
-            .catch(() => undefined);
-
-          return response;
-        })
-        .catch(() => cached || Response.error());
-    })
+      const fresh = await fetch(request);
+      await putIfCacheable(cache, request, fresh);
+      return fresh;
+    })()
   );
 });
