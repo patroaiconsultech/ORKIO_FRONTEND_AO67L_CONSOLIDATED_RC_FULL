@@ -141,6 +141,7 @@ function updateDebugStatus(extra = {}) {
       standalone: isStandalone(),
       surface: detectInstallSurface(),
       hasDeferredPrompt: Boolean(win.__PATROAI_DEFERRED_INSTALL_PROMPT__),
+      version: "v20-polish-user-audit",
       ...extra,
     };
   } catch {}
@@ -262,7 +263,7 @@ export default function PWAInstallButton({
           className ||
           (isHero
             ? "w-full rounded-2xl border border-emerald-200/25 bg-emerald-200/10 px-5 py-4 text-center text-sm font-black text-emerald-50 transition hover:border-emerald-200/55 hover:bg-emerald-200/16 sm:w-auto sm:px-6"
-            : "inline-flex h-9 items-center justify-center whitespace-nowrap rounded-full border border-emerald-200/25 bg-emerald-200/10 px-2 text-[10px] font-black uppercase tracking-[0.08em] text-emerald-50 transition hover:border-emerald-200/55 hover:bg-emerald-200/16 md:h-auto md:px-3 md:py-2 md:text-[11px] md:tracking-[0.12em]")
+            : "inline-flex h-9 items-center justify-center whitespace-nowrap rounded-full border border-emerald-200/25 bg-emerald-200/10 px-2 text-[10px] font-black uppercase tracking-[0.08em] text-emerald-50 transition hover:border-emerald-200/55 hover:bg-emerald-200/16 md:h-auto md:mr-1 md:px-3 md:py-2 md:text-[11px] md:tracking-[0.12em] lg:mr-2")
         }
       >
         <span className={isHero ? "" : "hidden md:inline"}>{buttonLabel}</span>
