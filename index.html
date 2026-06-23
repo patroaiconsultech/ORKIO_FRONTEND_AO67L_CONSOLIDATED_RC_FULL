@@ -30,7 +30,7 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192x192.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <link rel="manifest" href="/manifest.webmanifest?v=13" />
+    <link rel="manifest" href="/manifest.webmanifest?v=14" />
 
     <meta property="og:title" content="Grupo Patroai | Consultech, Holding e AI Factory" />
     <meta
@@ -64,6 +64,49 @@
         "slogan": "Consultech • Holding • AI Factory",
         "description": "O Grupo Patroai conecta consultoria estratégica, tecnologia aplicada, inteligência artificial, ESG e desenvolvimento de novos negócios."
       }
+    </script>
+
+
+    <!-- EFATA777 V14: hard recovery for stale Service Worker.
+         Runs before app scripts to unregister old SW/controllers and clear stale caches. -->
+    <script data-efata777="v14-hard-sw-kill">
+      (function () {
+        try {
+          var KEY = "patroai_sw_kill_v14_done";
+          var hasSW = "serviceWorker" in navigator;
+          if (!hasSW) return;
+
+          var clearCaches = function () {
+            try {
+              if (!window.caches) return Promise.resolve();
+              return caches.keys().then(function (keys) {
+                return Promise.all(keys.map(function (key) { return caches.delete(key); }));
+              });
+            } catch (e) {
+              return Promise.resolve();
+            }
+          };
+
+          navigator.serviceWorker.getRegistrations()
+            .then(function (registrations) {
+              if (!registrations || !registrations.length) {
+                return clearCaches();
+              }
+              return Promise.all(registrations.map(function (registration) {
+                try { return registration.unregister(); } catch (e) { return Promise.resolve(false); }
+              })).then(clearCaches);
+            })
+            .then(function () {
+              try {
+                if (navigator.serviceWorker.controller && !sessionStorage.getItem(KEY)) {
+                  sessionStorage.setItem(KEY, "1");
+                  window.location.reload();
+                }
+              } catch (e) {}
+            })
+            .catch(function () {});
+        } catch (e) {}
+      })();
     </script>
 
     <!-- RTB-10 HF6: Tailwind CDN reativado temporariamente para recuperar deploy sem alterar package-lock.json. -->
