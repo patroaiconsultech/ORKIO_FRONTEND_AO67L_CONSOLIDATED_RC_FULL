@@ -797,7 +797,7 @@ export default function PatroaiLanding() {
       <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(52,211,153,0.16),transparent_34%),radial-gradient(circle_at_80%_0%,rgba(125,92,255,0.15),transparent_30%),linear-gradient(180deg,#060813,#090d16_45%,#05060b)]" />
 
       <header className="patroai-header sticky top-0 z-40 border-b border-white/10 bg-[#060813]/90 backdrop-blur-xl">
-        <div className="patroai-header-inner mx-auto flex max-w-7xl flex-col gap-2 px-3 py-2 sm:px-4 md:flex-row md:items-center md:justify-between md:gap-4 md:py-3 xl:flex-nowrap">
+        <div className="patroai-header-inner mx-auto flex max-w-7xl flex-col gap-2 px-4 py-2 sm:px-5 md:flex-row md:items-center md:justify-between md:gap-4 md:px-6 md:py-3 lg:px-8 xl:flex-nowrap">
           <div className="flex w-full items-center justify-between gap-3 md:w-auto md:min-w-[300px]">
             <a href="#top" className="patroai-brand-lockup flex min-w-0 flex-1 items-center gap-3">
               <img
@@ -824,7 +824,7 @@ export default function PatroaiLanding() {
             <a href="#strategic-intake" className="hover:text-white">{t.nav.contact}</a>
           </nav>
 
-          <div className="patroai-header-actions grid w-full grid-cols-4 gap-2 md:w-auto md:flex md:min-w-0 md:shrink-0 md:flex-nowrap md:items-center md:justify-end">
+          <div className="patroai-header-actions grid w-full grid-cols-4 gap-2 md:w-auto md:flex md:min-w-0 md:shrink-0 md:flex-nowrap md:items-center md:justify-end md:pr-1 lg:pr-2">
             <a
               href={PATROAI_WHATSAPP_URL}
               target="_blank"
