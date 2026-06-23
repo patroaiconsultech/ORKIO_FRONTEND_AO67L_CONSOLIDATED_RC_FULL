@@ -37,20 +37,36 @@ const distDir = path.join(__dirname, "dist");
 
 app.disable("x-powered-by");
 
-const NO_STORE = "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0";
+const HARD_NO_STORE = "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0";
+const HTML_REVALIDATE = "no-cache, max-age=0, must-revalidate";
+const MANIFEST_REVALIDATE = "no-cache, max-age=0, must-revalidate";
+const IMMUTABLE_ASSET = "public, max-age=31536000, immutable";
+const STATIC_REVALIDATE = "public, max-age=86400, must-revalidate";
 
 function setHardNoStore(res) {
-  res.setHeader("Cache-Control", NO_STORE);
+  res.setHeader("Cache-Control", HARD_NO_STORE);
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
   res.setHeader("Surrogate-Control", "no-store");
   res.setHeader("CDN-Cache-Control", "no-store");
   res.setHeader("Vary", "Accept-Encoding");
-  res.setHeader("X-EFATA777-Recovery", "v15-hard-cache-expulsion");
+  res.setHeader("X-EFATA777-Recovery", "v16-conservative-pwa");
 }
 
-function sendFileNoStore(res, absolutePath, contentType, fallbackBody = null) {
-  setHardNoStore(res);
+function setHtmlRevalidate(res) {
+  res.setHeader("Cache-Control", HTML_REVALIDATE);
+  res.setHeader("Vary", "Accept-Encoding");
+  res.setHeader("X-EFATA777-Recovery", "v16-conservative-pwa");
+}
+
+function setManifestRevalidate(res) {
+  res.setHeader("Cache-Control", MANIFEST_REVALIDATE);
+  res.setHeader("Vary", "Accept-Encoding");
+  res.setHeader("X-EFATA777-Recovery", "v16-conservative-pwa");
+}
+
+function sendFileWithHeaders(res, absolutePath, contentType, setHeaders, fallbackBody = null) {
+  if (typeof setHeaders === "function") setHeaders(res);
   if (contentType) res.type(contentType);
 
   if (fs.existsSync(absolutePath)) {
@@ -64,41 +80,82 @@ function sendFileNoStore(res, absolutePath, contentType, fallbackBody = null) {
   return res.status(404).send("Not found");
 }
 
-const SELF_DESTRUCT_SW = `// EFATA777 V15 fallback self-destruct SW
-self.addEventListener("install", event => { self.skipWaiting(); event.waitUntil(Promise.resolve()); });
-self.addEventListener("activate", event => {
+const CONSERVATIVE_SW = `// EFATA777 V16 fallback conservative PWA SW
+const EFATA777_SW_VERSION = "v16-conservative-pwa";
+async function clearLegacyCaches() {
+  try {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((key) => /orkio|patroai|efata777/i.test(key)).map((key) => caches.delete(key)));
+  } catch {}
+}
+self.addEventListener("install", (event) => {
+  self.skipWaiting();
+  event.waitUntil(Promise.resolve());
+});
+self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
-    try { const keys = await caches.keys(); await Promise.all(keys.map(key => caches.delete(key))); } catch {}
-    try { await self.registration.unregister(); } catch {}
-    try {
-      const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      await Promise.all(clients.map(client => client.navigate(client.url).catch(() => {})));
-    } catch {}
+    await clearLegacyCaches();
+    try { await self.clients.claim(); } catch {}
   })());
 });
-self.addEventListener("fetch", () => {});
+// Fetch listener intencionalmente conservador para installability.
+// Não faz precache, não intercepta a landing e não cacheia API/assets.
+self.addEventListener("fetch", (event) => {
+  try {
+    const request = event.request;
+    if (!request || request.method !== "GET") return;
+    const url = new URL(request.url);
+    if (url.origin !== self.location.origin) return;
+    if (!url.pathname.startsWith("/app")) return;
+    if (request.mode !== "navigate") return;
+    event.respondWith(fetch(request));
+  } catch {}
+});
+self.addEventListener("message", (event) => {
+  try {
+    if (event?.data?.type === "SKIP_WAITING") self.skipWaiting();
+    if (event?.data?.type === "EFATA777_CLEAR_LEGACY_CACHES") {
+      event.waitUntil(clearLegacyCaches());
+    }
+  } catch {}
+});
 `;
 
 app.get("/healthz", (_req, res) => {
   res.status(200).json({ ok: true });
 });
 
-// EFATA777 V15: rotas explícitas anti-cache para expulsar SW/HTML antigos.
+// EFATA777 V16: /sw.js continua anti-cache forte, mas volta a ser SW conservador.
+// Importante: Service-Worker-Allowed permite scope "/" sem cache agressivo.
 app.get("/sw.js", (_req, res) => {
-  sendFileNoStore(res, path.join(distDir, "sw.js"), "application/javascript; charset=utf-8", SELF_DESTRUCT_SW);
+  setHardNoStore(res);
+  res.setHeader("Service-Worker-Allowed", "/");
+  res.type("application/javascript; charset=utf-8");
+
+  const distSw = path.join(distDir, "sw.js");
+  if (fs.existsSync(distSw)) return res.sendFile(distSw);
+  return res.status(200).send(CONSERVATIVE_SW);
 });
 
 app.get("/public_sw.js", (_req, res) => {
-  sendFileNoStore(res, path.join(__dirname, "public_sw.js"), "application/javascript; charset=utf-8", SELF_DESTRUCT_SW);
+  setHardNoStore(res);
+  res.setHeader("Service-Worker-Allowed", "/");
+  res.type("application/javascript; charset=utf-8");
+
+  const publicSw = path.join(__dirname, "public_sw.js");
+  if (fs.existsSync(publicSw)) return res.sendFile(publicSw);
+  return res.status(200).send(CONSERVATIVE_SW);
 });
 
 app.get("/manifest.webmanifest", (_req, res) => {
   const distManifest = path.join(distDir, "manifest.webmanifest");
   const publicManifest = path.join(__dirname, "public", "manifest.webmanifest");
-  sendFileNoStore(
+
+  sendFileWithHeaders(
     res,
     fs.existsSync(distManifest) ? distManifest : publicManifest,
     "application/manifest+json; charset=utf-8",
+    setManifestRevalidate,
     JSON.stringify({
       id: "/app",
       name: "Grupo Patroai",
@@ -108,27 +165,52 @@ app.get("/manifest.webmanifest", (_req, res) => {
       display: "standalone",
       theme_color: "#030713",
       background_color: "#030713",
-      icons: []
+      icons: [
+        { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" },
+        { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }
+      ]
     })
   );
 });
 
 app.get(["/", "/index.html"], (_req, res) => {
-  sendFileNoStore(res, path.join(distDir, "index.html"), "text/html; charset=utf-8");
+  sendFileWithHeaders(res, path.join(distDir, "index.html"), "text/html; charset=utf-8", setHtmlRevalidate);
 });
 
 app.use(
   express.static(distDir, {
     index: false,
+    etag: true,
+    lastModified: true,
     setHeaders(res, filePath) {
       const basename = path.basename(filePath).toLowerCase();
+      const rel = filePath.replace(distDir, "").replace(/\\/g, "/").toLowerCase();
 
-      if (
-        basename === "index.html" ||
-        basename === "sw.js" ||
-        basename === "manifest.webmanifest"
-      ) {
+      if (basename === "sw.js") {
         setHardNoStore(res);
+        res.setHeader("Service-Worker-Allowed", "/");
+        return;
+      }
+
+      if (basename === "manifest.webmanifest") {
+        setManifestRevalidate(res);
+        return;
+      }
+
+      if (basename === "index.html" || basename === "env.js") {
+        setHtmlRevalidate(res);
+        return;
+      }
+
+      if (rel.startsWith("/assets/")) {
+        res.setHeader("Cache-Control", IMMUTABLE_ASSET);
+        res.setHeader("Vary", "Accept-Encoding");
+        return;
+      }
+
+      if (/\.(png|jpg|jpeg|gif|svg|webp|ico|woff2?|ttf|otf)$/i.test(basename)) {
+        res.setHeader("Cache-Control", STATIC_REVALIDATE);
+        res.setHeader("Vary", "Accept-Encoding");
       }
     },
   })
@@ -167,7 +249,7 @@ app.use("/api", async (req, res) => {
 });
 
 app.get("*", (_req, res) => {
-  sendFileNoStore(res, path.join(distDir, "index.html"), "text/html; charset=utf-8");
+  sendFileWithHeaders(res, path.join(distDir, "index.html"), "text/html; charset=utf-8", setHtmlRevalidate);
 });
 
 app.listen(PORT, () => {
