@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-const DISMISS_KEY = "orkio_pwa_install_dismissed_at";
-const DISMISS_TTL_MS = 1000 * 60 * 60 * 24 * 7;
+const DISMISS_KEY = "patroai_pwa_install_dismissed_at_v12";
+const DISMISS_TTL_MS = 1000 * 60 * 60 * 24 * 3;
 
 function detectPreferredLanguage() {
   try {
@@ -32,16 +32,12 @@ function safeLocalStorageGet(key) {
 function safeLocalStorageSet(key, value) {
   try {
     window.localStorage.setItem(key, value);
-  } catch {
-    // Storage may be unavailable in private mode. Ignore safely.
-  }
+  } catch {}
 }
 
 function wasRecentlyDismissed() {
   const dismissedAt = Number(safeLocalStorageGet(DISMISS_KEY) || 0);
-
   if (!dismissedAt) return false;
-
   return Date.now() - dismissedAt < DISMISS_TTL_MS;
 }
 
@@ -56,47 +52,67 @@ function isStandalone() {
   }
 }
 
-function isIosSafariLike() {
+function userAgent() {
   try {
-    const ua = String(navigator.userAgent || "");
-    const isIOS = /iphone|ipad|ipod/i.test(ua);
-    const isSafari = /safari/i.test(ua) && !/crios|fxios|edgios/i.test(ua);
-
-    return isIOS && isSafari;
+    return String(navigator.userAgent || "");
   } catch {
-    return false;
+    return "";
   }
+}
+
+function isIosSafariLike() {
+  const ua = userAgent();
+  const isIOS = /iphone|ipad|ipod/i.test(ua);
+  const isSafari = /safari/i.test(ua) && !/crios|fxios|edgios/i.test(ua);
+  return isIOS && isSafari;
+}
+
+function isAndroidLike() {
+  return /android/i.test(userAgent());
+}
+
+function isSamsungInternet() {
+  return /SamsungBrowser/i.test(userAgent());
+}
+
+function hasKnownInstallSurface() {
+  return isIosSafariLike() || isAndroidLike();
 }
 
 export default function PWAInstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [visible, setVisible] = useState(false);
-  const [iosHintVisible, setIosHintVisible] = useState(false);
+  const [manualHintVisible, setManualHintVisible] = useState(false);
 
   const pt = useMemo(() => isPortuguese(), []);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
+    if (isStandalone() || wasRecentlyDismissed()) return undefined;
 
-    if (!wasRecentlyDismissed() && isIosSafariLike() && !isStandalone()) {
-      setIosHintVisible(true);
+    if (isIosSafariLike()) {
+      setManualHintVisible(true);
     }
+
+    const manualTimer = window.setTimeout(() => {
+      if (!isStandalone() && hasKnownInstallSurface()) {
+        setManualHintVisible(true);
+      }
+    }, 2500);
 
     const onBeforeInstallPrompt = (event) => {
       try {
         event.preventDefault?.();
-      } catch {
-        // Some browsers expose a non-standard event. Ignore safely.
-      }
+      } catch {}
 
       setDeferredPrompt(event);
       setVisible(true);
-      setIosHintVisible(false);
+      setManualHintVisible(false);
     };
 
     const onAppInstalled = () => {
       setVisible(false);
-      setIosHintVisible(false);
+      setManualHintVisible(false);
       setDeferredPrompt(null);
     };
 
@@ -104,23 +120,34 @@ export default function PWAInstallPrompt() {
     window.addEventListener("appinstalled", onAppInstalled);
 
     return () => {
+      window.clearTimeout(manualTimer);
       window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
       window.removeEventListener("appinstalled", onAppInstalled);
     };
   }, []);
 
   if (isStandalone()) return null;
-  if (!visible && !iosHintVisible) return null;
+  if (!visible && !manualHintVisible) return null;
 
-  const title = pt ? "Instalar Orkio" : "Install Orkio";
+  const title = pt ? "Instalar Patroai" : "Install Patroai";
 
-  const body = iosHintVisible
+  const manualBody = pt
+    ? isIosSafariLike()
+      ? "No iPhone/iPad, toque em Compartilhar e escolha “Adicionar à Tela de Início”."
+      : isSamsungInternet()
+        ? "No Samsung Internet, toque no menu e escolha “Adicionar página a” ou “Adicionar à tela inicial”."
+        : "No Chrome, toque no menu ⋮ e escolha “Instalar app” ou “Adicionar à tela inicial”."
+    : isIosSafariLike()
+      ? "On iPhone/iPad, tap Share and choose “Add to Home Screen”."
+      : isSamsungInternet()
+        ? "In Samsung Internet, open the menu and choose “Add page to” or “Add to Home screen”."
+        : "In Chrome, open the ⋮ menu and choose “Install app” or “Add to Home screen”.";
+
+  const body = visible
     ? pt
-      ? "No iPhone, toque em Compartilhar e escolha “Adicionar à Tela de Início”."
-      : "On iPhone, tap Share and choose “Add to Home Screen”."
-    : pt
-      ? "Adicione o Orkio à tela inicial para acessar mais rápido."
-      : "Add Orkio to your home screen for faster access.";
+      ? "Adicione a Patroai à tela inicial para acessar o ambiente privado com mais rapidez."
+      : "Add Patroai to your home screen for faster access."
+    : manualBody;
 
   const installLabel = pt ? "Instalar" : "Install";
   const dismissLabel = pt ? "Agora não" : "Not now";
@@ -128,24 +155,25 @@ export default function PWAInstallPrompt() {
   async function handleInstall() {
     const prompt = deferredPrompt;
 
-    if (!prompt) return;
+    if (!prompt) {
+      setManualHintVisible(true);
+      return;
+    }
 
     try {
       await prompt.prompt?.();
       await prompt.userChoice;
-    } catch {
-      // User cancellation or browser issue. Close prompt without blocking UI.
-    }
+    } catch {}
 
     setVisible(false);
-    setIosHintVisible(false);
+    setManualHintVisible(false);
     setDeferredPrompt(null);
   }
 
   function handleDismiss() {
     safeLocalStorageSet(DISMISS_KEY, String(Date.now()));
     setVisible(false);
-    setIosHintVisible(false);
+    setManualHintVisible(false);
   }
 
   return (
@@ -164,7 +192,7 @@ export default function PWAInstallPrompt() {
         padding: 16,
         borderRadius: 22,
         border: "1px solid rgba(255,255,255,0.16)",
-        background: "rgba(3,7,19,0.92)",
+        background: "rgba(3,7,19,0.94)",
         color: "#fff",
         boxShadow: "0 18px 54px rgba(0,0,0,0.38)",
         backdropFilter: "blur(18px)",
@@ -175,7 +203,7 @@ export default function PWAInstallPrompt() {
         {title}
       </strong>
 
-      <p style={{ margin: 0, opacity: 0.82, lineHeight: 1.45 }}>
+      <p style={{ margin: 0, opacity: 0.84, lineHeight: 1.45 }}>
         {body}
       </p>
 
@@ -211,8 +239,8 @@ export default function PWAInstallPrompt() {
             onClick={handleInstall}
             style={{
               border: 0,
-              background: "linear-gradient(135deg, #8b5cf6, #f59e0b)",
-              color: "#fff",
+              background: "linear-gradient(135deg, #ffe9a6, #c88719)",
+              color: "#111827",
               borderRadius: 999,
               padding: "10px 16px",
               fontWeight: 900,
