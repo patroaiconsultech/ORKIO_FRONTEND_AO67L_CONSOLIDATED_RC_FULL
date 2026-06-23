@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import usePatroaiSeo from "../lib/usePatroaiSeo.js";
 import { PATROAI_LEGAL_IDENTITY as LEGAL } from "../lib/patroaiLegalIdentity.js";
 import { submitStrategicIntake } from "../ui/api.js";
+import PWAInstallButton from "../components/PWAInstallButton.jsx";
 
 const PATROAI_WHATSAPP_URL = "https://wa.me/5551989697605?text=Ol%C3%A1%2C%20Grupo%20Patroai.%20Gostaria%20de%20falar%20sobre%20uma%20oportunidade%20estrat%C3%A9gica.";
 
@@ -31,6 +32,9 @@ const TEXT = {
       signupTitle: "Cadastro somente mediante código especial fornecido pelo Grupo Patroai",
       whatsapp: "WhatsApp",
       whatsappTitle: "Falar com o Grupo Patroai no WhatsApp",
+      installApp: "Baixar app",
+      installAppShort: "App",
+      installAppTitle: "Baixar ou instalar o app Patroai",
     },
     hero: {
       badge: "Acesso privado e controlado",
@@ -39,6 +43,7 @@ const TEXT = {
         "O Grupo Patroai atua na interseção entre consultoria estratégica, tecnologia aplicada e desenvolvimento de negócios para transformar informação complexa em clareza, decisão e execução.",
       primary: "Solicitar contato estratégico",
       secondary: "Conhecer frentes de atuação",
+      installApp: "Baixar app Patroai",
       note:
         "Acesso à nossa tecnologia é concedido apenas após qualificação, validação interna e convite privado.",
     },
@@ -299,6 +304,9 @@ const TEXT = {
       signupTitle: "Registration is available only with a special code provided by Grupo Patroai",
       whatsapp: "WhatsApp",
       whatsappTitle: "Talk to Grupo Patroai on WhatsApp",
+      installApp: "Install app",
+      installAppShort: "App",
+      installAppTitle: "Download or install the Patroai app",
     },
     hero: {
       badge: "Private and controlled access",
@@ -841,6 +849,11 @@ export default function PatroaiLanding() {
               <span className="hidden md:inline">{t.auth.signup}</span>
               <span className="md:hidden">{t.auth.signupShort}</span>
             </Link>
+            <PWAInstallButton
+              label={t.auth.installApp}
+              compactLabel={t.auth.installAppShort}
+              title={t.auth.installAppTitle}
+            />
             <Link
               to={languageHref}
               title={t.langTitle}
@@ -882,6 +895,11 @@ export default function PatroaiLanding() {
             <a href="#scope" className="patroai-hero-secondary w-full rounded-2xl border border-white/12 bg-white/[0.055] px-5 py-4 text-center text-sm font-black text-white/85 transition hover:border-white/24 hover:bg-white/[0.08] sm:w-auto sm:px-6">
               {t.hero.secondary}
             </a>
+            <PWAInstallButton
+              variant="hero"
+              label={t.hero.installApp}
+              title={t.auth.installAppTitle}
+            />
           </div>
           <p className="mt-6 max-w-xl text-xs font-semibold uppercase leading-6 tracking-[0.18em] text-white/38">{t.hero.note}</p>
           <div className="patroai-trust-strip mt-5 grid gap-2 text-[11px] font-black uppercase tracking-[0.12em] text-white/50 sm:grid-cols-3">
