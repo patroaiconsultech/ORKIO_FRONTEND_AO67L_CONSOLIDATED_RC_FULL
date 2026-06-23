@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-const DISMISS_KEY = "patroai_pwa_install_dismissed_at_v19";
+const DISMISS_KEY = "patroai_pwa_install_dismissed_at_v20";
 const DISMISS_TTL_MS = 1000 * 60 * 60 * 24 * 3;
 
 function detectPreferredLanguage() {
