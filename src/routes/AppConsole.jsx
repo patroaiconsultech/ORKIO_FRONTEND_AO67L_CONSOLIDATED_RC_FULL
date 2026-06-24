@@ -6,6 +6,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch, uploadFile, chat, chatStream, transcribeAudio, requestFounderHandoff, getRealtimeClientSecret, startRealtimeSession, startSummitSession, postRealtimeEventsBatch, endRealtimeSession, getRealtimeSession, getSummitSessionScore, submitSummitSessionReview, downloadRealtimeAta as downloadRealtimeAtaFile, guardRealtimeTranscript, getOrionSquadHealth, getOrionSquadPreview, getAgentCapabilities } from "../ui/api.js";
 import { clearSession, clearTenant, getTenant, getToken, getUser, isAdmin, isApproved, setSession, setUser as storeUser, logout } from "../lib/auth.js";
+import { canonicalAgentSlug as registryCanonicalAgentSlug, canonicalAgentDisplayNameFromSlug as registryCanonicalAgentDisplayNameFromSlug, resolveDirectAgentAddressFromMessage as registryResolveDirectAgentAddressFromMessage, resolveAgentTurnRouteFromMessage as registryResolveAgentTurnRouteFromMessage, findAgentByCanonicalSlug as registryFindAgentByCanonicalSlug } from "../lib/agentRegistry.js";
 import { ORKIO_CANONICAL_VOICE_ID, ORKIO_DEFAULT_TTS_SPEED, ORKIO_DEFAULT_VOICE_ID, ORKIO_VOICES, coerceTtsSpeed, coerceVoiceId } from "../lib/voices.js";
 import TermsModal from "../ui/TermsModal.jsx";
 import PWAInstallPrompt from "../components/PWAInstallPrompt.jsx";
@@ -2078,6 +2079,46 @@ function formatActiveAgentRuntime(agentName = "") {
   return "Orkio respondendo";
 }
 
+// PATCH_26_UI_MEETING_ROOM:
+// Small, dependency-free UI helpers to expose the persisted realtime room state.
+// The backend remains the source of truth; these helpers only format what the
+// backend already returns in meeting_state.
+function formatMeetingRoomSpeakerName(meetingState = {}, kind = "active") {
+  const prefix = kind === "last" ? "last" : "active";
+  return canonicalizeSpeakerLabel(
+    meetingState?.[`${prefix}_speaker_name`] ||
+    meetingState?.[`${prefix}_agent_name`] ||
+    meetingState?.[`${prefix}_speaker_slug`] ||
+    meetingState?.[`${prefix}_agent_slug`] ||
+    ""
+  );
+}
+
+function extractMeetingRoomParticipants(meetingState = {}) {
+  const direct = Array.isArray(meetingState?.participants)
+    ? meetingState.participants
+        .map((item) => {
+          if (!item || typeof item !== "object") return "";
+          return item.display_name || item.name || item.slug || "";
+        })
+        .filter(Boolean)
+    : [];
+  const slugs = Array.isArray(meetingState?.participant_slugs)
+    ? meetingState.participant_slugs.map((slug) => canonicalizeSpeakerLabel(slug)).filter(Boolean)
+    : [];
+
+  const out = [];
+  const seen = new Set();
+  for (const value of [...direct, ...slugs]) {
+    const label = canonicalizeSpeakerLabel(value);
+    const key = label.toLowerCase();
+    if (!label || seen.has(key)) continue;
+    seen.add(key);
+    out.push(label);
+  }
+  return out.slice(0, 8);
+}
+
 function traceStepTone(kind = "status") {
   if (kind === "error") return { icon: "⚠️", color: "#fca5a5", border: "rgba(248,113,113,0.24)", background: "rgba(127,29,29,0.22)" };
   if (kind === "done") return { icon: "✅", color: "#86efac", border: "rgba(74,222,128,0.24)", background: "rgba(20,83,45,0.22)" };
@@ -2611,6 +2652,11 @@ const [onboardingForm, setOnboardingForm] = useState(() => sanitizeOnboardingFor
   const [lastTraceId, setLastTraceId] = useState(null);
   const [agentCapabilities, setAgentCapabilities] = useState(null);
   const [activeRuntimeAgent, setActiveRuntimeAgent] = useState("");
+  // PATCH_25_MEETING_STATE_PERSISTENTE:
+  // Client mirror of backend RealtimeSession.meta.meeting_state. The backend is
+  // still source of truth; this lets the UI echo current room state in batches.
+  const [meetingState, setMeetingState] = useState(null);
+  const meetingStateRef = useRef(null);
   const [runtimeHandoffLabel, setRuntimeHandoffLabel] = useState("");
   const [orionSquadHealth, setOrionSquadHealth] = useState(null);
   const [orionSquadPreview, setOrionSquadPreview] = useState(null);
@@ -4219,13 +4265,69 @@ function formatAgentOptionLabel(agent) {
       ? Array.from(new Set(destMulti.map((id) => String(id || "").trim()).filter(Boolean)))
       : [];
     const mentionedNames = extractMentionNamesFromText(rawMessage);
+
+    // PATCH_27_MULTI_AGENT_RESPONSE_CONTROL:
+    // In Team Mode, the router can return a single speaker, a sequenced group
+    // ("Orion e Chris, ..."), or a team panel ("Equipe, ..."). The UI remains
+    // Team; target_agent_slug/target_agent_slugs define who receives the turn(s).
+    const turnRoute = !publicBetaOrkioOnly && mode === "team" ? resolveAgentTurnRouteFromMessage(rawMessage) : null;
+    const routeSlugs = Array.from(new Set(
+      (Array.isArray(turnRoute?.target_agent_slugs) && turnRoute.target_agent_slugs.length
+        ? turnRoute.target_agent_slugs
+        : [turnRoute?.target_agent_slug || turnRoute?.slug]
+      )
+        .map((slug) => canonicalAgentSlug(slug || ""))
+        .filter(Boolean)
+    ));
+
+    const routeAgents = routeSlugs
+      .map((slug) => (slug && slug !== "team" ? (findAgentByCanonicalSlug(slug) || findAgentByRuntimeIdentity(slug) || null) : null))
+      .filter(Boolean);
+
+    const primarySlug = routeSlugs[0] || "";
+    const primaryAgent = routeAgents[0] || null;
+    const routeNames = routeSlugs
+      .map((slug) => {
+        const agent = routeAgents.find((a) => canonicalAgentSlug(a?.slug || a?.key || a?.name || a?.id) === slug);
+        return canonicalizeSpeakerLabel(agent?.name || registryCanonicalAgentDisplayNameFromSlug(slug) || slug);
+      })
+      .filter(Boolean);
+
+    const visibleRouteName = (
+      routeNames.length > 1
+        ? routeNames.join(" + ")
+        : (routeNames[0] || canonicalizeSpeakerLabel(primarySlug))
+    );
+
+    const requestedNames = Array.from(new Set([
+      ...routeNames,
+      ...(Array.isArray(mentionedNames) ? mentionedNames : []),
+    ].map((name) => String(name || "").trim()).filter(Boolean)));
+
+    if (primarySlug) {
+      return {
+        dest_mode: "team",
+        agent_id: primaryAgent?.id || null,
+        agent_ids: routeAgents.map((agent) => String(agent.id)).filter(Boolean),
+        target_agent_slug: primarySlug,
+        target_agent_slugs: routeSlugs,
+        visible_agent: visibleRouteName,
+        requested_agent_names: requestedNames,
+        multi_agent_turn: Boolean(turnRoute?.multi_agent_turn || routeSlugs.length > 1),
+        response_control: turnRoute?.response_control || (routeSlugs.length > 1 ? "sequenced_team_turns" : "single_turn"),
+      };
+    }
+
     return {
       dest_mode: mode,
       agent_id: hostAgentId || null,
       agent_ids: mode === "multi" ? multiIds : [],
       target_agent_slug: mode === "single" ? String(destSingle || "") : null,
+      target_agent_slugs: [],
       visible_agent: mode === "single" ? String(singleAgent?.name || "") : "",
       requested_agent_names: mentionedNames,
+      multi_agent_turn: false,
+      response_control: mode === "multi" ? "manual_multi" : "single_turn",
     };
   }
 
@@ -4243,16 +4345,33 @@ function formatAgentOptionLabel(agent) {
   }
 
   function canonicalAgentSlug(value = "") {
-    const raw = normalizeAgentLookupValue(value);
-    if (!raw) return "";
-    if (raw.includes("orion") || ["oria", "auria", "aurya", "arian", "aryan", "cto", "warren"].includes(raw)) return "orion";
-    if (raw.includes("chris") || raw === "cfo" || ["cris", "criz", "crys", "crist", "crista", "cristo", "cruz", "c_h_r_i_s"].includes(raw)) return "chris";
-    if (raw.includes("team") || raw === "time" || raw === "equipe") return "team";
-    if (raw.includes("orkio") || raw === "archio" || raw === "orquio") return "orkio";
-    return raw;
+    // PATCH_23_AGENT_REGISTRY_CANONICO:
+    // All canonical agent routing now delegates to src/lib/agentRegistry.js.
+    // Keep this local wrapper for backward compatibility with existing
+    // AppConsole call sites.
+    return registryCanonicalAgentSlug(value, { allowUnknown: true });
+  }
+
+  function canonicalAgentDisplayNameFromSlug(slug = "") {
+    return registryCanonicalAgentDisplayNameFromSlug(slug) || canonicalizeSpeakerLabel(slug || "");
+  }
+
+  function resolveDirectAgentAddressFromMessage(rawMessage = "") {
+    // PATCH_23_AGENT_REGISTRY_CANONICO:
+    // Direct addressing uses the same aliases as backend/realtime.
+    return registryResolveDirectAgentAddressFromMessage(rawMessage, { includeInternal: !publicBetaOrkioOnly });
+  }
+
+  function resolveAgentTurnRouteFromMessage(rawMessage = "") {
+    // PATCH_27_MULTI_AGENT_RESPONSE_CONTROL:
+    // Returns direct single-agent routes plus sequenced multi-agent/team panel routes.
+    return registryResolveAgentTurnRouteFromMessage(rawMessage, { includeInternal: !publicBetaOrkioOnly });
   }
 
   function findAgentByRuntimeIdentity(value = "") {
+    const registryMatch = registryFindAgentByCanonicalSlug(agents || [], value);
+    if (registryMatch) return registryMatch;
+
     const wantedRaw = normalizeAgentLookupValue(value);
     const wantedSlug = canonicalAgentSlug(value);
     if (!wantedRaw && !wantedSlug) return null;
@@ -4458,6 +4577,35 @@ function formatAgentOptionLabel(agent) {
     return true;
   }
 
+  function selectRealtimeTeamSpeakerForRuntime(agentIdOrSlug = "", source = "runtime_turn") {
+    const agent =
+      findAgentByRuntimeIdentity(agentIdOrSlug) ||
+      findAgentByCanonicalSlug(agentIdOrSlug) ||
+      null;
+    const nextId = String(agent?.id || agentIdOrSlug || "").trim();
+    if (!nextId) return false;
+
+    // PATCH_22_DIRECT_AGENT_ADDRESSING:
+    // Keep the console as a Team room, while the addressed agent becomes the
+    // active speaker for this realtime turn. This prevents Orkio from acting as
+    // a visible intermediary and avoids collapsing the UI into Single mode.
+    setDestMode("team");
+    setDestSingle("");
+    setDestMulti([]);
+    persistDestinationState({ mode: "team", single: "", multi: [] });
+
+    try {
+      logRealtimeStep("destination:team_speaker_selected", {
+        source,
+        agent_id: nextId,
+        agent_name: agent?.name || null,
+        dest_mode: "team",
+      });
+    } catch {}
+
+    return true;
+  }
+
   function isRealtimeOrionHandoffIntent(rawText = "") {
     const normalized = normalizeAgentLookupValue(rawText);
     if (!normalized) return false;
@@ -4540,7 +4688,7 @@ function formatAgentOptionLabel(agent) {
     const targetName = canonicalizeSpeakerLabel(targetAgent.name || targetSlug);
     rtcHostAgentIdRef.current = targetAgent.id;
     rtcHostAgentNameRef.current = String(targetName || targetAgent.name || targetSlug).trim() || targetName || targetSlug;
-    selectSingleAgentForRuntime(targetAgent.id, `realtime_${source}`);
+    selectRealtimeTeamSpeakerForRuntime(targetAgent.id, `realtime_${source}`);
 
     const dc = rtcDcRef.current;
     if (dc?.readyState === "open") {
@@ -5132,7 +5280,10 @@ async function sendMessage(presetMsg = null, opts = {}) {
             dest_mode: destinationContract.dest_mode,
             visible_agent: destinationContract.visible_agent,
             target_agent_slug: destinationContract.target_agent_slug,
+            target_agent_slugs: destinationContract.target_agent_slugs,
             requested_agent_names: destinationContract.requested_agent_names,
+            multi_agent_turn: destinationContract.multi_agent_turn,
+            response_control: destinationContract.response_control,
             signal: ctl.signal,
           }), CHAT_STREAM_CONNECT_TIMEOUT_MS, "CHAT_STREAM_CONNECT_TIMEOUT");
           streamMeta = await withTimeout(consumeChatStream(streamResp, {
@@ -8323,7 +8474,11 @@ function scheduleRealtimeIdleFollowup() {
         dest_mode: destMode,
         visible_agent: rtcHostAgentNameRef.current || selectedAgentObj?.name || null,
         target_agent_slug: canonicalAgentSlug(selectedAgentObj?.slug || selectedAgentObj?.key || selectedAgentObj?.name || agentIdToSend),
+        target_agent_slugs: [],
+        requested_agent_names: selectedAgentObj?.name ? [selectedAgentObj.name] : [],
         agent_ids: String(destMode || "").trim().toLowerCase() === "multi" ? destMulti : null,
+        multi_agent_turn: String(destMode || "").trim().toLowerCase() === "multi",
+        response_control: String(destMode || "").trim().toLowerCase() === "multi" ? "manual_multi" : "single_turn",
         // EFATA777 V8:
         // Admin/founder Realtime is client-controlled so the frontend can inspect
         // the final transcript, apply the voice handoff, and only then create one
@@ -8436,6 +8591,8 @@ function scheduleRealtimeIdleFollowup() {
         throw new Error('Realtime token vazio');
       }
       logRealtimeStep('start:ephemeral_ok', { session_id: start?.session_id || null, thread_id: start?.thread_id || null });
+
+      applyRealtimeMeetingStateFromPayload(start, "realtime_start");
 
       rtcSessionIdRef.current = start?.session_id || null;
       rtcSessionStartedAtRef.current = Date.now();
@@ -9504,6 +9661,76 @@ function scheduleRealtimeIdleFollowup() {
     } catch {}
   }
 
+  function normalizeRealtimeMeetingState(batchResult) {
+    const payload = batchResult?.data || batchResult || {};
+    const directive =
+      payload?.meeting_orchestrator ||
+      payload?.meetingOrchestrator ||
+      payload?.realtime_meeting ||
+      {};
+    const candidates = [
+      payload?.meeting_state,
+      payload?.meetingState,
+      directive?.meeting_state,
+      directive?.meetingState,
+      payload?.session?.meeting_state,
+      payload?.session?.meta?.meeting_state,
+    ];
+    for (const candidate of candidates) {
+      if (candidate && typeof candidate === "object") return candidate;
+    }
+    return null;
+  }
+
+  function applyRealtimeMeetingStateFromPayload(batchResult, source = "unknown") {
+    try {
+      const state = normalizeRealtimeMeetingState(batchResult);
+      if (!state || typeof state !== "object") return false;
+      meetingStateRef.current = state;
+      setMeetingState(state);
+
+      const activeName = canonicalizeSpeakerLabel(
+        state?.active_speaker_name ||
+        state?.active_agent_name ||
+        state?.visible_agent ||
+        ""
+      );
+      const activeSlug = canonicalAgentSlug(
+        state?.active_speaker_slug ||
+        state?.active_agent_slug ||
+        state?.target_agent_slug ||
+        activeName ||
+        ""
+      );
+
+      if (activeName) {
+        setActiveRuntimeAgent(activeName);
+        rtcHostAgentNameRef.current = activeName;
+      }
+
+      if (activeSlug) {
+        const activeAgent = findAgentByCanonicalSlug(activeSlug) || findAgentByRuntimeIdentity(activeSlug);
+        if (activeAgent?.id) {
+          rtcHostAgentIdRef.current = activeAgent.id;
+        }
+      }
+
+      try {
+        logRealtimeStep("patch25:meeting_state_applied", {
+          source,
+          active_speaker_slug: activeSlug || null,
+          active_speaker_name: activeName || null,
+          turn_index: state?.turn_index ?? null,
+          participants: Array.isArray(state?.participant_slugs) ? state.participant_slugs : [],
+        });
+      } catch {}
+
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function normalizeRealtimeBridgeResponse(batchResult) {
     return batchResult?.rtb02_bridge || batchResult?.data?.rtb02_bridge || batchResult?.payload?.rtb02_bridge || null;
   }
@@ -9550,6 +9777,7 @@ function scheduleRealtimeIdleFollowup() {
   async function handleRealtimeMeetingOrchestratorDirective(batchResult) {
     const directive = normalizeRealtimeMeetingDirective(batchResult);
     if (!directive) return false;
+    applyRealtimeMeetingStateFromPayload(batchResult, "meeting_orchestrator_directive");
 
     const sid = String(directive?.session_id || "").trim();
     if (sid && rtcSessionIdRef.current && sid !== String(rtcSessionIdRef.current)) return false;
@@ -9599,7 +9827,7 @@ function scheduleRealtimeIdleFollowup() {
 
       rtcHostAgentIdRef.current = targetAgent.id;
       rtcHostAgentNameRef.current = targetName || targetAgent.name || targetSlug;
-      selectSingleAgentForRuntime(targetAgent.id, `meeting_orchestrator_${directive?.kind || "turn"}`);
+      selectRealtimeTeamSpeakerForRuntime(targetAgent.id, `meeting_orchestrator_${directive?.kind || "turn"}`);
 
       const dc = rtcDcRef.current;
       if (dc?.readyState === "open") {
@@ -9737,7 +9965,20 @@ function scheduleRealtimeIdleFollowup() {
     // Take a snapshot to avoid races
     rtcEventQueueRef.current = [];
     try {
-      const batchResult = await postRealtimeEventsBatch({ session_id: sid, events: q });
+      const batchResult = await postRealtimeEventsBatch({
+        session_id: sid,
+        events: q,
+        dest_mode: destMode || "team",
+        agent_id: rtcHostAgentIdRef.current || null,
+        visible_agent: rtcHostAgentNameRef.current || activeRuntimeAgent || "",
+        target_agent_slug: canonicalAgentSlug(rtcHostAgentNameRef.current || activeRuntimeAgent || ""),
+        target_agent_slugs: [canonicalAgentSlug(rtcHostAgentNameRef.current || activeRuntimeAgent || "")].filter(Boolean),
+        requested_agent_names: rtcHostAgentNameRef.current ? [rtcHostAgentNameRef.current] : [],
+        multi_agent_turn: false,
+        response_control: "single_turn",
+        meeting_state: meetingStateRef.current || null,
+      });
+      applyRealtimeMeetingStateFromPayload(batchResult, "events_batch");
       const meetingHandled = await handleRealtimeMeetingOrchestratorDirective(batchResult);
       if (!meetingHandled) {
         await handleRealtimeOrchestrationBridgeCandidate(batchResult);
@@ -12070,6 +12311,12 @@ async function stopRealtime(reason = 'client_stop') {
   };
   const visibleAgents = publicBetaOrkioOnly ? agents.filter(isOrkioAgent) : agents;
   const effectiveDestMode = publicBetaOrkioOnly ? "single" : destMode;
+  const meetingRoomActiveSpeaker = formatMeetingRoomSpeakerName(meetingState, "active") || activeRuntimeAgent || "";
+  const meetingRoomLastSpeaker = formatMeetingRoomSpeakerName(meetingState, "last");
+  const meetingRoomParticipants = extractMeetingRoomParticipants(meetingState);
+  const meetingRoomTurnIndex = Number.isFinite(Number(meetingState?.turn_index))
+    ? Number(meetingState.turn_index)
+    : null;
 
   const pendingApprovedPatchExecution = findPendingApprovedPatchExecution(messages);
   const orderedChatMessages = orderChatMessages(messages);
@@ -12594,14 +12841,14 @@ async function stopRealtime(reason = 'client_stop') {
           </div>
         </div>
 
-        {(!publicBetaOrkioOnly && (activeRuntimeAgent || runtimeHandoffLabel || agentCapabilities)) ? (
+        {(!publicBetaOrkioOnly && (activeRuntimeAgent || runtimeHandoffLabel || meetingState || agentCapabilities)) ? (
           <div
             style={{
               margin: isMobile ? "10px 12px 0" : "12px 16px 0",
               padding: "10px 12px",
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.08)",
-              background: "rgba(255,255,255,0.035)",
+              borderRadius: 14,
+              border: meetingState ? "1px solid rgba(103,232,249,0.18)" : "1px solid rgba(255,255,255,0.08)",
+              background: meetingState ? "linear-gradient(135deg, rgba(8,47,73,0.34), rgba(30,41,59,0.56))" : "rgba(255,255,255,0.035)",
               display: "flex",
               alignItems: "center",
               gap: 10,
@@ -12610,7 +12857,42 @@ async function stopRealtime(reason = 'client_stop') {
               fontSize: 12,
             }}
           >
-            {activeRuntimeAgent ? (
+            {meetingState ? (
+              <>
+                <span style={{ fontWeight: 950, color: "rgba(103,232,249,0.94)", letterSpacing: "0.02em" }}>
+                  Sala Team
+                </span>
+                {meetingRoomActiveSpeaker ? (
+                  <span style={{ color: "rgba(255,255,255,0.78)" }}>
+                    Speaker ativo: <strong style={{ color: "#fff" }}>{meetingRoomActiveSpeaker}</strong>
+                  </span>
+                ) : null}
+                {meetingRoomLastSpeaker && meetingRoomLastSpeaker !== meetingRoomActiveSpeaker ? (
+                  <span style={{ color: "rgba(255,255,255,0.62)" }}>
+                    Último speaker: {meetingRoomLastSpeaker}
+                  </span>
+                ) : null}
+                {meetingRoomTurnIndex !== null ? (
+                  <span style={{ color: "rgba(255,255,255,0.62)" }}>
+                    Turno: {meetingRoomTurnIndex}
+                  </span>
+                ) : null}
+                {meetingRoomParticipants.length ? (
+                  <span
+                    style={{
+                      color: "rgba(255,255,255,0.62)",
+                      minWidth: 0,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: isMobile ? "normal" : "nowrap",
+                    }}
+                    title={meetingRoomParticipants.join(", ")}
+                  >
+                    Participantes: {meetingRoomParticipants.join(", ")}
+                  </span>
+                ) : null}
+              </>
+            ) : activeRuntimeAgent ? (
               <span style={{ fontWeight: 800 }}>
                 {formatActiveAgentRuntime(activeRuntimeAgent)}
               </span>
