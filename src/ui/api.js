@@ -481,7 +481,10 @@ export const chat = ({
   dest_mode = null,
   visible_agent = null,
   target_agent_slug = null,
+  target_agent_slugs = null,
   requested_agent_names = null,
+  multi_agent_turn = null,
+  response_control = null,
   top_k,
   trace_id,
   client_message_id,
@@ -522,7 +525,10 @@ export async function chatStream({
   dest_mode = null,
   visible_agent = null,
   target_agent_slug = null,
+  target_agent_slugs = null,
   requested_agent_names = null,
+  multi_agent_turn = null,
+  response_control = null,
   top_k,
   trace_id,
   client_message_id,
@@ -556,7 +562,10 @@ export async function chatStream({
         dest_mode,
         visible_agent,
         target_agent_slug,
+        target_agent_slugs,
         requested_agent_names,
+        multi_agent_turn,
+        response_control,
         top_k,
         trace_id,
         client_message_id,
@@ -652,6 +661,15 @@ export const getAgentCapabilities = ({ token, org, tenant } = {}) =>
     org: org || tenant,
   });
 
+export const getAgentRegistry = ({ token, org, tenant, includeInternal = false } = {}) => {
+  const qs = includeInternal ? "?include_internal=true" : "";
+  return apiFetch(`/api/agents/registry${qs}`, {
+    method: "GET",
+    token,
+    org: org || tenant,
+  });
+};
+
 /* =========================
  * AUDIO / STT
  * ========================= */
@@ -745,7 +763,11 @@ export async function startRealtimeSession({
   dest_mode = null,
   visible_agent = null,
   target_agent_slug = null,
+  target_agent_slugs = null,
+  requested_agent_names = null,
   agent_ids = null,
+  multi_agent_turn = null,
+  response_control = null,
   client_controlled_response = null,
 } = {}) {
   const resolvedLanguageProfile = language_profile || language || null;
@@ -766,7 +788,11 @@ export async function startRealtimeSession({
       dest_mode,
       visible_agent,
       target_agent_slug,
+      target_agent_slugs,
+      requested_agent_names,
       agent_ids,
+      multi_agent_turn,
+      response_control,
       client_controlled_response,
     },
   });
@@ -788,7 +814,11 @@ export async function startSummitSession({
   dest_mode = null,
   visible_agent = null,
   target_agent_slug = null,
+  target_agent_slugs = null,
+  requested_agent_names = null,
   agent_ids = null,
+  multi_agent_turn = null,
+  response_control = null,
   client_controlled_response = null,
 } = {}) {
   const { data } = await apiFetch("/api/realtime/start", {
@@ -808,7 +838,11 @@ export async function startSummitSession({
       dest_mode,
       visible_agent,
       target_agent_slug,
+      target_agent_slugs,
+      requested_agent_names,
       agent_ids,
+      multi_agent_turn,
+      response_control,
       client_controlled_response,
     },
   });
@@ -821,12 +855,33 @@ export const postRealtimeEventsBatch = ({
   tenant,
   session_id,
   events,
+  agent_id = null,
+  dest_mode = null,
+  visible_agent = null,
+  target_agent_slug = null,
+  target_agent_slugs = null,
+  requested_agent_names = null,
+  multi_agent_turn = null,
+  response_control = null,
+  meeting_state = null,
 } = {}) =>
   apiFetch("/api/realtime/events:batch", {
     method: "POST",
     token,
     org: org || tenant,
-    body: { session_id, events: events || [] },
+    body: {
+      session_id,
+      events: events || [],
+      agent_id,
+      dest_mode,
+      visible_agent,
+      target_agent_slug,
+      target_agent_slugs,
+      requested_agent_names,
+      multi_agent_turn,
+      response_control,
+      meeting_state,
+    },
   });
 
 export const endRealtimeSession = ({
