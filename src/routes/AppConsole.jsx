@@ -3023,6 +3023,14 @@ const messagesEndRef = useRef(null);
   const rtcLastTranscriptForAutoResponseRef = useRef("");
   const rtcFallbackActiveRef = useRef(false);
   const rtcResponseInFlightRef = useRef(false);
+  // PATCH_PREMIUM_REV_B — Realtime Single Active Session + Response Authority Lock.
+  // These refs are frontend-only guards: no migration, no provider change.
+  const rtcActiveSessionIdRef = useRef(null);
+  const rtcActiveSessionEpochRef = useRef(0);
+  const rtcResponseAuthorityRef = useRef(null);
+  const rtcResponseCreateDedupeRef = useRef(new Set());
+  const rtcFinalCommitDedupeRef = useRef(new Set());
+  const rtcStaleSessionEventCountRef = useRef(0);
   // AO66R: activation repair — prove/trigger Realtime audio after the DataChannel opens.
   const rtcLastResponseCreatedAtRef = useRef(0);
   const rtcActivationProbeTimerRef = useRef(null);
@@ -6557,6 +6565,235 @@ async function confirmFounderHandoff() {
     }
   }
 
+  function normalizeRealtimeAuthorityText(value = "") {
+    return String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .trim()
+      .replace(/\s+/g, " ")
+      .slice(0, 180);
+  }
+
+  function getRealtimeAuthorityTargetSlug() {
+    return canonicalAgentSlug(
+      meetingStateRef.current?.active_persona_slug ||
+      meetingStateRef.current?.active_speaker_slug ||
+      meetingStateRef.current?.target_agent_slug ||
+      rtcHostAgentNameRef.current ||
+      activeRuntimeAgent ||
+      "orkio"
+    ) || "orkio";
+  }
+
+  function getRealtimeAuthorityTurnIndex() {
+    const raw = Number(meetingStateRef.current?.turn_index ?? meetingStateRef.current?.turnIndex ?? 0);
+    return Number.isFinite(raw) ? raw : 0;
+  }
+
+  function buildRealtimeAuthorityKey({
+    sessionId = "",
+    turnIndex = null,
+    targetAgentSlug = "",
+    transcript = "",
+    reason = "",
+  } = {}) {
+    const sid = String(sessionId || rtcSessionIdRef.current || "").trim();
+    const turn = turnIndex == null ? getRealtimeAuthorityTurnIndex() : Number(turnIndex || 0);
+    const target = canonicalAgentSlug(targetAgentSlug || getRealtimeAuthorityTargetSlug() || "orkio") || "orkio";
+    const textKey = normalizeRealtimeAuthorityText(transcript || rtcLastFinalTranscriptRef.current || reason || "empty");
+    return [sid || "no_session", Number.isFinite(turn) ? turn : 0, target, textKey || "empty"].join(":");
+  }
+
+  function logRealtimeAuthorityTelemetry(eventName, payload = {}) {
+    try {
+      const meta = {
+        ...(payload && typeof payload === "object" ? payload : {}),
+        patch: "PATCH_PREMIUM_REV_B_RESPONSE_AUTHORITY_LOCK",
+        session_id: rtcSessionIdRef.current || null,
+        active_session_id: rtcActiveSessionIdRef.current || null,
+        epoch: rtcActiveSessionEpochRef.current || 0,
+        turn_index: getRealtimeAuthorityTurnIndex(),
+        target_agent_slug: getRealtimeAuthorityTargetSlug(),
+      };
+      logRealtimeStep(`patch_premium_rev_b:${eventName}`, meta);
+      queueRealtimeTelemetry(eventName, meta);
+    } catch {}
+  }
+
+  function resetRealtimeResponseAuthority(reason = "reset") {
+    try {
+      rtcResponseAuthorityRef.current = null;
+      rtcResponseInFlightRef.current = false;
+      rtcLastResponseCreatedAtRef.current = 0;
+      rtcResponseCreateDedupeRef.current = new Set();
+      rtcFinalCommitDedupeRef.current = new Set();
+      logRealtimeAuthorityTelemetry("authority_lock_released", { reason, reset: true });
+    } catch {}
+  }
+
+  function claimRealtimeActiveSession(sessionId, reason = "claim") {
+    const sid = String(sessionId || "").trim();
+    rtcActiveSessionIdRef.current = sid || null;
+    rtcActiveSessionEpochRef.current = Number(rtcActiveSessionEpochRef.current || 0) + 1;
+    resetRealtimeResponseAuthority(`active_session_${reason}`);
+    logRealtimeAuthorityTelemetry("active_session_claimed", {
+      reason,
+      session_id: sid || null,
+      epoch: rtcActiveSessionEpochRef.current,
+    });
+    return rtcActiveSessionEpochRef.current;
+  }
+
+  function invalidateRealtimeActiveSession(reason = "invalidate") {
+    const previousSessionId = rtcActiveSessionIdRef.current || rtcSessionIdRef.current || null;
+    rtcActiveSessionIdRef.current = null;
+    rtcActiveSessionEpochRef.current = Number(rtcActiveSessionEpochRef.current || 0) + 1;
+    resetRealtimeResponseAuthority(`active_session_${reason}`);
+    logRealtimeAuthorityTelemetry("active_session_invalidated", {
+      reason,
+      previous_session_id: previousSessionId,
+      epoch: rtcActiveSessionEpochRef.current,
+    });
+  }
+
+  function isRealtimeSessionCurrent(sessionId = "", epoch = null) {
+    const sid = String(sessionId || "").trim();
+    if (!sid) return false;
+    const currentSid = String(rtcSessionIdRef.current || "").trim();
+    const activeSid = String(rtcActiveSessionIdRef.current || currentSid || "").trim();
+    if (!currentSid || sid !== currentSid || sid !== activeSid) return false;
+    if (epoch != null && Number(epoch) !== Number(rtcActiveSessionEpochRef.current || 0)) return false;
+    return true;
+  }
+
+  function shouldIgnoreStaleRealtimeSessionEvent(sessionId = "", epoch = null, eventType = "event", source = "unknown") {
+    if (isRealtimeSessionCurrent(sessionId, epoch)) return false;
+    rtcStaleSessionEventCountRef.current = Number(rtcStaleSessionEventCountRef.current || 0) + 1;
+    logRealtimeAuthorityTelemetry("stale_session_event_ignored", {
+      source,
+      event_type: eventType,
+      stale_session_id: String(sessionId || "") || null,
+      current_session_id: rtcSessionIdRef.current || null,
+      active_session_id: rtcActiveSessionIdRef.current || null,
+      event_epoch: epoch,
+      current_epoch: rtcActiveSessionEpochRef.current || 0,
+      count: rtcStaleSessionEventCountRef.current,
+    });
+    return true;
+  }
+
+  function acquireRealtimeResponseAuthority({
+    reason = "unknown",
+    sessionId = "",
+    transcript = "",
+    targetAgentSlug = "",
+  } = {}) {
+    const sid = String(sessionId || rtcSessionIdRef.current || "").trim();
+    if (!isRealtimeSessionCurrent(sid)) {
+      logRealtimeAuthorityTelemetry("response_create_blocked", {
+        reason,
+        blocked_reason: "stale_or_missing_session",
+        attempted_session_id: sid || null,
+      });
+      return { allowed: false, key: "" };
+    }
+
+    const key = buildRealtimeAuthorityKey({
+      sessionId: sid,
+      targetAgentSlug,
+      transcript: transcript || rtcLastFinalTranscriptRef.current || reason,
+      reason,
+    });
+
+    const current = rtcResponseAuthorityRef.current;
+    const now = Date.now();
+    if (current?.key && current.key !== key && (now - Number(current.acquiredAt || 0)) < 45000) {
+      logRealtimeAuthorityTelemetry("response_create_blocked", {
+        reason,
+        blocked_reason: "authority_lock_inflight",
+        attempted_key: key,
+        active_key: current.key,
+        active_reason: current.reason || "",
+        age_ms: now - Number(current.acquiredAt || 0),
+      });
+      return { allowed: false, key };
+    }
+
+    if (rtcResponseCreateDedupeRef.current?.has?.(key)) {
+      logRealtimeAuthorityTelemetry("response_create_blocked", {
+        reason,
+        blocked_reason: "duplicate_turn_key",
+        attempted_key: key,
+      });
+      return { allowed: false, key };
+    }
+
+    rtcResponseCreateDedupeRef.current.add(key);
+    rtcResponseAuthorityRef.current = {
+      key,
+      reason,
+      sessionId: sid,
+      targetAgentSlug: canonicalAgentSlug(targetAgentSlug || getRealtimeAuthorityTargetSlug()) || "orkio",
+      acquiredAt: now,
+    };
+    logRealtimeAuthorityTelemetry("authority_lock_acquired", { reason, key });
+    logRealtimeAuthorityTelemetry("response_create_allowed", { reason, key });
+    return { allowed: true, key };
+  }
+
+  function releaseRealtimeResponseAuthority(reason = "release", key = "") {
+    try {
+      const current = rtcResponseAuthorityRef.current || {};
+      if (key && current?.key && String(key) !== String(current.key)) {
+        logRealtimeAuthorityTelemetry("authority_lock_release_ignored", {
+          reason,
+          release_key: key,
+          active_key: current.key,
+        });
+        return;
+      }
+      rtcResponseAuthorityRef.current = null;
+      rtcResponseInFlightRef.current = false;
+      logRealtimeAuthorityTelemetry("authority_lock_released", {
+        reason,
+        key: key || current?.key || "",
+      });
+    } catch {}
+  }
+
+  function markRealtimeFinalCommittedForTurn(content = "", opts = {}) {
+    const key = buildRealtimeAuthorityKey({
+      sessionId: opts?.sessionId || rtcSessionIdRef.current || "",
+      turnIndex: opts?.turnIndex ?? getRealtimeAuthorityTurnIndex(),
+      targetAgentSlug: opts?.targetAgentSlug || getRealtimeAuthorityTargetSlug(),
+      transcript: content,
+      reason: opts?.source || "final",
+    });
+    if (rtcFinalCommitDedupeRef.current?.has?.(key)) {
+      logRealtimeAuthorityTelemetry("duplicate_final_ignored", {
+        source: opts?.source || "unknown",
+        key,
+        content_len: String(content || "").length,
+      });
+      return { accepted: false, key };
+    }
+    rtcFinalCommitDedupeRef.current.add(key);
+    return { accepted: true, key };
+  }
+
+  function hasRealtimeFinalCommittedForTurn(content = "", opts = {}) {
+    const key = buildRealtimeAuthorityKey({
+      sessionId: opts?.sessionId || rtcSessionIdRef.current || "",
+      turnIndex: opts?.turnIndex ?? getRealtimeAuthorityTurnIndex(),
+      targetAgentSlug: opts?.targetAgentSlug || getRealtimeAuthorityTargetSlug(),
+      transcript: content,
+      reason: opts?.source || "final",
+    });
+    return Boolean(rtcFinalCommitDedupeRef.current?.has?.(key));
+  }
+
   function scheduleRealtimeAutoResponseFallback(transcript = "", source = "transcript_final") {
     const clean = String(transcript || "").trim();
     if (!clean) return;
@@ -7449,6 +7686,7 @@ function scheduleRealtimeIdleFollowup() {
 
   function hardResetRealtimeClientState(reason = "hard_reset") {
     logRealtimeStep("hf5:hard_reset_begin", { reason, sessionId: rtcSessionIdRef.current || null });
+    try { invalidateRealtimeActiveSession(reason || "hard_reset"); } catch {}
 
     try { clearRealtimeResponseTimeout(); } catch {}
     try { clearRealtimeAutoResponseFallback(); } catch {}
@@ -7535,6 +7773,9 @@ function scheduleRealtimeIdleFollowup() {
     try { rtcSessionStartedAtRef.current = 0; } catch {}
     try { rtcLastStopReasonRef.current = ""; } catch {}
     try { rtcResponseInFlightRef.current = false; } catch {}
+    try { rtcResponseAuthorityRef.current = null; } catch {}
+    try { rtcResponseCreateDedupeRef.current = new Set(); } catch {}
+    try { rtcFinalCommitDedupeRef.current = new Set(); } catch {}
     try { rtcLastResponseCreatedAtRef.current = 0; } catch {}
     try { rtcActivationProbeSentRef.current = false; } catch {}
     try { rtcFallbackActiveRef.current = false; } catch {}
@@ -8135,6 +8376,16 @@ function scheduleRealtimeIdleFollowup() {
     const responseInstructions = cleanInstructions || buildRealtimeVoiceInstruction(rtcLanguageProfileRef.current);
     const cleanInput = String(inputText || "").trim();
     const voice = coerceVoiceId(rtcVoiceRef.current || ORKIO_CANONICAL_VOICE_ID || ORKIO_DEFAULT_VOICE_ID);
+    const authority = acquireRealtimeResponseAuthority({
+      reason,
+      sessionId: rtcSessionIdRef.current || "",
+      transcript: cleanInput || rtcLastFinalTranscriptRef.current || reason,
+      targetAgentSlug: getRealtimeAuthorityTargetSlug(),
+    });
+    if (!authority.allowed) {
+      setRtcReadyToRespond(false);
+      return false;
+    }
 
     if (conversationItem && cleanInput) {
       sendRealtimeClientEvent(dc, {
@@ -8201,6 +8452,7 @@ function scheduleRealtimeIdleFollowup() {
         });
       } catch {}
     } else {
+      releaseRealtimeResponseAuthority("response_create_send_failed", authority.key);
       rtcResponseInFlightRef.current = false;
       clearRealtimeResponseTimeout();
     }
@@ -8372,6 +8624,7 @@ function scheduleRealtimeIdleFollowup() {
     try { setV2vPhase("connecting"); } catch {}
     try { console.log(ORKIO_AO61A_BUILD_MARKER, { event: "start_begin" }); console.log(ORKIO_AO61A_HF3_BUILD_MARKER, { event: "start_begin" }); console.log(ORKIO_AO61A_HF4_BUILD_MARKER, { event: "start_begin" }); } catch {}
     const startNonce = ++rtcStartNonceRef.current;
+    try { invalidateRealtimeActiveSession("start_begin"); } catch {}
 
     try {
       const effectiveRealtimeThreadId = resolveRealtimeThreadId();
@@ -8595,6 +8848,8 @@ function scheduleRealtimeIdleFollowup() {
       applyRealtimeMeetingStateFromPayload(start, "realtime_start");
 
       rtcSessionIdRef.current = start?.session_id || null;
+      const ownedRealtimeSessionId = String(start?.session_id || "").trim();
+      const ownedRealtimeSessionEpoch = claimRealtimeActiveSession(ownedRealtimeSessionId, "start_session_ok");
       rtcSessionStartedAtRef.current = Date.now();
       clearRealtimePendingAutoStop();
       try { console.log("REALTIME_SESSION_STARTED", { sessionId: start?.session_id || null, threadId: start?.thread_id || threadId || null, marker: ORKIO_AO66R_HF4_BUILD_MARKER }); } catch {}
@@ -8689,6 +8944,7 @@ function scheduleRealtimeIdleFollowup() {
 
       pc.ontrack = (e) => {
         try {
+          if (shouldIgnoreStaleRealtimeSessionEvent(ownedRealtimeSessionId, ownedRealtimeSessionEpoch, "pc.ontrack", "pc.ontrack")) return;
           let remoteStream = e.streams?.[0] || rtcRemoteStreamRef.current || null;
           if (!remoteStream && e.track) {
             remoteStream = new MediaStream();
@@ -8833,6 +9089,7 @@ function scheduleRealtimeIdleFollowup() {
       rtcDcRef.current = dc;
 
       pc.onconnectionstatechange = () => {
+        if (shouldIgnoreStaleRealtimeSessionEvent(ownedRealtimeSessionId, ownedRealtimeSessionEpoch, "pc.connection_state", "pc.onconnectionstatechange")) return;
         const state = pc.connectionState || "unknown";
         logRealtimeStep("pc:connection_state", { state });
         queueRealtimeTelemetry("pc_connection_state", { state, iceState: pc.iceConnectionState || null, signalingState: pc.signalingState || null });
@@ -8846,9 +9103,11 @@ function scheduleRealtimeIdleFollowup() {
       };
 
       dc.addEventListener("close", () => {
+        if (shouldIgnoreStaleRealtimeSessionEvent(ownedRealtimeSessionId, ownedRealtimeSessionEpoch, "dc.close", "datachannel.close")) return;
         logRealtimeStep("dc:close");
         queueRealtimeTelemetry("datachannel_close", { readyState: dc.readyState || null });
         flushRealtimePartialTranscript("dc_close_partial_flush");
+        releaseRealtimeResponseAuthority("dc.close", rtcResponseAuthorityRef.current?.key || "");
         rtcResponseInFlightRef.current = false;
         if (realtimeModeRef.current) {
           setV2vPhase("error");
@@ -8858,12 +9117,14 @@ function scheduleRealtimeIdleFollowup() {
       });
 
       dc.addEventListener("error", (err) => {
+        if (shouldIgnoreStaleRealtimeSessionEvent(ownedRealtimeSessionId, ownedRealtimeSessionEpoch, "dc.error", "datachannel.error")) return;
         console.warn("[Realtime] datachannel error", err);
         logRealtimeStep("dc:error", { message: err?.message || null });
         queueRealtimeTelemetry("datachannel_error", { message: err?.message || null, readyState: dc.readyState || null });
       });
 
             dc.addEventListener('open', () => {
+        if (shouldIgnoreStaleRealtimeSessionEvent(ownedRealtimeSessionId, ownedRealtimeSessionEpoch, "dc.open", "datachannel.open")) return;
         queueRealtimeTelemetry("datachannel_open", { readyState: dc.readyState || null, pcState: pc.connectionState || null, iceState: pc.iceConnectionState || null });
         setV2vPhase('listening');
         updateRealtimePremiumStatus("listening", "📝 Transcrição ativa");
@@ -8993,6 +9254,7 @@ function scheduleRealtimeIdleFollowup() {
       dc.addEventListener('message', (e) => {
         try {
           const ev = JSON.parse(e.data);
+          if (shouldIgnoreStaleRealtimeSessionEvent(ownedRealtimeSessionId, ownedRealtimeSessionEpoch, ev?.type || "dc.message", "datachannel.message")) return;
 
           try {
             const eventTypeForLog = String(ev?.type || "");
@@ -9154,6 +9416,11 @@ function scheduleRealtimeIdleFollowup() {
           }
           if (ev?.type === 'response.created') {
             const createdResponseId = ev?.response?.id || ev?.response_id || null;
+            try {
+              if (rtcResponseAuthorityRef.current && createdResponseId) {
+                rtcResponseAuthorityRef.current.responseId = createdResponseId;
+              }
+            } catch {}
             if (
               rtcTimeboxAnnouncementPendingRef.current &&
               !rtcTimeboxAnnouncementResponseIdRef.current &&
@@ -9368,11 +9635,13 @@ function scheduleRealtimeIdleFollowup() {
                 pendingBuf: pendingFinal.length,
               });
             }
+            releaseRealtimeResponseAuthority("response.done", rtcResponseAuthorityRef.current?.key || "");
           }
 
           if (ev?.type === 'error') {
             clearRealtimeResponseTimeout();
             clearRealtimeAutoResponseFallback();
+            releaseRealtimeResponseAuthority("provider_error", rtcResponseAuthorityRef.current?.key || "");
             rtcResponseInFlightRef.current = false;
             if (rtcTimeboxClosingRef.current) {
               logRealtimeStep('ao72c_hf1:provider_error_ignored_during_timebox_closing', {
@@ -9520,6 +9789,11 @@ function scheduleRealtimeIdleFollowup() {
       if (rtcTimeboxClosingRef.current) {
         setRtcReadyToRespond(false);
         logRealtimeStep("ao72c_hf1:response_blocked_during_timebox_closing", { reason });
+        return;
+      }
+      if (!isRealtimeSessionCurrent(rtcSessionIdRef.current || "")) {
+        logRealtimeAuthorityTelemetry("response_create_blocked", { reason, blocked_reason: "stale_active_session" });
+        setRtcReadyToRespond(false);
         return;
       }
       const dc = rtcDcRef.current;
@@ -10074,6 +10348,16 @@ function scheduleRealtimeIdleFollowup() {
   async function handleBackendRealtimeAssistantResponses(payload) {
     const sid = rtcSessionIdRef.current;
     if (!sid) return;
+    const payloadSessionId = String(payload?.session_id || payload?.id || payload?.session?.id || "").trim();
+    if (payloadSessionId && payloadSessionId !== sid) {
+      logRealtimeAuthorityTelemetry("stale_session_event_ignored", {
+        source: "backend_realtime_session",
+        event_type: "backend_poll_payload",
+        stale_session_id: payloadSessionId,
+        current_session_id: sid,
+      });
+      return;
+    }
 
     const events = Array.isArray(payload?.events) ? payload.events : [];
     if (events.length) {
@@ -10103,8 +10387,19 @@ function scheduleRealtimeIdleFollowup() {
         ).trim();
 
       if (!content) continue;
+      const backendTargetSlug = canonicalAgentSlug(meta?.target_agent_slug || ev?.agent_slug || ev?.agent_name || getRealtimeAuthorityTargetSlug()) || getRealtimeAuthorityTargetSlug();
+      if (hasRealtimeFinalCommittedForTurn(content, { sessionId: sid, targetAgentSlug: backendTargetSlug, source: "backend_realtime_session" })) {
+        logRealtimeAuthorityTelemetry("duplicate_final_ignored", {
+          source: "backend_realtime_session",
+          event_id: evId,
+          target_agent_slug: backendTargetSlug,
+          content_len: content.length,
+        });
+        continue;
+      }
 
       rtcSeenBackendResponseIdsRef.current.add(evId);
+      markRealtimeFinalCommittedForTurn(content, { sessionId: sid, targetAgentSlug: backendTargetSlug, source: "backend_realtime_session" });
 
       const agentName = String(ev?.agent_name || meta?.agent_name || "Orkio").trim() || "Orkio";
       const agentId = ev?.agent_id || ev?.speaker_id || meta?.agent_id || null;
@@ -10257,7 +10552,11 @@ function scheduleRealtimeIdleFollowup() {
     rtcAssistantPendingFinalTimerRef.current = null;
   }
 
-  function scheduleRealtimeAssistantFinalCommit(rawText, { source = "unknown", delayMs = 900 } = {}) {
+  function scheduleRealtimeAssistantFinalCommit(rawText, { source = "unknown", delayMs = 900, sessionId = null, targetAgentSlug = null } = {}) {
+    const scheduledSessionId = String(sessionId || rtcSessionIdRef.current || "").trim();
+    const scheduledTargetAgentSlug = canonicalAgentSlug(targetAgentSlug || getRealtimeAuthorityTargetSlug()) || "orkio";
+    const scheduledEpoch = rtcActiveSessionEpochRef.current || 0;
+    if (scheduledSessionId && shouldIgnoreStaleRealtimeSessionEvent(scheduledSessionId, scheduledEpoch, "assistant_final.schedule", source)) return;
     const candidate = normalizeRealtimeAssistantText(rawText);
     if (!candidate) return;
     const currentPending = normalizeRealtimeAssistantText(rtcAssistantPendingFinalTextRef.current || "");
@@ -10271,7 +10570,14 @@ function scheduleRealtimeIdleFollowup() {
       const pendingSource = rtcAssistantPendingFinalSourceRef.current || source;
       rtcAssistantPendingFinalTextRef.current = "";
       rtcAssistantPendingFinalSourceRef.current = "";
-      if (pending) commitRealtimeAssistantFinal(pending, { source: pendingSource });
+      if (pending) {
+        if (shouldIgnoreStaleRealtimeSessionEvent(scheduledSessionId, scheduledEpoch, "assistant_final.commit_timer", pendingSource)) return;
+        commitRealtimeAssistantFinal(pending, {
+          source: pendingSource,
+          sessionId: scheduledSessionId,
+          targetAgentSlug: scheduledTargetAgentSlug,
+        });
+      }
     }, Math.max(150, Number(delayMs) || 900));
   }
 
@@ -10326,7 +10632,18 @@ function scheduleRealtimeIdleFollowup() {
     return selectedName || "Orkio";
   }
 
-  function commitRealtimeAssistantFinal(rawText, { source = 'unknown' } = {}) {
+  function commitRealtimeAssistantFinal(rawText, { source = 'unknown', sessionId = null, targetAgentSlug = null } = {}) {
+    const commitSessionId = String(sessionId || rtcSessionIdRef.current || "").trim();
+    if (commitSessionId && !isRealtimeSessionCurrent(commitSessionId)) {
+      logRealtimeAuthorityTelemetry("stale_session_event_ignored", {
+        source,
+        event_type: "commitRealtimeAssistantFinal",
+        stale_session_id: commitSessionId,
+        current_session_id: rtcSessionIdRef.current || null,
+      });
+      return;
+    }
+
     const finalText = normalizeRealtimeAssistantText(rawText);
     if (!finalText) return;
     const dedupeKey = finalText
@@ -10353,7 +10670,22 @@ function scheduleRealtimeIdleFollowup() {
       && dedupeKey !== previousDedupe
     );
 
+    const finalAgentSlug = canonicalAgentSlug(targetAgentSlug || getRealtimeAuthorityTargetSlug()) || "orkio";
+    const finalMark = markRealtimeFinalCommittedForTurn(finalText, {
+      sessionId: commitSessionId || rtcSessionIdRef.current || "",
+      targetAgentSlug: finalAgentSlug,
+      source,
+    });
+    if (!finalMark.accepted && !isMeaningfulUpgrade) {
+      return;
+    }
+
     if (rtcAssistantFinalCommittedRef.current && !isMeaningfulUpgrade) {
+      logRealtimeAuthorityTelemetry("duplicate_final_ignored", {
+        source,
+        blocked_reason: "assistant_final_already_committed",
+        key: finalMark.key,
+      });
       return;
     }
 
@@ -10376,6 +10708,8 @@ function scheduleRealtimeIdleFollowup() {
         active_agent: rtcHostAgentNameRef.current || activeRuntimeAgent || "",
         agent_id: rtcHostAgentIdRef.current || null,
         meeting_orchestrator_client: true,
+        authority_key: finalMark.key || "",
+        target_agent_slug: finalAgentSlug,
       },
     });
 
