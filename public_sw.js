@@ -1,104 +1,100 @@
-// EFATA777 V20 — installability network-only Service Worker com polimento pós-auditoria
-// Objetivo:
-// - satisfazer critérios Chromium de installability com fetch handler real;
-// - manter landing rápida e sem cache agressivo;
-// - não fazer precache, não fazer warmAppShell, não cachear API;
-// - limpar caches legados e responder sempre pela rede.
+const CACHE_NAME = "patroai-executive-shell-v1";
 
-const EFATA777_SW_VERSION = "v20-polish-pwa-network-only";
+const APP_SHELL = [
+  "/",
+  "/app",
+  "/auth",
+  "/manifest.webmanifest",
+  "/favicon.ico",
+  "/apple-touch-icon.png",
+  "/icon-192.png",
+  "/icon-512.png",
+];
 
-async function clearLegacyCaches() {
-  try {
-    if (!self.caches) return;
-    const keys = await caches.keys();
-    await Promise.all(
-      keys
-        .filter((key) => /orkio|patroai|efata777/i.test(String(key || "")))
-        .map((key) => caches.delete(key))
-    );
-  } catch {}
+async function cacheAppShell() {
+  const cache = await caches.open(CACHE_NAME);
+
+  await Promise.allSettled(
+    APP_SHELL.map(async (url) => {
+      try {
+        const response = await fetch(url, { cache: "reload" });
+
+        if (!response || !response.ok) return;
+
+        await cache.put(url, response);
+      } catch {
+        // Non-critical asset. Do not block Service Worker installation.
+      }
+    })
+  );
 }
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
-  event.waitUntil(clearLegacyCaches());
+
+  event.waitUntil(cacheAppShell());
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    (async () => {
-      await clearLegacyCaches();
-      try {
-        await self.clients.claim();
-      } catch {}
-    })()
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(
+          keys
+            .filter((key) => key !== CACHE_NAME)
+            .map((key) => caches.delete(key))
+        )
+      )
+      .then(() => self.clients.claim())
   );
 });
 
-function shouldNetworkHandle(request) {
-  try {
-    if (!request || request.method !== "GET") return false;
-
-    const url = new URL(request.url);
-    if (url.origin !== self.location.origin) return false;
-
-    // Nunca interceptar API/eventos/sockets/transcrições/env runtime.
-    if (url.pathname.startsWith("/api/")) return false;
-    if (url.pathname === "/env.js") return false;
-    if (url.pathname.startsWith("/sockjs")) return false;
-
-    // Critério de installability Chromium: SW precisa ter fetch handler real.
-    // Usamos network-only para todos os GET same-origin elegíveis.
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// Fetch handler real, porém conservador:
-// - event.respondWith(fetch(...)) somente para GET same-origin elegíveis;
-// - sem cache, sem fallback offline, sem shell pré-carregado;
-// - evita pending por cache antigo e satisfaz installability.
 self.addEventListener("fetch", (event) => {
   const request = event.request;
-  if (!shouldNetworkHandle(request)) return;
+
+  if (!request || request.method !== "GET") return;
+
+  const url = new URL(request.url);
+
+  if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith("/api/")) return;
+  if (url.pathname.startsWith("/realtime/")) return;
+  if (url.pathname === "/env.js") return;
+
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request).catch(async () => {
+        return (
+          (await caches.match("/app")) ||
+          (await caches.match("/")) ||
+          Response.error()
+        );
+      })
+    );
+    return;
+  }
 
   event.respondWith(
-    fetch(request).catch(() => {
-      // Sem fallback HTML para não mascarar erro real nem travar landing.
-      return new Response("", {
-        status: 503,
-        statusText: "Network unavailable",
-        headers: {
-          "Content-Type": "text/plain; charset=utf-8",
-          "X-EFATA777-SW": EFATA777_SW_VERSION,
-        },
-      });
+    caches.match(request).then((cached) => {
+      if (cached) return cached;
+
+      return fetch(request)
+        .then((response) => {
+          if (!response || response.status !== 200 || response.type !== "basic") {
+            return response;
+          }
+
+          const copy = response.clone();
+
+          caches
+            .open(CACHE_NAME)
+            .then((cache) => cache.put(request, copy))
+            .catch(() => undefined);
+
+          return response;
+        })
+        .catch(() => cached || Response.error());
     })
   );
-});
-
-self.addEventListener("message", (event) => {
-  try {
-    const type = event?.data?.type;
-
-    if (type === "SKIP_WAITING") {
-      self.skipWaiting();
-      return;
-    }
-
-    if (type === "EFATA777_CLEAR_LEGACY_CACHES") {
-      event.waitUntil(clearLegacyCaches());
-      return;
-    }
-
-    if (type === "EFATA777_PWA_DIAGNOSTIC") {
-      event?.source?.postMessage?.({
-        type: "EFATA777_PWA_DIAGNOSTIC_RESULT",
-        sw_version: EFATA777_SW_VERSION,
-        cache_policy: "network-only",
-        cache_keys_cleared: true,
-      });
-    }
-  } catch {}
 });
