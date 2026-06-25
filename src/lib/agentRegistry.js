@@ -11,8 +11,13 @@
 // This module is intentionally dependency-free so it can be unit-tested in
 // isolation and imported by AppConsole without creating runtime cycles.
 
-export const AGENT_REGISTRY_VERSION = "PATCH_28_AGENT_REGISTRY_PERSONA_ISOLATION_V1";
+export const AGENT_REGISTRY_VERSION = "PATCH_31_AGENT_REGISTRY_VOICE_PROFILE_V1";
 export const TURN_ROUTER_VERSION = "PATCH_28_PERSONA_ISOLATION_TEAM_PANEL_V1";
+export const AGENT_VOICE_PROFILE_VERSION = "PATCH_31_CANONICAL_AGENT_VOICE_PROFILE_V1";
+export const AGENT_REALTIME_IDENTITY_VERSION = "PATCH_31_REGISTRY_DRIVEN_REALTIME_IDENTITY_V1";
+export const AGENT_VOICE_PRECEDENCE_VERSION = "PATCH_31_FINAL_CANONICAL_VOICE_PRECEDENCE_V1";
+export const AGENT_REALTIME_CONTRACT_VERSION = "PATCH_31_FINAL_PREMIUM_REALTIME_PERSONA_VOICE_CONTRACT_V1";
+export const AGENT_VOICE_OVERRIDE_POLICY = "db_voice_requires_explicit_override_flag_and_never_overrides_env_or_registry";
 
 export const CANONICAL_AGENT_REGISTRY = Object.freeze({
   orkio: Object.freeze({
@@ -28,6 +33,15 @@ export const CANONICAL_AGENT_REGISTRY = Object.freeze({
     team_optional: false,
     aliases: Object.freeze(["orkio", "orquio", "archio", "workio", "workq"]),
     domain_keywords: Object.freeze(["copiloto", "patroai", "contexto", "continuidade", "estrategia", "estratégia"]),
+    voice_profile: Object.freeze({
+      profile_id: "orkio",
+      voice_id: "cedar",
+      env_key: "VITE_ORKIO_VOICE_ID",
+      provider: "openai_realtime",
+      label: "Orkio — voz oficial",
+    }),
+    realtime_role_line: "Você é Orkio, agente executivo principal da plataforma Patroai.",
+    realtime_priority_line: "Organize contexto, continuidade, decisões, riscos e próximos passos.",
     persona_scope: "Orkio organiza a sala, sintetiza contexto, prioriza próximos passos e preserva continuidade operacional.",
     persona_guardrails: Object.freeze([
       "Não assuma a identidade de Orion, Chris, Laura ou Auditor quando outro agente for o speaker ativo.",
@@ -47,6 +61,15 @@ export const CANONICAL_AGENT_REGISTRY = Object.freeze({
     team_optional: false,
     aliases: Object.freeze(["team", "time", "equipe", "todos", "sala", "war room", "warroom", "squad"]),
     domain_keywords: Object.freeze(["reuniao", "reunião", "sala executiva", "painel", "mesa", "orquestracao", "orquestração"]),
+    voice_profile: Object.freeze({
+      profile_id: "team",
+      voice_id: "cedar",
+      env_key: "VITE_TEAM_VOICE_ID",
+      provider: "openai_realtime",
+      label: "Team — coordenação",
+    }),
+    realtime_role_line: "Você está no modo Team, atuando como coordenador de sala executiva multiagente da Patroai.",
+    realtime_priority_line: "Coordene turnos, responsáveis, riscos e próximos passos sem sobrepor vozes.",
     persona_scope: "Team é a sala, não um agente especialista; ele coordena turnos e painéis de resposta.",
     persona_guardrails: Object.freeze([
       "Não trate Team como speaker especializado quando houver agente ativo definido.",
@@ -72,6 +95,15 @@ export const CANONICAL_AGENT_REGISTRY = Object.freeze({
       "arquitetura", "arquiteto", "devops", "backend", "frontend", "logs",
       "deploy", "rollback", "realtime", "build", "bug", "erro"
     ]),
+    voice_profile: Object.freeze({
+      profile_id: "orion",
+      voice_id: "echo",
+      env_key: "VITE_ORION_VOICE_ID",
+      provider: "openai_realtime",
+      label: "Orion — CTO técnico",
+    }),
+    realtime_role_line: "Você é Orion, agente interno CTO técnico da Patroai.",
+    realtime_priority_line: "Diagnóstico técnico, runtime, backend, frontend, realtime, agentes, logs, deploy, rollback, arquitetura, estabilidade e validação.",
     persona_scope: "Orion responde como CTO técnico: arquitetura, código, bugs, logs, realtime, deploy, rollback, estabilidade e validação.",
     persona_guardrails: Object.freeze([
       "Não responda como Orkio, Chris, Laura ou Auditor.",
@@ -97,6 +129,15 @@ export const CANONICAL_AGENT_REGISTRY = Object.freeze({
       "financeiro", "financial", "comercial", "vendas", "valuation",
       "captação", "captacao", "pricing", "go-to-market", "receita", "funil"
     ]),
+    voice_profile: Object.freeze({
+      profile_id: "chris",
+      voice_id: "coral",
+      env_key: "VITE_CHRIS_VOICE_ID",
+      provider: "openai_realtime",
+      label: "Chris — financeiro e estratégia",
+    }),
+    realtime_role_line: "Você é Chris, agente interno financeiro/estratégico da Patroai.",
+    realtime_priority_line: "Viabilidade, valuation, captação, funil, pricing, receita, análise financeira e estratégia comercial.",
     persona_scope: "Chris responde pela ótica financeira, comercial, estratégica, de receita, valuation, captação e viabilidade.",
     persona_guardrails: Object.freeze([
       "Não responda como Orion em diagnóstico técnico profundo.",
@@ -120,6 +161,15 @@ export const CANONICAL_AGENT_REGISTRY = Object.freeze({
       "investidor", "investidores", "pitch", "business plan", "narrativa",
       "storytelling", "deck", "plano de negocios", "plano de negócios", "sumario executivo", "sumário executivo"
     ]),
+    voice_profile: Object.freeze({
+      profile_id: "laura",
+      voice_id: "shimmer",
+      env_key: "VITE_LAURA_VOICE_ID",
+      provider: "openai_realtime",
+      label: "Laura — narrativa e investidores",
+    }),
+    realtime_role_line: "Você é Laura, agente interno de narrativa, business plan, pitch, investidores e comunicação executiva da Patroai.",
+    realtime_priority_line: "Clareza institucional, storytelling, apresentação para investidores, pitch, business plan, sumário executivo e posicionamento.",
     persona_scope: "Laura responde pela ótica de narrativa, investidores, pitch, business plan, clareza institucional e storytelling executivo.",
     persona_guardrails: Object.freeze([
       "Não responda como Orion em execução técnica.",
@@ -140,6 +190,15 @@ export const CANONICAL_AGENT_REGISTRY = Object.freeze({
     team_optional: true,
     aliases: Object.freeze(["auditor", "auditor externo", "ao-01", "ao01"]),
     domain_keywords: Object.freeze(["auditoria", "red team", "red-team", "riscos", "validacao", "validação", "go/no-go"]),
+    voice_profile: Object.freeze({
+      profile_id: "auditor",
+      voice_id: "ash",
+      env_key: "VITE_AUDITOR_VOICE_ID",
+      provider: "openai_realtime",
+      label: "Auditor — revisão crítica",
+    }),
+    realtime_role_line: "Você é Auditor, agente/função de auditoria externa e red-team da Patroai.",
+    realtime_priority_line: "Revisão crítica, evidências, riscos, validação, rollback e vereditos GO/NO-GO.",
     persona_scope: "Auditor responde como revisão externa/read-only: evidências, riscos, validação, rollback e GO/NO-GO.",
     persona_guardrails: Object.freeze([
       "Não trate proposta como validação.",
@@ -357,6 +416,114 @@ export function personaIsolationContract(value = "") {
     persona_scope: profile.persona_scope || "",
     persona_guardrails: Array.from(profile.persona_guardrails || []),
   };
+}
+
+
+function lookupCandidateForAgentLike(value = "") {
+  if (value && typeof value === "object") {
+    return (
+      value.slug ||
+      value.key ||
+      value.agent_slug ||
+      value.agent_name ||
+      value.display_name ||
+      value.name ||
+      value.id ||
+      ""
+    );
+  }
+  return value;
+}
+
+function profileForAgentLike(value = "", fallbackSlug = "orkio") {
+  const profile = canonicalAgentProfile(lookupCandidateForAgentLike(value));
+  if (profile) return profile;
+  return canonicalAgentProfile(fallbackSlug) || CANONICAL_AGENT_REGISTRY.orkio;
+}
+
+export function canonicalAgentVoiceProfile(value = "", { fallbackSlug = "orkio" } = {}) {
+  const profile = profileForAgentLike(value, fallbackSlug);
+  const rawCandidate =
+    profile?.canonical_voice_profile ||
+    profile?.voice_profile ||
+    profile?.voice ||
+    {};
+  const raw = rawCandidate && typeof rawCandidate === "object" ? rawCandidate : {};
+  const legacyProfileId = typeof rawCandidate === "string" ? rawCandidate.trim() : "";
+  const fallbackCanonicalSlug = canonicalAgentSlug(fallbackSlug) || "orkio";
+  const slug = profile?.slug || fallbackCanonicalSlug;
+  return {
+    version: raw.version || AGENT_VOICE_PROFILE_VERSION,
+    payload_version: raw.payload_version || "PATCH_31_REV_A_CANONICAL_VOICE_PROFILE_PAYLOAD_V1",
+    precedence_version: AGENT_VOICE_PRECEDENCE_VERSION,
+    contract_version: raw.contract_version || AGENT_REALTIME_CONTRACT_VERSION,
+    override_policy: raw.override_policy || AGENT_VOICE_OVERRIDE_POLICY,
+    precedence: Array.isArray(raw.precedence) && raw.precedence.length
+      ? Array.from(raw.precedence)
+      : ["env", "registry", "db_override", "fallback"],
+    slug,
+    display_name: profile?.display_name || canonicalAgentDisplayNameFromSlug(fallbackCanonicalSlug),
+    profile_id: raw.profile_id || profile?.voice_profile_id || legacyProfileId || slug,
+    voice_id: raw.voice_id || profile?.voice_id || "cedar",
+    env_key: raw.env_key || profile?.voice_env_key || profile?.voiceEnvKey || "",
+    provider: raw.provider || profile?.voice_provider || "openai_realtime",
+    label: raw.label || profile?.voice_hint || profile?.display_name || canonicalAgentDisplayNameFromSlug(fallbackCanonicalSlug),
+    source: raw.source || "registry",
+  };
+}
+
+export function canonicalAgentRealtimeIdentity(value = "", { fallbackSlug = "orkio" } = {}) {
+  const profile = profileForAgentLike(value, fallbackSlug);
+  return {
+    version: AGENT_REALTIME_IDENTITY_VERSION,
+    slug: profile?.slug || canonicalAgentSlug(fallbackSlug),
+    display_name: profile?.display_name || canonicalAgentDisplayNameFromSlug(fallbackSlug),
+    role_label: profile?.role_label || "",
+    route_role: profile?.route_role || "specialist",
+    realtime_role_line: profile?.realtime_role_line || "",
+    realtime_priority_line: profile?.realtime_priority_line || "",
+    persona_scope: profile?.persona_scope || profile?.description || "",
+    persona_guardrails: Array.from(profile?.persona_guardrails || []),
+    voice_profile: canonicalAgentVoiceProfile(profile?.slug || fallbackSlug, { fallbackSlug }),
+    contract_version: AGENT_REALTIME_CONTRACT_VERSION,
+  };
+}
+
+export function buildCanonicalRealtimeAgentInstructions(value = "", {
+  fallbackSlug = "orkio",
+  includeKnownAgents = true,
+} = {}) {
+  const identity = canonicalAgentRealtimeIdentity(value, { fallbackSlug });
+  const knownAgentsLine = includeKnownAgents
+    ? "Você deve reconhecer agentes internos da plataforma: Orkio, Team, Chris, Orion, Laura e Auditor."
+    : "";
+  const base = [
+    "Você está em uma sessão de voz realtime dentro da plataforma Patroai.",
+    knownAgentsLine,
+    "Nunca trate agentes internos como pessoas externas, contatos externos, e-mails ou sistemas fora da plataforma.",
+    "Nunca afirme que acionou, publicou, abriu auditoria, criou War Room, enviou push, chamou agente, executou integração, deploy, commit, push, PR ou migração se isso não tiver confirmação técnica no runtime.",
+    "Se a orquestração real ainda não estiver confirmada, diga de forma transparente que está conduzindo a transição de fala no Realtime e registrando a pendência técnica.",
+    "Regra crítica: fale apenas como o agente ativo deste turno."
+  ].filter(Boolean);
+
+  const identityLines = [
+    identity.realtime_role_line,
+    identity.display_name ? `Identidade ativa: você é ${identity.display_name}, ${identity.role_label || "agente interno da Patroai"}.` : "",
+    identity.realtime_priority_line ? `Prioridade: ${identity.realtime_priority_line}` : "",
+    identity.persona_scope ? `Escopo de persona: ${identity.persona_scope}` : "",
+    ...(identity.persona_guardrails || []).map((rule) => `Guardrail: ${rule}`)
+  ].filter(Boolean);
+
+  return [
+    ...base,
+    "",
+    `Contrato de identidade realtime: ${AGENT_REALTIME_IDENTITY_VERSION}.`,
+    `Contrato premium final: ${AGENT_REALTIME_CONTRACT_VERSION}.`,
+    `Contrato de voz: ${AGENT_VOICE_PROFILE_VERSION}.`,
+    `Fonte canônica de voz/persona: Agent Registry. Política de override: ${AGENT_VOICE_OVERRIDE_POLICY}.`,
+    ...identityLines,
+    identity?.voice_profile?.voice_id ? `Voz canônica esperada: ${identity.voice_profile.voice_id}.` : "",
+  ].filter((line) => line !== null && line !== undefined).join("\n");
 }
 
 function teamPanelSlugs({ includeInternal = true } = {}) {
