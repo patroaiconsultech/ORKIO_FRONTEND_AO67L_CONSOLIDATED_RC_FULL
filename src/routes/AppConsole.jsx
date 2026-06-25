@@ -1504,16 +1504,35 @@ function coerceRealtimeResponseMetadataString(value) {
   }
 }
 
+const REALTIME_RESPONSE_METADATA_MAX_KEYS = 16;
+
+// PATCH_31_FINAL_HOTFIX_RESPONSE_METADATA_LIMIT_16_V1
+// The Realtime provider accepts response.metadata as an object with string values
+// and at most 16 properties. Keep this helper as the only place that prepares
+// response.metadata for response.create.
 function buildRealtimeResponseMetadata(payload = {}) {
   const out = {};
+
+  const addMetadataValue = (key, value) => {
+    if (Object.keys(out).length >= REALTIME_RESPONSE_METADATA_MAX_KEYS) return;
+    const safeKey = String(key || "").trim();
+    if (!safeKey || Object.prototype.hasOwnProperty.call(out, safeKey)) return;
+    out[safeKey] = coerceRealtimeResponseMetadataString(value);
+  };
+
   try {
     Object.entries(payload || {}).forEach(([key, value]) => {
-      const safeKey = String(key || "").trim();
-      if (!safeKey) return;
-      out[safeKey] = coerceRealtimeResponseMetadataString(value);
+      addMetadataValue(key, value);
     });
   } catch {}
-  out.metadata_schema_version = "PATCH_31_FINAL_HOTFIX_RESPONSE_METADATA_STRING_VALUES_V1";
+
+  // Add schema only when there is room. This prevents provider rejection:
+  // "Invalid response.metadata: too many properties".
+  addMetadataValue(
+    "metadata_schema_version",
+    "PATCH_31_FINAL_HOTFIX_RESPONSE_METADATA_LIMIT_16_V1",
+  );
+
   return out;
 }
 
@@ -8618,7 +8637,6 @@ function scheduleRealtimeIdleFollowup() {
         metadata: buildRealtimeResponseMetadata({
           source: "orkio_web",
           reason,
-          marker: "AO64D-HF5_RESPONSE_CREATE_GA_SAFE",
           persona_materialization_version: "PATCH_31_FINAL_PERSONA_MATERIALIZATION_AUDIT_V1",
           canonical_persona_version: "PATCH_31_FINAL_FULL_CANONICAL_REALTIME_PERSONA_V1",
           voice_precedence_version: voiceResolution.precedence_version,
