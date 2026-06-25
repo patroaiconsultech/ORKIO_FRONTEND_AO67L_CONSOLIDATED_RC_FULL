@@ -7,6 +7,8 @@
 // PATCH_31_REV_A_CANONICAL_VOICE_PRECEDENCE_AND_FULL_PERSONA
 // PATCH_31_FINAL_PREMIUM_REALTIME_PERSONA_VOICE_CONTRACT
 // PATCH_31_FINAL_HOTFIX_RESPONSE_METADATA_STRING_VALUES
+// PATCH_32_MANUAL_AGENT_AUTHORITY_MODE
+// PATCH_32_PREDEPLOY_PREMIUM_MANUAL_AGENT_VOICE_SYNC
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch, uploadFile, chat, chatStream, transcribeAudio, requestFounderHandoff, getRealtimeClientSecret, startRealtimeSession, startSummitSession, postRealtimeEventsBatch, endRealtimeSession, getRealtimeSession, getSummitSessionScore, submitSummitSessionReview, downloadRealtimeAta as downloadRealtimeAtaFile, guardRealtimeTranscript, getOrionSquadHealth, getOrionSquadPreview, getAgentCapabilities } from "../ui/api.js";
@@ -628,6 +630,13 @@ const ORKIO_CHAT_DIRECT_FALLBACK_ENABLED = (
 );
 
 const WALLET_UI_ENABLED = false;
+
+const PATCH_32_MANUAL_AGENT_AUTHORITY_VERSION = "PATCH_32_MANUAL_AGENT_AUTHORITY_MODE_V1";
+const PATCH_32_PREDEPLOY_PREMIUM_VERSION = "PATCH_32_PREDEPLOY_MANUAL_AGENT_AUTHORITY_VOICE_SYNC_V1";
+const PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE = "manual_button";
+const PATCH_32_TEAM_SEQUENCE_CONTROL = "manual_team_sequence";
+const PATCH_32_SINGLE_AGENT_CONTROL = "manual_agent_authority_single";
+const PATCH_32_CANONICAL_TEAM_AGENT_SLUGS = ["orkio", "orion", "chris", "laura"];
 
 const EMPTY_STATE_PREVIEW_STEPS = [
   { title: "Readiness", description: "Shell preservado, acessos visíveis e console pronto para a primeira ação com percepção premium." },
@@ -4427,7 +4436,185 @@ function formatAgentOptionLabel(agent) {
     return "";
   }
 
+  function resolveManualTeamAgents() {
+    const ordered = PATCH_32_CANONICAL_TEAM_AGENT_SLUGS
+      .map((slug) => findAgentByCanonicalSlug(slug) || findAgentByRuntimeIdentity(slug))
+      .filter(Boolean);
+
+    const byId = new Map();
+    ordered.forEach((agent) => {
+      const id = String(agent?.id || "").trim();
+      if (id && !byId.has(id)) byId.set(id, agent);
+    });
+
+    return Array.from(byId.values());
+  }
+
+  function buildManualAgentAuthorityContract(rawMessage = "", hostAgentId = null, options = {}) {
+    if (publicBetaOrkioOnly) return null;
+
+    const mode = ["team", "single", "multi"].includes(String(destMode || "").toLowerCase())
+      ? String(destMode || "team").toLowerCase()
+      : "team";
+
+    const mentionedNames = extractMentionNamesFromText(rawMessage);
+    const realtime = Boolean(options?.realtime);
+
+    if (mode === "single") {
+      const singleAgent =
+        findAgentByRuntimeIdentity(destSingle) ||
+        findAgentByCanonicalSlug(destSingle) ||
+        null;
+      const selectedSlug = canonicalAgentSlug(singleAgent?.slug || singleAgent?.key || singleAgent?.name || destSingle || "orkio") || "orkio";
+      const selectedName = canonicalizeSpeakerLabel(singleAgent?.name || registryCanonicalAgentDisplayNameFromSlug(selectedSlug) || selectedSlug);
+      return {
+        dest_mode: "single",
+        agent_id: singleAgent?.id || hostAgentId || destSingle || null,
+        agent_ids: singleAgent?.id ? [String(singleAgent.id)] : [],
+        target_agent_slug: selectedSlug,
+        target_agent_slugs: [selectedSlug],
+        visible_agent: selectedName,
+        requested_agent_names: Array.from(new Set([selectedName, ...(Array.isArray(mentionedNames) ? mentionedNames : [])].filter(Boolean))),
+        multi_agent_turn: false,
+        response_control: PATCH_32_SINGLE_AGENT_CONTROL,
+        manual_agent_lock: true,
+        manual_agent_source: PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE,
+        manual_authority_version: PATCH_32_MANUAL_AGENT_AUTHORITY_VERSION,
+        auto_handoff_enabled: false,
+        auto_handoff_ignored: true,
+        realtime_voice_agent_slug: selectedSlug,
+      };
+    }
+
+    if (mode === "multi") {
+      const selectedAgents = (Array.isArray(destMulti) ? destMulti : [])
+        .map((id) => findAgentByRuntimeIdentity(id) || findAgentByCanonicalSlug(id))
+        .filter(Boolean);
+      if (selectedAgents.length) {
+        const selectedSlugs = selectedAgents
+          .map((agent) => canonicalAgentSlug(agent?.slug || agent?.key || agent?.name || agent?.id || ""))
+          .filter(Boolean);
+        const selectedNames = selectedAgents
+          .map((agent, idx) => canonicalizeSpeakerLabel(agent?.name || registryCanonicalAgentDisplayNameFromSlug(selectedSlugs[idx]) || selectedSlugs[idx]))
+          .filter(Boolean);
+        return {
+          dest_mode: "multi",
+          agent_id: selectedAgents[0]?.id || hostAgentId || null,
+          agent_ids: selectedAgents.map((agent) => String(agent.id || "")).filter(Boolean),
+          target_agent_slug: selectedSlugs[0] || "orkio",
+          target_agent_slugs: selectedSlugs,
+          visible_agent: selectedNames.join(" + ") || "Multi",
+          requested_agent_names: Array.from(new Set([...selectedNames, ...(Array.isArray(mentionedNames) ? mentionedNames : [])].filter(Boolean))),
+          multi_agent_turn: selectedSlugs.length > 1,
+          response_control: selectedSlugs.length > 1 ? PATCH_32_TEAM_SEQUENCE_CONTROL : PATCH_32_SINGLE_AGENT_CONTROL,
+          manual_agent_lock: true,
+          manual_agent_source: PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE,
+          manual_authority_version: PATCH_32_MANUAL_AGENT_AUTHORITY_VERSION,
+          auto_handoff_enabled: false,
+          auto_handoff_ignored: true,
+          realtime_voice_agent_slug: selectedSlugs[0] || "orkio",
+        };
+      }
+    }
+
+    // PATCH 32:
+    // Team button means manual Team authority. It no longer depends on natural
+    // language direct-addressing. Text mode asks every visible team agent to
+    // answer in a sequenced panel; Realtime keeps Orkio as the audio moderator
+    // until multi-voice sequencing is hardened.
+    const teamAgents = resolveManualTeamAgents();
+    const teamSlugs = teamAgents
+      .map((agent) => canonicalAgentSlug(agent?.slug || agent?.key || agent?.name || agent?.id || ""))
+      .filter(Boolean);
+    const safeTeamSlugs = teamSlugs.length ? teamSlugs : ["orkio"];
+    const teamNames = safeTeamSlugs
+      .map((slug) => {
+        const agent = teamAgents.find((candidate) => canonicalAgentSlug(candidate?.slug || candidate?.key || candidate?.name || candidate?.id || "") === slug);
+        return canonicalizeSpeakerLabel(agent?.name || registryCanonicalAgentDisplayNameFromSlug(slug) || slug);
+      })
+      .filter(Boolean);
+    const orkioAgent =
+      teamAgents.find((agent) => canonicalAgentSlug(agent?.slug || agent?.key || agent?.name || agent?.id || "") === "orkio") ||
+      findAgentByCanonicalSlug("orkio") ||
+      findAgentByRuntimeIdentity("orkio") ||
+      null;
+
+    return {
+      dest_mode: "team",
+      agent_id: orkioAgent?.id || hostAgentId || null,
+      agent_ids: teamAgents.map((agent) => String(agent.id || "")).filter(Boolean),
+      target_agent_slug: realtime ? "orkio" : "team",
+      target_agent_slugs: safeTeamSlugs,
+      visible_agent: "Team",
+      requested_agent_names: Array.from(new Set([...(teamNames || []), ...(Array.isArray(mentionedNames) ? mentionedNames : [])].filter(Boolean))),
+      multi_agent_turn: !realtime && safeTeamSlugs.length > 1,
+      response_control: realtime ? "manual_team_audio_moderator" : PATCH_32_TEAM_SEQUENCE_CONTROL,
+      manual_agent_lock: true,
+      manual_agent_source: PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE,
+      manual_authority_version: PATCH_32_MANUAL_AGENT_AUTHORITY_VERSION,
+      auto_handoff_enabled: false,
+      auto_handoff_ignored: true,
+      realtime_voice_agent_slug: "orkio",
+    };
+  }
+
+  function isManualAgentAuthorityLocked() {
+    if (publicBetaOrkioOnly) return false;
+    const mode = String(destMode || "team").trim().toLowerCase();
+    return ["team", "single", "multi"].includes(mode);
+  }
+
+  function getManualRealtimeTargetSlug() {
+    const contract = buildManualAgentAuthorityContract("", null, { realtime: true });
+    return canonicalAgentSlug(contract?.realtime_voice_agent_slug || contract?.target_agent_slug || "orkio") || "orkio";
+  }
+
+  function buildManualRealtimeSessionUpdate({
+    targetAgent = null,
+    targetSlug = "orkio",
+    targetName = "Orkio",
+    voiceResolution = null,
+    teamMode = false,
+  } = {}) {
+    const safeSlug = canonicalAgentSlug(targetSlug || "orkio") || "orkio";
+    const safeName = canonicalizeSpeakerLabel(targetName || registryCanonicalAgentDisplayNameFromSlug(safeSlug) || safeSlug);
+    const providerVoice = coerceVoiceId(
+      voiceResolution?.voice ||
+      rtcVoiceRef.current ||
+      ORKIO_CANONICAL_VOICE_ID ||
+      ORKIO_DEFAULT_VOICE_ID
+    );
+
+    const canonicalPersonaInstructions = registryBuildCanonicalRealtimeAgentInstructions(safeSlug, {
+      fallbackSlug: "orkio",
+      includeKnownAgents: true,
+    });
+
+    const authorityLine = teamMode
+      ? "PATCH_32_PREDEPLOY_TEAM_AUDIO_AUTHORITY: o botão Team está ativo. No áudio, Orkio atua como moderador; no texto, o contrato pede resposta em fila/painel dos agentes do time."
+      : `PATCH_32_PREDEPLOY_MANUAL_AGENT_AUTHORITY: o botão selecionado pelo usuário é a autoridade. Responda somente como ${safeName}. Ignore menções a outros agentes até o usuário trocar o botão no topo.`;
+
+    return {
+      type: "realtime",
+      instructions: [
+        canonicalPersonaInstructions,
+        buildRealtimeAgentInstructions(targetAgent || { slug: safeSlug, name: safeName }),
+        authorityLine,
+        `Agente ativo manual: ${safeName} (${safeSlug}).`,
+        `Voz canônica solicitada nesta sessão: ${providerVoice}.`,
+      ].filter(Boolean).join("\n\n"),
+      audio: {
+        output: {
+          voice: providerVoice,
+        },
+      },
+    };
+  }
+
   function buildDestinationContract(rawMessage = "", hostAgentId = null) {
+    const manualContract = buildManualAgentAuthorityContract(rawMessage, hostAgentId, { realtime: false });
+    if (manualContract) return manualContract;
+
     const mode = ["team", "single", "multi"].includes(String(destMode || "").toLowerCase())
       ? String(destMode || "team").toLowerCase()
       : "team";
@@ -4441,6 +4628,7 @@ function formatAgentOptionLabel(agent) {
     // In Team Mode, the router can return a single speaker, a sequenced group
     // ("Orion e Chris, ..."), or a team panel ("Equipe, ..."). The UI remains
     // Team; target_agent_slug/target_agent_slugs define who receives the turn(s).
+    // PATCH_32: this automatic route is reached only when manual authority is not available.
     const turnRoute = !publicBetaOrkioOnly && mode === "team" ? resolveAgentTurnRouteFromMessage(rawMessage) : null;
     const routeSlugs = Array.from(new Set(
       (Array.isArray(turnRoute?.target_agent_slugs) && turnRoute.target_agent_slugs.length
@@ -4501,6 +4689,7 @@ function formatAgentOptionLabel(agent) {
       response_control: mode === "multi" ? "manual_multi" : "single_turn",
     };
   }
+
 
   function normalizeAgentLookupValue(value = "") {
     return String(value || "")
@@ -4744,6 +4933,134 @@ function formatAgentOptionLabel(agent) {
     return true;
   }
 
+  function applyManualAgentSelectionToRealtime(agentIdOrSlug = "", source = "manual_agent_button") {
+    if (!realtimeModeRef.current) return false;
+
+    const targetAgent =
+      findAgentByRuntimeIdentity(agentIdOrSlug) ||
+      findAgentByCanonicalSlug(agentIdOrSlug) ||
+      findAgentByCanonicalSlug("orkio") ||
+      null;
+
+    if (!targetAgent?.id) {
+      try {
+        logRealtimeStep("patch32_manual:realtime_selection_missing_agent", {
+          source,
+          requested: agentIdOrSlug || null,
+          version: PATCH_32_MANUAL_AGENT_AUTHORITY_VERSION,
+        });
+      } catch {}
+      return false;
+    }
+
+    const targetSlug = canonicalAgentSlug(targetAgent?.slug || targetAgent?.key || targetAgent?.name || targetAgent?.id || "orkio") || "orkio";
+    const targetName = canonicalizeSpeakerLabel(targetAgent?.name || registryCanonicalAgentDisplayNameFromSlug(targetSlug) || targetSlug);
+
+    try {
+      rtcHostAgentIdRef.current = targetAgent.id;
+      rtcHostAgentNameRef.current = targetName || targetAgent.name || targetSlug;
+      const voiceResolution = resolveAgentVoiceResolution(targetAgent);
+      if (voiceResolution?.voice) {
+        rtcVoiceRef.current = voiceResolution.voice;
+      }
+
+      const dc = rtcDcRef.current;
+      if (dc?.readyState === "open") {
+        const sessionPatch = buildManualRealtimeSessionUpdate({
+          targetAgent,
+          targetSlug,
+          targetName,
+          voiceResolution,
+          teamMode: false,
+        });
+        sendRealtimeClientEvent(dc, {
+          type: "session.update",
+          session: sessionPatch,
+        }, "patch32_predeploy_manual_agent_session_voice_sync");
+      }
+
+      setActiveRuntimeAgent(targetName);
+      setRuntimeHandoffLabel(`Controle manual: ${targetName}.`);
+      queueRealtimeTelemetry("manual_agent_authority_selected", {
+        source,
+        selected_agent_slug: targetSlug,
+        selected_agent_id: targetAgent.id,
+        selected_agent_name: targetName,
+        provider_voice: voiceResolution?.voice || null,
+        voice_source: voiceResolution?.voice_source || null,
+        session_voice_sync_version: PATCH_32_PREDEPLOY_PREMIUM_VERSION,
+        manual_agent_lock: true,
+        manual_authority_version: PATCH_32_MANUAL_AGENT_AUTHORITY_VERSION,
+      });
+      logRealtimeStep("patch32_manual:agent_selected", {
+        source,
+        selected_agent_slug: targetSlug,
+        selected_agent_id: targetAgent.id,
+        selected_agent_name: targetName,
+        provider_voice: voiceResolution?.voice || null,
+        voice_source: voiceResolution?.voice_source || null,
+        session_voice_sync_version: PATCH_32_PREDEPLOY_PREMIUM_VERSION,
+        manual_agent_lock: true,
+        version: PATCH_32_MANUAL_AGENT_AUTHORITY_VERSION,
+      });
+      return true;
+    } catch (err) {
+      try {
+        logRealtimeStep("patch32_manual:realtime_selection_failed", {
+          source,
+          requested: agentIdOrSlug || null,
+          message: err?.message || null,
+          version: PATCH_32_MANUAL_AGENT_AUTHORITY_VERSION,
+        });
+      } catch {}
+      return false;
+    }
+  }
+
+  function applyManualTeamSelectionToRealtime(source = "manual_team_button") {
+    if (!realtimeModeRef.current) return false;
+    const orkioAgent = findAgentByCanonicalSlug("orkio") || findAgentByRuntimeIdentity("orkio") || null;
+    if (!orkioAgent?.id) return false;
+
+    try {
+      rtcHostAgentIdRef.current = orkioAgent.id;
+      rtcHostAgentNameRef.current = "Orkio";
+      const voiceResolution = resolveAgentVoiceResolution(orkioAgent);
+      if (voiceResolution?.voice) rtcVoiceRef.current = voiceResolution.voice;
+
+      const dc = rtcDcRef.current;
+      if (dc?.readyState === "open") {
+        const sessionPatch = buildManualRealtimeSessionUpdate({
+          targetAgent: orkioAgent,
+          targetSlug: "orkio",
+          targetName: "Orkio",
+          voiceResolution,
+          teamMode: true,
+        });
+        sendRealtimeClientEvent(dc, {
+          type: "session.update",
+          session: sessionPatch,
+        }, "patch32_predeploy_manual_team_session_voice_sync");
+      }
+
+      setActiveRuntimeAgent("Team");
+      setRuntimeHandoffLabel("Controle manual: Team.");
+      queueRealtimeTelemetry("manual_agent_authority_selected", {
+        source,
+        selected_agent_slug: "team",
+        realtime_voice_agent_slug: "orkio",
+        provider_voice: voiceResolution?.voice || null,
+        voice_source: voiceResolution?.voice_source || null,
+        session_voice_sync_version: PATCH_32_PREDEPLOY_PREMIUM_VERSION,
+        manual_agent_lock: true,
+        manual_authority_version: PATCH_32_MANUAL_AGENT_AUTHORITY_VERSION,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function isRealtimeOrionHandoffIntent(rawText = "") {
     const normalized = normalizeAgentLookupValue(rawText);
     if (!normalized) return false;
@@ -4814,6 +5131,27 @@ function formatAgentOptionLabel(agent) {
   }
 
   function maybeApplyRealtimeAgentHandoffFromTranscript(rawText = "", source = "transcript") {
+    if (isManualAgentAuthorityLocked()) {
+      try {
+        logRealtimeStep("patch32_manual:auto_handoff_ignored", {
+          source,
+          active_dest_mode: destMode,
+          selected_agent_slug: getManualRealtimeTargetSlug(),
+          transcript: String(rawText || "").slice(0, 180),
+          manual_agent_lock: true,
+          version: PATCH_32_MANUAL_AGENT_AUTHORITY_VERSION,
+        });
+        queueRealtimeTelemetry("manual_auto_handoff_ignored", {
+          source,
+          active_dest_mode: destMode,
+          selected_agent_slug: getManualRealtimeTargetSlug(),
+          manual_agent_lock: true,
+          manual_authority_version: PATCH_32_MANUAL_AGENT_AUTHORITY_VERSION,
+        });
+      } catch {}
+      return false;
+    }
+
     const targetSlug = resolveRealtimeHandoffTargetFromTranscript(rawText);
     if (!targetSlug) return false;
 
@@ -5306,6 +5644,11 @@ async function sendMessage(presetMsg = null, opts = {}) {
             visible_agent: destinationContract.visible_agent,
             target_agent_slug: destinationContract.target_agent_slug,
             requested_agent_names: destinationContract.requested_agent_names,
+            manual_agent_lock: Boolean(destinationContract.manual_agent_lock),
+            manual_agent_source: destinationContract.manual_agent_source || "",
+            manual_authority_version: destinationContract.manual_authority_version || "",
+            response_control: destinationContract.response_control,
+            multi_agent_turn: destinationContract.multi_agent_turn,
             signal: directCtl.signal,
           });
         } catch (err) {
@@ -5428,6 +5771,10 @@ async function sendMessage(presetMsg = null, opts = {}) {
             requested_agent_names: destinationContract.requested_agent_names,
             multi_agent_turn: destinationContract.multi_agent_turn,
             response_control: destinationContract.response_control,
+            manual_agent_lock: Boolean(destinationContract.manual_agent_lock),
+            manual_agent_source: destinationContract.manual_agent_source || "",
+            manual_authority_version: destinationContract.manual_authority_version || "",
+            auto_handoff_enabled: destinationContract.auto_handoff_enabled !== false,
             signal: ctl.signal,
           }), CHAT_STREAM_CONNECT_TIMEOUT_MS, "CHAT_STREAM_CONNECT_TIMEOUT");
           streamMeta = await withTimeout(consumeChatStream(streamResp, {
@@ -6713,6 +7060,10 @@ async function confirmFounderHandoff() {
   }
 
   function getRealtimeAuthorityTargetSlug() {
+    if (isManualAgentAuthorityLocked()) {
+      return getManualRealtimeTargetSlug() || "orkio";
+    }
+
     return canonicalAgentSlug(
       meetingStateRef.current?.active_persona_slug ||
       meetingStateRef.current?.active_speaker_slug ||
@@ -8648,6 +8999,7 @@ function scheduleRealtimeIdleFollowup() {
           persona_slug: meetingStateRef.current?.active_persona_slug || targetAgentSlugForResponse,
           provider_voice: voice,
           voice_source: voiceResolution.voice_source,
+          session_voice_sync_version: PATCH_32_PREDEPLOY_PREMIUM_VERSION,
           db_voice_ignored: voiceResolution.db_voice_ignored,
           final_identity_lock: true,
         }),
@@ -8891,16 +9243,28 @@ function scheduleRealtimeIdleFollowup() {
       try { setSummitSessionScore(null); } catch {}
 
 
-      const agentIdToSend = resolveRealtimeAgentId(); // realtime must honor the selected visible agent
-      const selectedAgentObjForRealtime = findAgentByRuntimeIdentity(agentIdToSend) || findAgentByRuntimeIdentity(destSingle) || null;
+      const preliminaryAgentIdToSend = resolveRealtimeAgentId(); // realtime must honor the selected visible agent
+      const realtimeManualContract = buildManualAgentAuthorityContract("", preliminaryAgentIdToSend, { realtime: true }) || {};
+      const agentIdToSend = realtimeManualContract.agent_id || preliminaryAgentIdToSend;
+      const selectedAgentObjForRealtime =
+        findAgentByRuntimeIdentity(agentIdToSend) ||
+        findAgentByCanonicalSlug(realtimeManualContract.realtime_voice_agent_slug) ||
+        findAgentByRuntimeIdentity(realtimeManualContract.realtime_voice_agent_slug) ||
+        findAgentByRuntimeIdentity(destSingle) ||
+        findAgentByCanonicalSlug(realtimeManualContract.target_agent_slug) ||
+        null;
       rtcHostAgentIdRef.current = agentIdToSend || null;
-      rtcHostAgentNameRef.current = String(selectedAgentObjForRealtime?.name || "").trim() || "Orkio";
+      rtcHostAgentNameRef.current = String(selectedAgentObjForRealtime?.name || realtimeManualContract.visible_agent || "").trim() || "Orkio";
       logRealtimeStep("start:agent_resolved", {
         agent_id: agentIdToSend || null,
         agent_name: rtcHostAgentNameRef.current,
         destMode,
         destSingle,
         destMulti,
+        manual_agent_lock: Boolean(realtimeManualContract.manual_agent_lock),
+        manual_authority_version: realtimeManualContract.manual_authority_version || null,
+        target_agent_slug: realtimeManualContract.target_agent_slug || null,
+        target_agent_slugs: realtimeManualContract.target_agent_slugs || [],
       });
       const ORKIO_ENV = (typeof window !== "undefined" && window.__ORKIO_ENV__) ? window.__ORKIO_ENV__ : {};
       const envVoice = (ORKIO_ENV.VITE_REALTIME_VOICE || import.meta.env.VITE_REALTIME_VOICE || "").trim();
@@ -8911,12 +9275,28 @@ function scheduleRealtimeIdleFollowup() {
       const magicEnabled = (ORKIO_ENV.VITE_REALTIME_MAGICWORDS || import.meta.env.VITE_REALTIME_MAGICWORDS || "true").toString().trim().toLowerCase() !== "false";
       rtcMagicEnabledRef.current = magicEnabled;
 
-      // PATCH_31: Voice priority is canonical registry-driven:
-      // agent DB override > per-agent env override declared in Agent Registry > canonical registry voice > realtime default.
+      // PATCH_32_PREDEPLOY:
+      // Voice priority is canonical registry-driven and must honor the selected
+      // manual button before the Realtime session starts.
       const selectedAgentObj = selectedAgentObjForRealtime || findAgentByRuntimeIdentity(agentIdToSend) || (agents || []).find(a => String(a.id) === String(agentIdToSend));
-      const rtVoice = coerceVoiceId(resolveAgentVoice(selectedAgentObj || { id: agentIdToSend }) || envVoice || ORKIO_DEFAULT_VOICE_ID);
+      const selectedVoiceResolution = resolveAgentVoiceResolution(selectedAgentObj || { id: agentIdToSend, slug: realtimeManualContract.realtime_voice_agent_slug || realtimeManualContract.target_agent_slug || "orkio" });
+      const rtVoice = coerceVoiceId(selectedVoiceResolution.voice || envVoice || ORKIO_DEFAULT_VOICE_ID);
       rtcVoiceRef.current = rtVoice;
-      const realtimeAgentInstructions = buildRealtimeAgentInstructions(selectedAgentObj);
+      const realtimeAgentInstructions = [
+        registryBuildCanonicalRealtimeAgentInstructions(realtimeManualContract.realtime_voice_agent_slug || realtimeManualContract.target_agent_slug || selectedAgentObj?.slug || selectedAgentObj?.name || "orkio", {
+          fallbackSlug: "orkio",
+          includeKnownAgents: true,
+        }),
+        buildRealtimeAgentInstructions(selectedAgentObj),
+        `PATCH_32_PREDEPLOY_START_VOICE_SYNC: sessão iniciada com voz ${rtVoice} para o agente manual selecionado.`,
+      ].filter(Boolean).join("\n\n");
+      logRealtimeStep("patch32_predeploy:start_voice_resolved", {
+        provider_voice: rtVoice,
+        voice_source: selectedVoiceResolution.voice_source || null,
+        selected_agent_slug: realtimeManualContract.realtime_voice_agent_slug || realtimeManualContract.target_agent_slug || null,
+        manual_agent_lock: Boolean(realtimeManualContract.manual_agent_lock),
+        session_voice_sync_version: PATCH_32_PREDEPLOY_PREMIUM_VERSION,
+      });
 
       // AO68A-HF5: explicit Summit/platform mode + onboarding language propagation.
       // Before HF5, language_profile was only sent in Summit mode. Normal Realtime stayed on env/auto.
@@ -8937,14 +9317,23 @@ function scheduleRealtimeIdleFollowup() {
         ttl_seconds: effectiveRealtimeTtlSeconds,
         language_profile: languageProfile,
         language: languageProfile,
-        dest_mode: destMode,
-        visible_agent: rtcHostAgentNameRef.current || selectedAgentObj?.name || null,
-        target_agent_slug: canonicalAgentSlug(selectedAgentObj?.slug || selectedAgentObj?.key || selectedAgentObj?.name || agentIdToSend),
-        target_agent_slugs: [],
-        requested_agent_names: selectedAgentObj?.name ? [selectedAgentObj.name] : [],
-        agent_ids: String(destMode || "").trim().toLowerCase() === "multi" ? destMulti : null,
-        multi_agent_turn: String(destMode || "").trim().toLowerCase() === "multi",
-        response_control: String(destMode || "").trim().toLowerCase() === "multi" ? "manual_multi" : "single_turn",
+        dest_mode: realtimeManualContract.dest_mode || destMode,
+        visible_agent: realtimeManualContract.visible_agent || rtcHostAgentNameRef.current || selectedAgentObj?.name || null,
+        target_agent_slug: realtimeManualContract.target_agent_slug || canonicalAgentSlug(selectedAgentObj?.slug || selectedAgentObj?.key || selectedAgentObj?.name || agentIdToSend),
+        target_agent_slugs: Array.isArray(realtimeManualContract.target_agent_slugs) ? realtimeManualContract.target_agent_slugs : [],
+        requested_agent_names: Array.isArray(realtimeManualContract.requested_agent_names) && realtimeManualContract.requested_agent_names.length
+          ? realtimeManualContract.requested_agent_names
+          : (selectedAgentObj?.name ? [selectedAgentObj.name] : []),
+        agent_ids: Array.isArray(realtimeManualContract.agent_ids) && realtimeManualContract.agent_ids.length
+          ? realtimeManualContract.agent_ids
+          : (String(destMode || "").trim().toLowerCase() === "multi" ? destMulti : null),
+        multi_agent_turn: Boolean(realtimeManualContract.multi_agent_turn),
+        response_control: realtimeManualContract.response_control || (String(destMode || "").trim().toLowerCase() === "multi" ? "manual_multi" : "single_turn"),
+        manual_agent_lock: Boolean(realtimeManualContract.manual_agent_lock),
+        manual_agent_source: realtimeManualContract.manual_agent_source || "",
+        manual_authority_version: realtimeManualContract.manual_authority_version || "",
+        session_voice_sync_version: PATCH_32_PREDEPLOY_PREMIUM_VERSION,
+        auto_handoff_enabled: realtimeManualContract.auto_handoff_enabled !== false,
         // EFATA777 V8:
         // Admin/founder Realtime is client-controlled so the frontend can inspect
         // the final transcript, apply the voice handoff, and only then create one
@@ -9536,6 +9925,9 @@ function scheduleRealtimeIdleFollowup() {
                 agent_id: rtcHostAgentIdRef.current || null,
                 dest_mode: destMode,
                 meeting_orchestrator_client: true,
+                manual_agent_lock: isManualAgentAuthorityLocked(),
+                manual_authority_version: PATCH_32_MANUAL_AGENT_AUTHORITY_VERSION,
+                selected_agent_slug: getManualRealtimeTargetSlug(),
               },
             });
             try {} catch {}
@@ -10182,6 +10574,29 @@ function scheduleRealtimeIdleFollowup() {
       const state = normalizeRealtimeMeetingState(batchResult);
       if (!state || typeof state !== "object") return false;
 
+      if (isManualAgentAuthorityLocked()) {
+        const manualTargetSlug = getManualRealtimeTargetSlug();
+        const incomingSlug = canonicalAgentSlug(
+          state?.active_speaker_slug ||
+          state?.active_persona_slug ||
+          state?.target_agent_slug ||
+          state?.visible_agent ||
+          ""
+        );
+        if (incomingSlug && manualTargetSlug && incomingSlug !== manualTargetSlug && incomingSlug !== "team") {
+          try {
+            logRealtimeStep("patch32_manual:meeting_state_ignored", {
+              source,
+              incoming_speaker_slug: incomingSlug,
+              manual_target_slug: manualTargetSlug,
+              manual_agent_lock: true,
+              version: PATCH_32_MANUAL_AGENT_AUTHORITY_VERSION,
+            });
+          } catch {}
+          return false;
+        }
+      }
+
       const previousState = meetingStateRef.current && typeof meetingStateRef.current === "object"
         ? meetingStateRef.current
         : null;
@@ -10370,6 +10785,25 @@ function scheduleRealtimeIdleFollowup() {
   async function handleRealtimeMeetingOrchestratorDirective(batchResult) {
     const directive = normalizeRealtimeMeetingDirective(batchResult);
     if (!directive) return false;
+    if (isManualAgentAuthorityLocked()) {
+      try {
+        logRealtimeStep("patch32_manual:meeting_orchestrator_directive_ignored", {
+          directive_kind: directive?.kind || null,
+          directive_target: directive?.target_agent_slug || directive?.active_agent_slug || null,
+          selected_agent_slug: getManualRealtimeTargetSlug(),
+          manual_agent_lock: true,
+          version: PATCH_32_MANUAL_AGENT_AUTHORITY_VERSION,
+        });
+        queueRealtimeTelemetry("manual_meeting_orchestrator_directive_ignored", {
+          directive_kind: directive?.kind || null,
+          directive_target: directive?.target_agent_slug || directive?.active_agent_slug || null,
+          selected_agent_slug: getManualRealtimeTargetSlug(),
+          manual_agent_lock: true,
+          manual_authority_version: PATCH_32_MANUAL_AGENT_AUTHORITY_VERSION,
+        });
+      } catch {}
+      return false;
+    }
     applyRealtimeMeetingStateFromPayload(batchResult, "meeting_orchestrator_directive");
 
     const sid = String(directive?.session_id || "").trim();
@@ -10559,17 +10993,25 @@ function scheduleRealtimeIdleFollowup() {
     rtcEventQueueRef.current = [];
     try {
       const echoSpeaker = resolveRealtimeMeetingEchoSpeaker();
+      const manualEventContract = buildManualAgentAuthorityContract("", echoSpeaker.agent_id || rtcHostAgentIdRef.current || null, { realtime: true }) || {};
       const batchResult = await postRealtimeEventsBatch({
         session_id: sid,
         events: q,
-        dest_mode: destMode || "team",
-        agent_id: echoSpeaker.agent_id || rtcHostAgentIdRef.current || null,
-        visible_agent: echoSpeaker.name || rtcHostAgentNameRef.current || activeRuntimeAgent || "",
-        target_agent_slug: echoSpeaker.slug || canonicalAgentSlug(rtcHostAgentNameRef.current || activeRuntimeAgent || ""),
-        target_agent_slugs: [echoSpeaker.slug || canonicalAgentSlug(rtcHostAgentNameRef.current || activeRuntimeAgent || "")].filter(Boolean),
-        requested_agent_names: echoSpeaker.name ? [echoSpeaker.name] : (rtcHostAgentNameRef.current ? [rtcHostAgentNameRef.current] : []),
-        multi_agent_turn: false,
-        response_control: "single_turn",
+        dest_mode: manualEventContract.dest_mode || destMode || "team",
+        agent_id: manualEventContract.agent_id || echoSpeaker.agent_id || rtcHostAgentIdRef.current || null,
+        visible_agent: manualEventContract.visible_agent || echoSpeaker.name || rtcHostAgentNameRef.current || activeRuntimeAgent || "",
+        target_agent_slug: manualEventContract.target_agent_slug || echoSpeaker.slug || canonicalAgentSlug(rtcHostAgentNameRef.current || activeRuntimeAgent || ""),
+        target_agent_slugs: Array.isArray(manualEventContract.target_agent_slugs) && manualEventContract.target_agent_slugs.length
+          ? manualEventContract.target_agent_slugs
+          : [echoSpeaker.slug || canonicalAgentSlug(rtcHostAgentNameRef.current || activeRuntimeAgent || "")].filter(Boolean),
+        requested_agent_names: Array.isArray(manualEventContract.requested_agent_names) && manualEventContract.requested_agent_names.length
+          ? manualEventContract.requested_agent_names
+          : (echoSpeaker.name ? [echoSpeaker.name] : (rtcHostAgentNameRef.current ? [rtcHostAgentNameRef.current] : [])),
+        multi_agent_turn: Boolean(manualEventContract.multi_agent_turn),
+        response_control: manualEventContract.response_control || "single_turn",
+        manual_agent_lock: Boolean(manualEventContract.manual_agent_lock),
+        manual_agent_source: manualEventContract.manual_agent_source || "",
+        manual_authority_version: manualEventContract.manual_authority_version || "",
         meeting_state: meetingStateRef.current || null,
         client_echo_version: "PATCH_30_SERVER_SPEAKER_AUTHORITY_CLIENT_ECHO_QUARANTINE_V1",
       });
@@ -13272,7 +13714,7 @@ async function stopRealtime(reason = 'client_stop') {
             <div style={{ ...styles.health, display: isMobile ? "none" : undefined }}>
               {publicBetaOrkioOnly
                 ? "Destino: Orkio • beta público"
-                : `Destino: ${destMode === "team" ? "Team" : destMode === "single" ? "Agente" : "Multi"} • @Team / @Orkio / @Chris${canAccessAdmin ? " / @Orion" : ""}`}
+                : `Destino manual: ${destMode === "team" ? "Team" : destMode === "single" ? "Agente" : "Multi"} • botões: Team / Orkio / Chris${canAccessAdmin ? " / Orion / Laura" : ""}`}
             </div>
             {isMobile ? (
               <div
@@ -13444,7 +13886,7 @@ async function stopRealtime(reason = 'client_stop') {
 
                 {canAccessAdmin ? (
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                    {["Team", "Orkio", "Chris", "Orion"].map((agentLabel) => {
+                    {["Team", "Orkio", "Chris", "Orion", "Laura"].map((agentLabel) => {
                       const agentSlug = canonicalAgentSlug(agentLabel);
                       const selectedAgent = findAgentByRuntimeIdentity(destSingle);
                       const activeSlug = destMode === "team" ? "team" : canonicalAgentSlug(selectedAgent?.name || selectedAgent?.slug || selectedAgent?.id || "");
@@ -13456,10 +13898,26 @@ async function stopRealtime(reason = 'client_stop') {
                           onClick={() => {
                             if (agentSlug === "team") {
                               setDestMode("team");
-                              persistDestinationState({ mode: "team" });
+                              setDestSingle("");
+                              setDestMulti([]);
+                              persistDestinationState({ mode: "team", single: "", multi: [] });
+                              applyManualTeamSelectionToRealtime("quick_team_button");
+                              try {
+                                setRuntimeHandoffLabel("Controle manual: Team.");
+                                setUploadStatus("🤝 Team selecionado. Todos respondem por texto em fila; no áudio, Orkio modera por enquanto.");
+                                setTimeout(() => setUploadStatus(""), 2600);
+                              } catch {}
                               return;
                             }
                             const ok = selectSingleAgentForRuntime(agentSlug, "quick_agent_button");
+                            if (ok) {
+                              applyManualAgentSelectionToRealtime(agentSlug, "quick_agent_button");
+                              try {
+                                setRuntimeHandoffLabel(`Controle manual: ${agentLabel}.`);
+                                setUploadStatus(`🎯 ${agentLabel} selecionado como agente ativo.`);
+                                setTimeout(() => setUploadStatus(""), 1800);
+                              } catch {}
+                            }
                             if (!ok) {
                               setUploadStatus(`Agente ${agentLabel} ainda não apareceu no roster.`);
                               setTimeout(() => setUploadStatus(""), 1800);
