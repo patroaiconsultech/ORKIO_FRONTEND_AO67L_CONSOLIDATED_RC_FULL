@@ -6,6 +6,7 @@
 // PATCH_31_CANONICAL_AGENT_VOICE_PROFILE_PREMIUM
 // PATCH_31_REV_A_CANONICAL_VOICE_PRECEDENCE_AND_FULL_PERSONA
 // PATCH_31_FINAL_PREMIUM_REALTIME_PERSONA_VOICE_CONTRACT
+// PATCH_31_FINAL_HOTFIX_RESPONSE_METADATA_STRING_VALUES
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch, uploadFile, chat, chatStream, transcribeAudio, requestFounderHandoff, getRealtimeClientSecret, startRealtimeSession, startSummitSession, postRealtimeEventsBatch, endRealtimeSession, getRealtimeSession, getSummitSessionScore, submitSummitSessionReview, downloadRealtimeAta as downloadRealtimeAtaFile, guardRealtimeTranscript, getOrionSquadHealth, getOrionSquadPreview, getAgentCapabilities } from "../ui/api.js";
@@ -1489,6 +1490,33 @@ function resolveAgentVoiceResolution(agentLike) {
 function resolveAgentVoice(agentLike) {
   return resolveAgentVoiceResolution(agentLike || {}).voice;
 }
+
+
+function coerceRealtimeResponseMetadataString(value) {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number" || typeof value === "bigint") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function buildRealtimeResponseMetadata(payload = {}) {
+  const out = {};
+  try {
+    Object.entries(payload || {}).forEach(([key, value]) => {
+      const safeKey = String(key || "").trim();
+      if (!safeKey) return;
+      out[safeKey] = coerceRealtimeResponseMetadataString(value);
+    });
+  } catch {}
+  out.metadata_schema_version = "PATCH_31_FINAL_HOTFIX_RESPONSE_METADATA_STRING_VALUES_V1";
+  return out;
+}
+
 
 
 function canonicalizeSpeakerLabel(raw) {
@@ -8587,7 +8615,7 @@ function scheduleRealtimeIdleFollowup() {
           },
         },
         instructions: responseInstructions,
-        metadata: {
+        metadata: buildRealtimeResponseMetadata({
           source: "orkio_web",
           reason,
           marker: "AO64D-HF5_RESPONSE_CREATE_GA_SAFE",
@@ -8604,7 +8632,7 @@ function scheduleRealtimeIdleFollowup() {
           voice_source: voiceResolution.voice_source,
           db_voice_ignored: voiceResolution.db_voice_ignored,
           final_identity_lock: true,
-        },
+        }),
       },
     }, `${reason}:response_create`);
 
