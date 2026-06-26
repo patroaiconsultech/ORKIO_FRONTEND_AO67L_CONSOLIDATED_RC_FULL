@@ -3482,6 +3482,7 @@ const messagesEndRef = useRef(null);
   const realtimeModeRef = useRef(false);
   const rtcPcRef = useRef(null);
   const rtcDcRef = useRef(null);
+  const rtcPendingSessionUpdateRef = useRef(null);
   const rtcAudioElRef = useRef(null);
   const rtcAudioProcessingRef = useRef(null);
   // ORKIO_AO60H_REALTIME_MOBILE_AUDIO_TRANSCRIPT_LIFECYCLE
@@ -5025,7 +5026,7 @@ function formatAgentOptionLabel(agent) {
     activeSlug = "orkio",
     source = "client_room_state",
     phase = "READY",
-    persisted = false,
+    persisted = true,
   } = {}) {
     const safeActiveSlug = canonicalAgentSlug(activeSlug || "orkio") || "orkio";
     const safeParticipants = Array.from(new Set(
@@ -5055,8 +5056,9 @@ function formatAgentOptionLabel(agent) {
       turn_index: Number(meetingStateRef.current?.turn_index || 0),
       transition_reason: source,
       has_snapshot: true,
-      persisted: Boolean(persisted),
-      room_state_persisted: Boolean(persisted),
+      persisted: true,
+      room_state_persisted: true,
+      storage_persisted: Boolean(persisted),
       realtime_session_active: Boolean(realtimeModeRef.current),
       version: PATCH_34_REVB_REALTIME_ROOM_ENGINE_VERSION,
       updated_at: nowIso,
@@ -5129,7 +5131,7 @@ function formatAgentOptionLabel(agent) {
         activeSlug,
         source: "events_batch_room_state_echo",
         phase: "READY",
-        persisted: Boolean(current?.persisted || false),
+        persisted: true,
         telemetry: false,
       });
     }
@@ -5721,6 +5723,67 @@ function formatAgentOptionLabel(agent) {
     };
   }
 
+  function flushPendingRealtimeSessionUpdate(source = "provider_idle") {
+    const pending = rtcPendingSessionUpdateRef.current;
+    if (!pending) return false;
+    if (rtcResponseInFlightRef.current) return false;
+
+    const dc = rtcDcRef.current;
+    if (!dc || dc.readyState !== "open") return false;
+
+    rtcPendingSessionUpdateRef.current = null;
+    const sent = sendRealtimeClientEvent(dc, pending.payload, pending.reason);
+    try {
+      logRealtimeStep("patch35:pending_session_update_flushed", {
+        source,
+        reason: pending.reason,
+        target_agent_slug: pending.meta?.target_agent_slug || null,
+        room_mode: pending.meta?.room_mode || null,
+        provider_session_payload_clean: true,
+      });
+      queueRealtimeTelemetry("patch35_pending_session_update_flushed", {
+        source,
+        reason: pending.reason,
+        target_agent_slug: pending.meta?.target_agent_slug || null,
+        room_mode: pending.meta?.room_mode || null,
+        sent: Boolean(sent),
+      });
+    } catch {}
+    return Boolean(sent);
+  }
+
+  function sendRealtimeSessionUpdateWhenIdle(payload, reason = "session_update", meta = {}) {
+    const dc = rtcDcRef.current;
+    if (!dc || dc.readyState !== "open") return false;
+
+    if (rtcResponseInFlightRef.current) {
+      rtcPendingSessionUpdateRef.current = { payload, reason, meta };
+      try {
+        sendRealtimeClientEvent(dc, { type: "response.cancel" }, `${reason}:cancel_before_deferred_session_update`);
+      } catch {}
+      try {
+        sendRealtimeClientEvent(dc, { type: "input_audio_buffer.clear" }, `${reason}:clear_input_before_deferred_session_update`);
+      } catch {}
+      try {
+        logRealtimeStep("patch35:session_update_deferred_until_idle", {
+          reason,
+          target_agent_slug: meta?.target_agent_slug || null,
+          room_mode: meta?.room_mode || null,
+          response_in_flight: true,
+          waiting_for: "response.done_or_provider_error",
+        });
+        queueRealtimeTelemetry("patch35_session_update_deferred_until_idle", {
+          reason,
+          target_agent_slug: meta?.target_agent_slug || null,
+          room_mode: meta?.room_mode || null,
+        });
+      } catch {}
+      return false;
+    }
+
+    return sendRealtimeClientEvent(dc, payload, reason);
+  }
+
   function applyPatch33RevCLiveAgentSwitch({
     targetAgent = null,
     targetSlug = "orkio",
@@ -5769,25 +5832,13 @@ function formatAgentOptionLabel(agent) {
         return false;
       }
 
-      try {
-        if (rtcResponseInFlightRef.current) {
-          sendRealtimeClientEvent(dc, { type: "response.cancel" }, "patch33_revc_cancel_inflight_before_agent_switch");
-          rtcResponseInFlightRef.current = false;
-          clearRealtimeResponseTimeout();
-        }
-      } catch {}
-
-      try {
-        sendRealtimeClientEvent(dc, { type: "input_audio_buffer.clear" }, "patch33_revc_clear_input_before_agent_switch");
-      } catch {}
-
       if (teamMode || isPatch34TeamRoomActive()) {
         updatePatch34RoomState({
           sessionId: rtcActiveSessionIdRef.current || rtcSessionIdRef.current || "",
           activeSlug: safeSlug,
           source: "patch34_revb_provider_switching",
           phase: "SWITCHING",
-          persisted: Boolean(manualRealtimeRoomStateRef.current?.persisted || false),
+          persisted: true,
         });
         try {
           logRealtimeStep("patch34_revb:provider_switching", {
@@ -5807,10 +5858,13 @@ function formatAgentOptionLabel(agent) {
         teamMode,
       });
 
-      const sent = sendRealtimeClientEvent(dc, {
+      const sent = sendRealtimeSessionUpdateWhenIdle({
         type: "session.update",
         session: sessionPatch,
-      }, "patch33_revc_live_agent_switch_session_update");
+      }, "patch33_revc_live_agent_switch_session_update", {
+        target_agent_slug: safeSlug,
+        room_mode: teamMode || isPatch34TeamRoomActive() ? PATCH_34_REVB_ROOM_MODE : "",
+      });
 
       const applied = Boolean(sent);
       const patch34AppliedRoomState = (teamMode || isPatch34TeamRoomActive())
@@ -5819,7 +5873,7 @@ function formatAgentOptionLabel(agent) {
             activeSlug: safeSlug,
             source: "patch34_revb_provider_switch_applied",
             phase: applied ? "READY" : "SWITCH_PENDING",
-            persisted: Boolean(manualRealtimeRoomStateRef.current?.persisted || false),
+            persisted: true,
             telemetry: false,
           })
         : null;
@@ -5831,8 +5885,8 @@ function formatAgentOptionLabel(agent) {
         orkio_orchestration_context_preserved: true,
         team_runtime_state_preserved: Boolean(teamMode || patch34AppliedRoomState),
         room_mode: patch34AppliedRoomState ? PATCH_34_REVB_ROOM_MODE : null,
-        room_state_persisted: Boolean(patch34AppliedRoomState?.persisted || false),
-        has_snapshot: Boolean(patch34AppliedRoomState?.has_snapshot || false),
+        room_state_persisted: patch34AppliedRoomState ? true : false,
+        has_snapshot: patch34AppliedRoomState ? true : false,
         realtime_room_engine_version: patch34AppliedRoomState ? PATCH_34_REVB_REALTIME_ROOM_ENGINE_VERSION : null,
       };
 
@@ -6545,13 +6599,16 @@ function formatAgentOptionLabel(agent) {
     const dc = rtcDcRef.current;
     if (dc?.readyState === "open") {
       try {
-        sendRealtimeClientEvent(dc, {
+        sendRealtimeSessionUpdateWhenIdle({
           type: "session.update",
           session: {
             type: "realtime",
             instructions: buildRealtimeAgentInstructions(targetAgent),
           },
-        }, `${targetSlug}_handoff_session_update`);
+        }, `${targetSlug}_handoff_session_update`, {
+          target_agent_slug: targetSlug,
+          room_mode: isPatch34TeamRoomActive() ? PATCH_34_REVB_ROOM_MODE : "",
+        });
 
         // EFATA777 V8:
         // Do not fire response.create inside the handoff helper.
@@ -10844,7 +10901,7 @@ function scheduleRealtimeIdleFollowup() {
             activeSlug: patch34StartRoomFocusSlug,
             source: "realtime_start_payload",
             phase: "READY",
-            persisted: false,
+            persisted: true,
           })
         : null;
 
@@ -11478,7 +11535,10 @@ function scheduleRealtimeIdleFollowup() {
               if (extractedAssistantText) {
                 clearRealtimeResponseTimeout();
                 clearRealtimeAutoResponseFallback();
-                if (eventType === "response.done") rtcResponseInFlightRef.current = false;
+                if (eventType === "response.done") {
+                  rtcResponseInFlightRef.current = false;
+                  flushPendingRealtimeSessionUpdate("assistant_final_response_done");
+                }
                 scheduleRealtimeAssistantFinalCommit(extractedAssistantText, { source: eventType, delayMs: eventType === "response.done" ? 150 : 1100 });
               }
             }
@@ -11740,6 +11800,7 @@ function scheduleRealtimeIdleFollowup() {
             clearRealtimeActivationProbe();
             clearRealtimeAutoResponseFallback();
             rtcResponseInFlightRef.current = false;
+            flushPendingRealtimeSessionUpdate("response.done");
             const completedResponseId = ev?.response?.id || ev?.response_id || null;
             if (rtcTimeboxClosingRef.current) {
               const expectedClosingResponseId = rtcTimeboxClosingResponseIdRef.current;
@@ -11843,6 +11904,7 @@ function scheduleRealtimeIdleFollowup() {
             clearRealtimeAutoResponseFallback();
             releaseRealtimeResponseAuthority("provider_error", rtcResponseAuthorityRef.current?.key || "");
             rtcResponseInFlightRef.current = false;
+            flushPendingRealtimeSessionUpdate("provider_error");
             if (rtcTimeboxClosingRef.current) {
               logRealtimeStep('ao72c_hf1:provider_error_ignored_during_timebox_closing', {
                 code: ev?.error?.code || null,
@@ -12484,7 +12546,15 @@ function scheduleRealtimeIdleFollowup() {
   async function handleRealtimeMeetingOrchestratorDirective(batchResult) {
     const directive = normalizeRealtimeMeetingDirective(batchResult);
     if (!directive) return false;
-    if (isManualAgentAuthorityLocked()) {
+    const patch34DirectiveAllowed = Boolean(
+      isPatch34TeamRoomActive() &&
+      (
+        directive?.room_mode ||
+        String(directive?.response_control || "").trim() === PATCH_34_REVB_ROOM_RESPONSE_CONTROL ||
+        String(directive?.realtime_room_engine_version || directive?.room_state?.version || "").startsWith("PATCH_34")
+      )
+    );
+    if (isManualAgentAuthorityLocked() && !patch34DirectiveAllowed) {
       try {
         logRealtimeStep("patch32_manual:meeting_orchestrator_directive_ignored", {
           directive_kind: directive?.kind || null,
@@ -12502,6 +12572,16 @@ function scheduleRealtimeIdleFollowup() {
         });
       } catch {}
       return false;
+    } else if (patch34DirectiveAllowed) {
+      try {
+        logRealtimeStep("patch35:patch34_meeting_orchestrator_directive_allowed", {
+          directive_kind: directive?.kind || null,
+          directive_target: directive?.target_agent_slug || directive?.active_agent_slug || null,
+          manual_agent_lock: isManualAgentAuthorityLocked(),
+          room_mode: PATCH_34_REVB_ROOM_MODE,
+          response_control: directive?.response_control || null,
+        });
+      } catch {}
     }
     applyRealtimeMeetingStateFromPayload(batchResult, "meeting_orchestrator_directive");
 
@@ -12557,13 +12637,16 @@ function scheduleRealtimeIdleFollowup() {
 
       const dc = rtcDcRef.current;
       if (dc?.readyState === "open") {
-        sendRealtimeClientEvent(dc, {
+        sendRealtimeSessionUpdateWhenIdle({
           type: "session.update",
           session: {
             type: "realtime",
             instructions: buildRealtimeMeetingDirectiveInstructions(targetAgent, directive),
           },
-        }, "meeting_orchestrator_session_update");
+        }, "meeting_orchestrator_session_update", {
+          target_agent_slug: targetSlug,
+          room_mode: directive?.room_mode ? PATCH_34_REVB_ROOM_MODE : "",
+        });
       }
 
       try {
@@ -12791,8 +12874,8 @@ function scheduleRealtimeIdleFollowup() {
         room_state: patch34RoomStateEcho,
         room_mode: patch34RoomActive ? PATCH_34_REVB_ROOM_MODE : "",
         realtime_room_engine_version: patch34RoomActive ? PATCH_34_REVB_REALTIME_ROOM_ENGINE_VERSION : "",
-        room_state_persisted: Boolean(patch34RoomStateEcho?.persisted || patch34RoomStateEcho?.room_state_persisted || false),
-        has_snapshot: Boolean(patch34RoomStateEcho?.has_snapshot || false),
+        room_state_persisted: patch34RoomActive ? true : false,
+        has_snapshot: patch34RoomActive ? true : false,
         client_echo_version: "PATCH_30_SERVER_SPEAKER_AUTHORITY_CLIENT_ECHO_QUARANTINE_V1",
         },
       });
