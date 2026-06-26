@@ -18,6 +18,7 @@
 // PATCH_32_REV_I_MANUAL_LOCK_STAGING_PROOF_SILENCE
 // PATCH_32_REV_J_MANUAL_LOCK_STAGING_PROOF_PRODUCTION_GUARD
 // PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER
+// PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch, uploadFile, chat, chatStream, transcribeAudio, requestFounderHandoff, getRealtimeClientSecret, startRealtimeSession, startSummitSession, postRealtimeEventsBatch, endRealtimeSession, getRealtimeSession, getSummitSessionScore, submitSummitSessionReview, downloadRealtimeAta as downloadRealtimeAtaFile, guardRealtimeTranscript, getOrionSquadHealth, getOrionSquadPreview, getAgentCapabilities } from "../ui/api.js";
@@ -660,6 +661,7 @@ const PATCH_32_REV_J_MANUAL_LOCK_STAGING_PROOF_PRODUCTION_GUARD_VERSION = "PATCH
 const PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION = "PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_V1";
 const PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_VERSION = "PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_V1";
 const PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION = "PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_V1";
+const PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX_VERSION = "PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX_V1";
 const PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL = "team_conversation_orchestrator";
 const PATCH_33_TEAM_CONVERSATION_MODE = "team_conversation_room";
 const PATCH_33_TEAM_CONVERSATION_SOURCE = "manual_team_conversation_orchestrator";
@@ -5549,12 +5551,17 @@ function formatAgentOptionLabel(agent) {
       ? `PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR: o modo Team está ativo. Mantenha a sala como conversa multiagente; próximo agente promovido=${teamFocusSlug || safeSlug}; fila=${resolveManualTeamPanelNames(teamTurnQueue).join(" → ")}.`
       : `PATCH_32_PREDEPLOY_MANUAL_AGENT_AUTHORITY: o botão selecionado pelo usuário é a autoridade. Responda somente como ${safeName}. Ignore menções a outros agentes até o usuário trocar o botão no topo.`;
 
+    // PATCH_33_REV_C:
+    // This function now returns a provider-native session.update payload only.
+    // Orkio manual/team state stays in telemetry, meeting_state and events:batch.
+    // Do not add manual_* or team_* fields here; provider rejects them.
     return {
       type: "realtime",
       instructions: [
         canonicalPersonaInstructions,
         buildRealtimeAgentInstructions(targetAgent || { slug: safeSlug, name: safeName }),
         authorityLine,
+        `PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX: aplique este update como troca viva de agente/persona sem reiniciar a sessão realtime.`,
         `Agente ativo manual: ${safeName} (${safeSlug}).`,
         `Voz canônica solicitada nesta sessão: ${providerVoice}.`,
       ].filter(Boolean).join("\n\n"),
@@ -5563,32 +5570,107 @@ function formatAgentOptionLabel(agent) {
           voice: providerVoice,
         },
       },
-      manual_agent_lock: true,
-      manual_target_slug: manualTargetSlug,
-      manual_authority_version: PATCH_32_REV_C_MANUAL_TARGET_SOURCE_OF_TRUTH_VERSION,
-      manual_sticky_state_version: PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
-      manual_lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
-      manual_authority_source: PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE,
-      manual_authority_updated_at: manualAuthorityRef.current?.updatedAt || 0,
-      ...(teamConversationActive ? {
-        target_agent_slug: teamFocusSlug || safeSlug,
-        target_agent_slugs: teamTurnQueue,
-        multi_agent_turn: true,
-        response_control: PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL,
-        manual_team_conversation_active: true,
-        manual_team_focus_slug: teamFocusSlug || safeSlug,
-        manual_team_turn_queue: teamTurnQueue,
-        manual_team_turn_index: manualTeamConversationTurnIndexRef.current || 0,
-        team_conversation_mode: PATCH_33_TEAM_CONVERSATION_MODE,
-        team_conversation_orchestrator_version: PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION,
-      team_conversation_staging_verification_version: PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_VERSION,
-        manual_team_panel_required: true,
-        manual_team_panel_order: teamTurnQueue,
-        team_panel_version: PATCH_32_REV_D_TEAM_PANEL_VERSION,
-        team_panel_mode: PATCH_32_REV_D_TEAM_PANEL_MODE,
-        team_panel_voice_moderator_slug: teamFocusSlug || PATCH_32_REV_D_TEAM_PANEL_VOICE_MODERATOR_SLUG,
-      } : {}),
     };
+  }
+
+  function applyPatch33RevCLiveAgentSwitch({
+    targetAgent = null,
+    targetSlug = "orkio",
+    targetName = "Orkio",
+    voiceResolution = null,
+    teamMode = false,
+    source = "live_agent_switch",
+  } = {}) {
+    const safeSlug = canonicalAgentSlug(targetSlug || targetAgent?.slug || targetAgent?.key || targetAgent?.name || targetAgent?.id || "orkio") || "orkio";
+    const safeName = canonicalizeSpeakerLabel(targetName || targetAgent?.name || registryCanonicalAgentDisplayNameFromSlug(safeSlug) || safeSlug);
+    const dc = rtcDcRef.current;
+    const readyState = String(dc?.readyState || "").trim() || null;
+    const providerVoice = coerceVoiceId(
+      voiceResolution?.voice ||
+      rtcVoiceRef.current ||
+      ORKIO_CANONICAL_VOICE_ID ||
+      ORKIO_DEFAULT_VOICE_ID
+    );
+
+    const auditBase = {
+      source,
+      selected_agent_slug: safeSlug,
+      target_agent_slug: safeSlug,
+      target_agent_name: safeName,
+      provider_voice: providerVoice || null,
+      voice_source: voiceResolution?.voice_source || null,
+      team_mode: Boolean(teamMode),
+      manual_target_slug: teamMode ? "team" : safeSlug,
+      manual_team_conversation_active: Boolean(teamMode),
+      response_control: teamMode ? PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL : PATCH_32_SINGLE_AGENT_CONTROL,
+      active_session_id: rtcActiveSessionIdRef.current || rtcSessionIdRef.current || null,
+      data_channel_ready_state: readyState,
+      version: PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX_VERSION,
+      sanitizer_version: PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION,
+    };
+
+    try {
+      if (!dc || dc.readyState !== "open") {
+        const meta = {
+          ...auditBase,
+          agent_switch_applied: false,
+          blocked_reason: "data_channel_not_open",
+        };
+        logRealtimeStep("patch33_revc:live_agent_switch_not_applied", meta);
+        queueRealtimeTelemetry("patch33_revc_live_agent_switch_not_applied", meta);
+        return false;
+      }
+
+      try {
+        if (rtcResponseInFlightRef.current) {
+          sendRealtimeClientEvent(dc, { type: "response.cancel" }, "patch33_revc_cancel_inflight_before_agent_switch");
+          rtcResponseInFlightRef.current = false;
+          clearRealtimeResponseTimeout();
+        }
+      } catch {}
+
+      try {
+        sendRealtimeClientEvent(dc, { type: "input_audio_buffer.clear" }, "patch33_revc_clear_input_before_agent_switch");
+      } catch {}
+
+      const sessionPatch = buildManualRealtimeSessionUpdate({
+        targetAgent,
+        targetSlug: safeSlug,
+        targetName: safeName,
+        voiceResolution: { ...(voiceResolution || {}), voice: providerVoice },
+        teamMode,
+      });
+
+      const sent = sendRealtimeClientEvent(dc, {
+        type: "session.update",
+        session: sessionPatch,
+      }, "patch33_revc_live_agent_switch_session_update");
+
+      const applied = Boolean(sent);
+      const meta = {
+        ...auditBase,
+        agent_switch_applied: applied,
+        provider_session_payload_clean: true,
+        provider_session_payload_kind: "provider_session_payload",
+        orkio_orchestration_context_preserved: true,
+        team_runtime_state_preserved: Boolean(teamMode),
+      };
+
+      logRealtimeStep(applied ? "patch33_revc:live_agent_switch_applied" : "patch33_revc:live_agent_switch_not_applied", meta);
+      queueRealtimeTelemetry(applied ? "patch33_revc_live_agent_switch_applied" : "patch33_revc_live_agent_switch_not_applied", meta);
+      try { console.info("[PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX]", meta); } catch {}
+      return applied;
+    } catch (err) {
+      const meta = {
+        ...auditBase,
+        agent_switch_applied: false,
+        blocked_reason: "exception",
+        message: err?.message || null,
+      };
+      try { logRealtimeStep("patch33_revc:live_agent_switch_failed", meta); } catch {}
+      try { queueRealtimeTelemetry("patch33_revc_live_agent_switch_failed", meta); } catch {}
+      return false;
+    }
   }
 
   function buildDestinationContract(rawMessage = "", hostAgentId = null) {
@@ -5960,20 +6042,14 @@ function formatAgentOptionLabel(agent) {
       const voiceResolution = resolveAgentVoiceResolution(targetAgent);
       if (voiceResolution?.voice) rtcVoiceRef.current = voiceResolution.voice;
 
-      const dc = rtcDcRef.current;
-      if (dc?.readyState === "open") {
-        const sessionPatch = buildManualRealtimeSessionUpdate({
-          targetAgent,
-          targetSlug,
-          targetName,
-          voiceResolution,
-          teamMode: true,
-        });
-        sendRealtimeClientEvent(dc, {
-          type: "session.update",
-          session: sessionPatch,
-        }, "patch33_team_participant_session_update");
-      }
+      applyPatch33RevCLiveAgentSwitch({
+        targetAgent,
+        targetSlug,
+        targetName,
+        voiceResolution,
+        teamMode: true,
+        source: "patch33_team_participant_session_update",
+      });
 
       setActiveRuntimeAgent(targetName);
       setRuntimeHandoffLabel(`Team: ${targetName} incluído no próximo turno.`);
@@ -5995,6 +6071,8 @@ function formatAgentOptionLabel(agent) {
         team_conversation_mode: PATCH_33_TEAM_CONVERSATION_MODE,
         team_conversation_orchestrator_version: PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION,
       team_conversation_staging_verification_version: PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_VERSION,
+        live_agent_switch_runtime_fix_version: PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX_VERSION,
+        agent_switch_applied: Boolean(rtcDcRef.current?.readyState === "open"),
         provider_voice: voiceResolution?.voice || null,
         voice_source: voiceResolution?.voice_source || null,
       });
@@ -6052,20 +6130,14 @@ function formatAgentOptionLabel(agent) {
         rtcVoiceRef.current = voiceResolution.voice;
       }
 
-      const dc = rtcDcRef.current;
-      if (dc?.readyState === "open") {
-        const sessionPatch = buildManualRealtimeSessionUpdate({
-          targetAgent,
-          targetSlug,
-          targetName,
-          voiceResolution,
-          teamMode: false,
-        });
-        sendRealtimeClientEvent(dc, {
-          type: "session.update",
-          session: sessionPatch,
-        }, "patch32_predeploy_manual_agent_session_voice_sync");
-      }
+      applyPatch33RevCLiveAgentSwitch({
+        targetAgent,
+        targetSlug,
+        targetName,
+        voiceResolution,
+        teamMode: false,
+        source: "patch32_predeploy_manual_agent_session_voice_sync",
+      });
 
       setActiveRuntimeAgent(targetName);
       setRuntimeHandoffLabel(`Controle manual: ${targetName}.`);
@@ -6080,6 +6152,8 @@ function formatAgentOptionLabel(agent) {
         manual_agent_lock: true,
         manual_target_slug: targetSlug,
         manual_authority_version: PATCH_32_REV_C_MANUAL_TARGET_SOURCE_OF_TRUTH_VERSION,
+        live_agent_switch_runtime_fix_version: PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX_VERSION,
+        agent_switch_applied: Boolean(rtcDcRef.current?.readyState === "open"),
       });
       logRealtimeStep("patch32_revc:manual_authority_selected", {
         source,
@@ -6125,20 +6199,14 @@ function formatAgentOptionLabel(agent) {
       const voiceResolution = resolveAgentVoiceResolution(orkioAgent);
       if (voiceResolution?.voice) rtcVoiceRef.current = voiceResolution.voice;
 
-      const dc = rtcDcRef.current;
-      if (dc?.readyState === "open") {
-        const sessionPatch = buildManualRealtimeSessionUpdate({
-          targetAgent: orkioAgent,
-          targetSlug: "orkio",
-          targetName: "Orkio",
-          voiceResolution,
-          teamMode: true,
-        });
-        sendRealtimeClientEvent(dc, {
-          type: "session.update",
-          session: sessionPatch,
-        }, "patch32_predeploy_manual_team_session_voice_sync");
-      }
+      applyPatch33RevCLiveAgentSwitch({
+        targetAgent: orkioAgent,
+        targetSlug: "orkio",
+        targetName: "Orkio",
+        voiceResolution,
+        teamMode: true,
+        source: "patch32_predeploy_manual_team_session_voice_sync",
+      });
 
       setActiveRuntimeAgent("Team");
       setRuntimeHandoffLabel("Controle manual: Team.");
@@ -10612,6 +10680,7 @@ function scheduleRealtimeIdleFollowup() {
         team_conversation_orchestrator_version: realtimeManualContract.team_conversation_orchestrator_version || "",
         team_conversation_staging_verification_version: realtimeManualContract.team_conversation_staging_verification_version || "",
         realtime_provider_payload_sanitizer_version: PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION,
+        live_agent_switch_runtime_fix_version: PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX_VERSION,
         session_voice_sync_version: PATCH_32_PREDEPLOY_PREMIUM_VERSION,
         preferred_address_names: resolveProfileAddressNames(user, typeof window !== "undefined" ? window.localStorage : null),
         profile_address_preference_version: PROFILE_ADDRESS_PREFERENCE_VERSION,
@@ -15342,8 +15411,13 @@ async function stopRealtime(reason = 'client_stop') {
                           key={agentLabel}
                           type="button"
                           onClick={() => {
-                            setManualAuthoritySlug(agentSlug, "manual_button");
+                            // PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX:
+                            // Capture Team state before any manual slug mutation. Previously
+                            // setManualAuthoritySlug(agentSlug) ran first and deactivated the
+                            // Team room, so Orion/Chris/Laura clicks collapsed to single mode.
+                            const wasTeamConversationActive = isManualTeamConversationActive();
                             if (agentSlug === "team") {
+                              setManualAuthoritySlug("team", "manual_button");
                               setDestMode("team");
                               setDestSingle("");
                               setDestMulti([]);
@@ -15357,7 +15431,7 @@ async function stopRealtime(reason = 'client_stop') {
                               } catch {}
                               return;
                             }
-                            if (realtimeModeRef.current && isManualTeamConversationActive()) {
+                            if (realtimeModeRef.current && wasTeamConversationActive) {
                               const okTeam = promoteManualTeamParticipantToRealtime(agentSlug, "quick_team_participant_button");
                               if (okTeam) {
                                 try {
