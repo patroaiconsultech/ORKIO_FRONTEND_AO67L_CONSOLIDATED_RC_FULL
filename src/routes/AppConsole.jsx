@@ -672,6 +672,7 @@ const PATCH_35_REV_D_REALTIME_FORCE_MANUAL_SWITCH_VERSION = "PATCH_35_REV_D_REAL
 const PATCH_35_REV_E_FORENSIC_TEAM_AUTHORITY_CONTRACT_VERSION = "PATCH_35_REV_E_FORENSIC_TEAM_AUTHORITY_CONTRACT_V1";
 const PATCH_35_REV_F_TEAM_QUEUE_CONTRACT_AUDIT_VERSION = "PATCH_35_REV_F_TEAM_QUEUE_CONTRACT_AUDIT_V1";
 const PATCH_35_REV_G_REALTIME_RESPONSE_CORRELATION_AUDIT_VERSION = "PATCH_35_REV_G_REALTIME_RESPONSE_CORRELATION_AUDIT_V1";
+const PATCH_37_PROMPT_CONTEXT_ISOLATION_REALTIME_VERSION = "PATCH_37_PROMPT_CONTEXT_ISOLATION_REALTIME_V1";
 const PATCH_32_MANUAL_LOCK_STAGING_PROOF_STORAGE_KEY = "orkio_manual_lock_staging_proof";
 
 
@@ -7029,7 +7030,8 @@ function openPatchApprovalModal(message) {
 async function sendMessage(presetMsg = null, opts = {}) {
     const isRetry = !!opts?.isRetry;
     clearRealtimeIdleFollowup();
-    const msg = ((presetMsg ?? text) || "").trim();
+    const rawMsg = ((presetMsg ?? text) || "").trim();
+    const msg = shouldIsolatePromptContextForSend(opts) ? buildRealtimeVisibleUserMessage(rawMsg) : rawMsg;
     if (!msg || sendingRef.current) return false;
     if (
       threadId &&
@@ -7099,11 +7101,35 @@ async function sendMessage(presetMsg = null, opts = {}) {
       const profileAddressPreference = buildProfileAddressPreferenceInstruction(user, typeof window !== "undefined" ? window.localStorage : null);
       const destinationContract = buildDestinationContract(msg, agentIdToSend);
       const teamPanelInstruction = buildManualTeamPanelInstruction(destinationContract);
-      const finalMsg = [
-        profileAddressPreference ? `${profileAddressPreference}\n\nMENSAGEM_DO_USUARIO:` : "",
-        teamPanelInstruction,
-        pref + msg,
-      ].filter(Boolean).join("\n\n");
+      const isolatePromptContext = shouldIsolatePromptContextForSend(opts);
+      const finalMsg = isolatePromptContext
+        ? msg
+        : [
+            profileAddressPreference ? `${profileAddressPreference}\n\nMENSAGEM_DO_USUARIO:` : "",
+            teamPanelInstruction,
+            pref + msg,
+          ].filter(Boolean).join("\n\n");
+      const internalRuntimeContext = isolatePromptContext
+        ? {
+            version: PATCH_37_PROMPT_CONTEXT_ISOLATION_REALTIME_VERSION,
+            profile_address_preference: profileAddressPreference || "",
+            team_panel_instruction: teamPanelInstruction || "",
+            synthetic_prefix: pref || "",
+            source: opts?.source || "",
+          }
+        : null;
+      try {
+        if (isolatePromptContext) {
+          logRealtimeStep("patch37:send_message_context_isolated", {
+            version: PATCH_37_PROMPT_CONTEXT_ISOLATION_REALTIME_VERSION,
+            source: opts?.source || "",
+            raw_length: rawMsg.length,
+            visible_length: msg.length,
+            final_length: finalMsg.length,
+            has_internal_runtime_context: Boolean(internalRuntimeContext),
+          });
+        }
+      } catch {}
       const effectiveThreadIdForSend = String(activeThreadIdRef.current || threadId || "").trim();
 
       // AO80B — after a browser refresh, React state and the ref can briefly
@@ -13065,21 +13091,64 @@ function scheduleRealtimeIdleFollowup() {
     }
   }
 
-  function buildRealtimeOrchestrationBridgePrompt(bridge) {
-    const rawText = String(bridge?.text || "").trim();
-    if (!rawText) return "";
-    const technicalOrionIntent = /(?:@?\s*orion|arquitet|runtime|deploy|c[oó]digo|bug|erro|falha|auditoria|seguran[çc]a|infra|backend|frontend|realtime|service\s*worker|pwa|api|log|stack|regress[aã]o)/i.test(rawText);
-    const targetAgent = canAccessAdmin && technicalOrionIntent ? "@Orion" : "@Orkio";
+  function stripInternalRuntimeEnvelope(rawContent = "") {
+    // PATCH37_PROMPT_CONTEXT_ISOLATION_REALTIME:
+    // Realtime voice text must remain the user's text. Runtime/audit envelopes
+    // are internal control data and must never be rendered, persisted or routed
+    // as a user message.
+    let content = String(rawContent || "").trim();
+    if (!content) return "";
 
-    return [
-      `${targetAgent} orchestration_audit`,
-      "",
-      "Origem: Realtime voice transcript.final",
-      "Modo: readonly",
-      "Regra crítica: não criar proposal_id; write_executed=false; não executar patch; não fazer deploy.",
-      "",
-      rawText,
-    ].join("\n");
+    const userMessageMarker = "MENSAGEM_DO_USUARIO:";
+    const markerIndex = content.lastIndexOf(userMessageMarker);
+    if (markerIndex >= 0) {
+      content = content.slice(markerIndex + userMessageMarker.length).trim();
+    }
+
+    content = content
+      .replace(/^\s*PREFERENCIA_DE_TRATAMENTO_DO_USUARIO[\s\S]*?(?=\n\s*\n|$)/gim, "")
+      .replace(/^\s*PROFILE_ADDRESS_PREFERENCE[\s\S]*?(?=\n\s*\n|$)/gim, "")
+      .replace(/^\s*PATCH_\d+[^\n]*(?:\n(?!\s*(?:@|Origem:|Modo:|Regra crítica:|[A-Za-zÀ-ÿ0-9 ,.;:!?'"()_-]+$)).*)*/gim, "")
+      .replace(/^\s*@(?:Orkio|Orion|Chris|Laura)\s+orchestration_audit\s*$/gim, "")
+      .replace(/^\s*Origem:\s*Realtime voice transcript\.final\s*$/gim, "")
+      .replace(/^\s*Modo:\s*readonly\s*$/gim, "")
+      .replace(/^\s*Regra crítica:[^\n]*$/gim, "")
+      .trim();
+
+    return content;
+  }
+
+  function shouldIsolatePromptContextForSend(options = {}) {
+    return Boolean(
+      options?.realtimeTurn ||
+      options?.voiceRequested ||
+      options?.explicitVoiceRequested ||
+      String(options?.source || "").startsWith("realtime_")
+    );
+  }
+
+  function buildRealtimeVisibleUserMessage(rawContent = "") {
+    return stripInternalRuntimeEnvelope(rawContent);
+  }
+
+  function buildRealtimeOrchestrationBridgePrompt(bridge) {
+    const rawText = buildRealtimeVisibleUserMessage(bridge?.text || "");
+    if (!rawText) return "";
+
+    // PATCH37:
+    // Do not synthesize "@Orion orchestration_audit" from normal realtime speech.
+    // Agent selection is carried by the destination contract and realtime state,
+    // not by injecting an audit command into the user's message.
+    try {
+      logRealtimeStep("patch37:realtime_bridge_prompt_context_isolated", {
+        version: PATCH_37_PROMPT_CONTEXT_ISOLATION_REALTIME_VERSION,
+        source: "realtime_orchestration_bridge",
+        original_length: String(bridge?.text || "").length,
+        visible_length: rawText.length,
+      });
+    } catch {}
+
+    return rawText;
   }
 
   async function handleRealtimeOrchestrationBridgeCandidate(batchResult) {
@@ -13104,19 +13173,19 @@ function scheduleRealtimeIdleFollowup() {
         appendExecutionTrace({
           kind: "system",
           label: "RTB-02 Realtime Orchestration Bridge",
-          detail: "Fala técnica detectada no Realtime; encaminhando pelo chat stream governado.",
+          detail: "Fala realtime encaminhada com contexto interno isolado.",
         });
       } catch {}
 
-      try { setUploadStatus("⌛ Encaminhando fala técnica para Orion..."); } catch {}
+      try { setUploadStatus("⌛ Encaminhando fala realtime..."); } catch {}
 
       return await sendMessage(prompt, {
         realtimeTurn: true,
         voiceRequested: true,
         explicitVoiceRequested: true,
         source: "realtime_orchestration_bridge",
-        route_family: "orchestration_audit",
         realtime_session_id: bridge.session_id || rtcSessionIdRef.current || null,
+        prompt_context_isolation_version: PATCH_37_PROMPT_CONTEXT_ISOLATION_REALTIME_VERSION,
       });
     } catch (err) {
       realtimeBridgeLastKeyRef.current = "";
