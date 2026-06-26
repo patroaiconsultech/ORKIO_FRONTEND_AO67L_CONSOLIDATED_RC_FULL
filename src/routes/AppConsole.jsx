@@ -15,6 +15,8 @@
 // PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE
 // PATCH_32_REV_G_MANUAL_LOCK_CONTRACT_PROPAGATION
 // PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF
+// PATCH_32_REV_I_MANUAL_LOCK_STAGING_PROOF_SILENCE
+// PATCH_32_REV_J_MANUAL_LOCK_STAGING_PROOF_PRODUCTION_GUARD
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch, uploadFile, chat, chatStream, transcribeAudio, requestFounderHandoff, getRealtimeClientSecret, startRealtimeSession, startSummitSession, postRealtimeEventsBatch, endRealtimeSession, getRealtimeSession, getSummitSessionScore, submitSummitSessionReview, downloadRealtimeAta as downloadRealtimeAtaFile, guardRealtimeTranscript, getOrionSquadHealth, getOrionSquadPreview, getAgentCapabilities } from "../ui/api.js";
@@ -652,6 +654,135 @@ const PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION = "PATCH_32_REV_E_MANUAL
 const PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION = "PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_V1";
 const PATCH_32_REV_G_MANUAL_LOCK_CONTRACT_PROPAGATION_VERSION = "PATCH_32_REV_G_MANUAL_LOCK_CONTRACT_PROPAGATION_V1";
 const PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION = "PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_V1";
+const PATCH_32_REV_I_MANUAL_LOCK_STAGING_PROOF_SILENCE_VERSION = "PATCH_32_REV_I_MANUAL_LOCK_STAGING_PROOF_SILENCE_V1";
+const PATCH_32_REV_J_MANUAL_LOCK_STAGING_PROOF_PRODUCTION_GUARD_VERSION = "PATCH_32_REV_J_MANUAL_LOCK_STAGING_PROOF_PRODUCTION_GUARD_V1";
+const PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION = "PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_V1";
+const PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_VERSION = "PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_V1";
+const PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL = "team_conversation_orchestrator";
+const PATCH_33_TEAM_CONVERSATION_MODE = "team_conversation_room";
+const PATCH_33_TEAM_CONVERSATION_SOURCE = "manual_team_conversation_orchestrator";
+const PATCH_32_MANUAL_LOCK_STAGING_PROOF_STORAGE_KEY = "orkio_manual_lock_staging_proof";
+
+
+
+function normalizePatch32BooleanFlag(value) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (!raw) return null;
+  if (["1", "true", "yes", "y", "on", "enabled", "staging"].includes(raw)) return true;
+  if (["0", "false", "no", "n", "off", "disabled", "production"].includes(raw)) return false;
+  return null;
+}
+
+function readPatch32RuntimeEnv() {
+  const viteEnv = (typeof import.meta !== "undefined" && import.meta.env) ? import.meta.env : {};
+  const runtimeEnv = (typeof window !== "undefined" && window.__ORKIO_ENV__) ? window.__ORKIO_ENV__ : {};
+  return { viteEnv, runtimeEnv };
+}
+
+function normalizePatch32EnvName(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function isPatch32ManualLockProductionEnvironment() {
+  try {
+    const { viteEnv, runtimeEnv } = readPatch32RuntimeEnv();
+    const mode = normalizePatch32EnvName(
+      viteEnv?.MODE ??
+      runtimeEnv?.MODE ??
+      runtimeEnv?.NODE_ENV ??
+      ""
+    );
+    const nodeEnv = normalizePatch32EnvName(
+      viteEnv?.NODE_ENV ??
+      runtimeEnv?.NODE_ENV ??
+      ""
+    );
+    const appEnv = normalizePatch32EnvName(
+      viteEnv?.VITE_APP_ENV ??
+      viteEnv?.VITE_ORKIO_ENV ??
+      runtimeEnv?.VITE_APP_ENV ??
+      runtimeEnv?.VITE_ORKIO_ENV ??
+      runtimeEnv?.ORKIO_ENV ??
+      runtimeEnv?.APP_ENV ??
+      ""
+    );
+    const explicitProofFlag = normalizePatch32BooleanFlag(
+      viteEnv?.VITE_ORKIO_MANUAL_LOCK_STAGING_PROOF ??
+      runtimeEnv?.VITE_ORKIO_MANUAL_LOCK_STAGING_PROOF ??
+      ""
+    );
+    const prodFlag = normalizePatch32BooleanFlag(
+      viteEnv?.PROD ??
+      runtimeEnv?.PROD ??
+      runtimeEnv?.VITE_PROD ??
+      ""
+    );
+    const productionNames = ["production", "prod"];
+    const nonProductionNames = ["staging", "stage", "development", "dev", "test", "qa", "preview"];
+
+    // Explicit deployment environment wins over Vite build mode.
+    // This keeps staging proof available in staging builds while still hard-blocking real production.
+    if (nonProductionNames.includes(appEnv)) return false;
+    if (productionNames.includes(appEnv)) return true;
+
+    try {
+      const host = normalizePatch32EnvName(typeof window !== "undefined" ? window.location?.hostname : "");
+      const productionHosts = ["patroai.com", "www.patroai.com", "app.patroai.com"];
+      if (productionHosts.includes(host)) return true;
+    } catch {}
+
+    if (nonProductionNames.includes(mode) || nonProductionNames.includes(nodeEnv)) return false;
+    if (productionNames.includes(mode) || productionNames.includes(nodeEnv) || Boolean(prodFlag)) {
+      // In generic production-mode bundles deployed to staging/preview hosts, allow only an explicit env flag.
+      // localStorage is still blocked by the caller because this function returns before storage is read on true production.
+      return explicitProofFlag !== true;
+    }
+
+    return false;
+  } catch {}
+
+  return false;
+}
+
+function isPatch32ManualLockStagingProofEnabled() {
+  // PATCH 32 REV J:
+  // Production guard is evaluated before both explicit env flags and localStorage.
+  // This prevents console-side localStorage activation of REV H proof UI/logs in production.
+  if (isPatch32ManualLockProductionEnvironment()) return false;
+
+  try {
+    const { viteEnv, runtimeEnv } = readPatch32RuntimeEnv();
+    const explicitFlag = normalizePatch32BooleanFlag(
+      viteEnv?.VITE_ORKIO_MANUAL_LOCK_STAGING_PROOF ??
+      runtimeEnv?.VITE_ORKIO_MANUAL_LOCK_STAGING_PROOF ??
+      ""
+    );
+    if (explicitFlag !== null) return explicitFlag;
+  } catch {}
+
+  try {
+    const storageFlag = normalizePatch32BooleanFlag(
+      typeof window !== "undefined"
+        ? window.localStorage?.getItem(PATCH_32_MANUAL_LOCK_STAGING_PROOF_STORAGE_KEY)
+        : ""
+    );
+    if (storageFlag !== null) return storageFlag;
+  } catch {}
+
+  try {
+    const { viteEnv, runtimeEnv } = readPatch32RuntimeEnv();
+    const mode = normalizePatch32EnvName(viteEnv?.MODE || runtimeEnv?.MODE || "");
+    return ["staging", "stage", "development", "dev", "test", "qa"].includes(mode);
+  } catch {}
+
+  return false;
+}
+
+function getPatch32ManualLockStagingProofVersion() {
+  return isPatch32ManualLockStagingProofEnabled()
+    ? PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION
+    : null;
+}
 
 const EMPTY_STATE_PREVIEW_STEPS = [
   { title: "Readiness", description: "Shell preservado, acessos visíveis e console pronto para a primeira ação com percepção premium." },
@@ -2916,6 +3047,14 @@ const [onboardingForm, setOnboardingForm] = useState(() => sanitizeOnboardingFor
     }
   });
   const selectedManualAgentSlugRef = useRef(selectedManualAgentSlug || "team");
+  // PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR:
+  // Team room state is deliberately separate from the visual quick-button slug.
+  // In Team Mode, clicking Orion/Chris/Laura promotes that agent to the next
+  // turn without collapsing the room back to single-agent authority.
+  const manualTeamConversationActiveRef = useRef(selectedManualAgentSlug === "team");
+  const manualTeamConversationFocusSlugRef = useRef(selectedManualAgentSlug === "team" ? "orkio" : "");
+  const manualTeamConversationTurnQueueRef = useRef([...PATCH_32_CANONICAL_TEAM_AGENT_SLUGS]);
+  const manualTeamConversationTurnIndexRef = useRef(0);
 
   // Upload modal
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -3266,7 +3405,9 @@ const messagesEndRef = useRef(null);
         manual_slug: stickySlug,
         manual_agent_lock: true,
         manual_lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
-        manual_lock_staging_proof_version: PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION,
+        manual_lock_staging_proof_version: getPatch32ManualLockStagingProofVersion(),
+        manual_lock_staging_proof_silence_version: PATCH_32_REV_I_MANUAL_LOCK_STAGING_PROOF_SILENCE_VERSION,
+        manual_lock_staging_proof_production_guard_version: PATCH_32_REV_J_MANUAL_LOCK_STAGING_PROOF_PRODUCTION_GUARD_VERSION,
       });
     } catch {}
 
@@ -4549,12 +4690,251 @@ function formatAgentOptionLabel(agent) {
     return Array.from(byId.values());
   }
 
+  function normalizePatch33TeamQueue(rawQueue = [], focusSlug = "") {
+    const canonicalQueue = Array.from(new Set(
+      (Array.isArray(rawQueue) && rawQueue.length ? rawQueue : PATCH_32_CANONICAL_TEAM_AGENT_SLUGS)
+        .map((slug) => canonicalAgentSlug(slug || ""))
+        .filter((slug) => ["orkio", "orion", "chris", "laura"].includes(slug))
+    ));
+    const fallbackQueue = canonicalQueue.length ? canonicalQueue : resolveManualTeamPanelSlugs();
+    const focus = normalizeManualAuthoritySlug(focusSlug || "", "");
+    if (focus && focus !== "team" && fallbackQueue.includes(focus)) {
+      return [focus, ...fallbackQueue.filter((slug) => slug !== focus)];
+    }
+    return fallbackQueue;
+  }
+
+  function isManualTeamConversationActive() {
+    try {
+      const authority = manualAuthorityRef.current || {};
+      if (authority?.teamConversationActive === true) return true;
+      if (authority?.manual_team_conversation_active === true) return true;
+      if (String(authority?.response_control || "").trim() === PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL) return true;
+      if (String(authority?.team_conversation_orchestrator_version || "").trim() === PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION) return true;
+    } catch {}
+    try {
+      if (manualTeamConversationActiveRef.current === true) return true;
+    } catch {}
+    return false;
+  }
+
+  function getManualTeamConversationFocusSlug() {
+    const authority = manualAuthorityRef.current || {};
+    const rawFocus =
+      authority?.teamConversationFocusSlug ||
+      authority?.manual_team_focus_slug ||
+      manualTeamConversationFocusSlugRef.current ||
+      "";
+    const focus = normalizeManualAuthoritySlug(rawFocus, "");
+    if (focus && focus !== "team") return focus;
+    return "orkio";
+  }
+
+  function getManualTeamConversationTurnQueue(focusSlug = getManualTeamConversationFocusSlug()) {
+    const authority = manualAuthorityRef.current || {};
+    const rawQueue =
+      authority?.teamConversationTurnQueue ||
+      authority?.manual_team_turn_queue ||
+      manualTeamConversationTurnQueueRef.current ||
+      [];
+    return normalizePatch33TeamQueue(rawQueue, focusSlug);
+  }
+
+  function setManualTeamConversationRoomState({
+    focusSlug = "orkio",
+    source = PATCH_33_TEAM_CONVERSATION_SOURCE,
+    selectedVisualSlug = "",
+    activate = true,
+  } = {}) {
+    const focus = normalizeManualAuthoritySlug(focusSlug || "orkio", "orkio");
+    const visual = normalizeManualAuthoritySlug(selectedVisualSlug || focus || "team", "team");
+    const queue = normalizePatch33TeamQueue(resolveManualTeamPanelSlugs(), focus);
+    const now = Date.now();
+
+    manualTeamConversationActiveRef.current = Boolean(activate);
+    manualTeamConversationFocusSlugRef.current = focus;
+    manualTeamConversationTurnQueueRef.current = queue;
+    manualTeamConversationTurnIndexRef.current = Number(manualTeamConversationTurnIndexRef.current || 0) + 1;
+
+    manualAuthorityRef.current = {
+      ...(manualAuthorityRef.current || {}),
+      slug: "team",
+      version: PATCH_32_REV_C_MANUAL_TARGET_SOURCE_OF_TRUTH_VERSION,
+      sticky_state_version: PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
+      lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
+      updatedAt: now,
+      source: source || PATCH_33_TEAM_CONVERSATION_SOURCE,
+      lockKind: "manual_team_conversation_room_authority",
+      teamConversationActive: Boolean(activate),
+      manual_team_conversation_active: Boolean(activate),
+      teamConversationFocusSlug: focus,
+      manual_team_focus_slug: focus,
+      teamConversationTurnQueue: queue,
+      manual_team_turn_queue: queue,
+      manual_team_turn_index: manualTeamConversationTurnIndexRef.current,
+      response_control: PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL,
+      team_conversation_mode: PATCH_33_TEAM_CONVERSATION_MODE,
+      team_conversation_orchestrator_version: PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION,
+      team_conversation_staging_verification_version: PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_VERSION,
+    };
+
+    selectedManualAgentSlugRef.current = visual;
+    try { setSelectedManualAgentSlug(visual); } catch {}
+    try {
+      setDestMode("team");
+      setDestSingle("");
+      setDestMulti([]);
+      setActiveRuntimeAgent(focus === "team" ? "Team" : (registryCanonicalAgentDisplayNameFromSlug(focus) || canonicalizeSpeakerLabel(focus)));
+      persistDestinationState({
+        mode: "team",
+        single: "",
+        multi: [],
+        manual_target_slug: "team",
+        manual_slug: visual,
+        manual_agent_lock: true,
+        manual_team_conversation_active: Boolean(activate),
+        manual_team_focus_slug: focus,
+        manual_team_turn_queue: queue,
+        manual_team_turn_index: manualTeamConversationTurnIndexRef.current,
+        team_conversation_mode: PATCH_33_TEAM_CONVERSATION_MODE,
+        team_conversation_orchestrator_version: PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION,
+      team_conversation_staging_verification_version: PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_VERSION,
+      });
+    } catch {}
+
+    try {
+      window.localStorage?.setItem("orkio_manual_authority_slug", visual);
+      window.localStorage?.setItem("orkio_manual_authority_lock", "true");
+      window.localStorage?.setItem("orkio_manual_team_conversation_active", activate ? "true" : "false");
+      window.localStorage?.setItem("orkio_manual_team_focus_slug", focus);
+      window.localStorage?.setItem("orkio_manual_team_turn_queue", JSON.stringify(queue));
+    } catch {}
+
+    try {
+      logRealtimeStep("patch33_team:room_state_updated", {
+        source,
+        focus_slug: focus,
+        selected_visual_slug: visual,
+        turn_queue: queue,
+        turn_index: manualTeamConversationTurnIndexRef.current,
+        response_control: PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL,
+        version: PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION,
+      });
+      queueRealtimeTelemetry("patch33_team_conversation_room_state_updated", {
+        source,
+        focus_slug: focus,
+        selected_visual_slug: visual,
+        target_agent_slug: focus,
+        target_agent_slugs: queue,
+        manual_target_slug: "team",
+        manual_agent_lock: true,
+        manual_team_conversation_active: Boolean(activate),
+        manual_team_focus_slug: focus,
+        manual_team_turn_queue: queue,
+        manual_team_turn_index: manualTeamConversationTurnIndexRef.current,
+        multi_agent_turn: true,
+        response_control: PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL,
+        team_conversation_mode: PATCH_33_TEAM_CONVERSATION_MODE,
+        team_conversation_orchestrator_version: PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION,
+      team_conversation_staging_verification_version: PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_VERSION,
+      });
+      const patch33RevAStagingVerification = buildPatch33RevATeamStagingVerificationPayload({
+        source,
+        focusSlug: focus,
+        turnQueue: queue,
+      });
+      logRealtimeStep("patch33_reva:team_staging_verification_required", patch33RevAStagingVerification);
+      queueRealtimeTelemetry("patch33_reva_team_staging_verification_required", patch33RevAStagingVerification);
+    } catch {}
+
+    return { focus, visual, queue };
+  }
+
+  function deactivateManualTeamConversationRoomState() {
+    manualTeamConversationActiveRef.current = false;
+    manualTeamConversationFocusSlugRef.current = "";
+    manualTeamConversationTurnQueueRef.current = [...PATCH_32_CANONICAL_TEAM_AGENT_SLUGS];
+    try {
+      window.localStorage?.removeItem("orkio_manual_team_conversation_active");
+      window.localStorage?.removeItem("orkio_manual_team_focus_slug");
+      window.localStorage?.removeItem("orkio_manual_team_turn_queue");
+    } catch {}
+  }
+
+
+  function buildPatch33RevATeamStagingVerificationPayload({
+    source = PATCH_33_TEAM_CONVERSATION_SOURCE,
+    focusSlug = "orkio",
+    turnQueue = [],
+  } = {}) {
+    const canonicalTargetSlugs = [...PATCH_32_CANONICAL_TEAM_AGENT_SLUGS];
+    const focus = normalizeManualAuthoritySlug(focusSlug || "orkio", "orkio");
+    const queue = normalizePatch33TeamQueue(Array.isArray(turnQueue) && turnQueue.length ? turnQueue : canonicalTargetSlugs, focus);
+    return {
+      source,
+      version: PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_VERSION,
+      manual_target_slug: "team",
+      manual_team_conversation_active: true,
+      multi_agent_turn: true,
+      response_control: PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL,
+      target_agent_slugs: canonicalTargetSlugs,
+      manual_team_focus_slug: focus,
+      manual_team_turn_queue: queue,
+      team_conversation_mode: PATCH_33_TEAM_CONVERSATION_MODE,
+      team_conversation_orchestrator_version: PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION,
+      team_conversation_staging_verification_version: PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_VERSION,
+      staging_verification_required: true,
+    };
+  }
+
+  function buildPatch33TeamConversationInstruction(rawInput = "", focusSlug = "orkio", contract = {}) {
+    const queue = getManualTeamConversationTurnQueue(focusSlug);
+    const names = resolveManualTeamPanelNames(queue);
+    const focusName = registryCanonicalAgentDisplayNameFromSlug(focusSlug) || canonicalizeSpeakerLabel(focusSlug) || "Orkio";
+    const orderedNames = names.length ? names.join(" → ") : "Orkio → Orion → Chris → Laura";
+    return [
+      `PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR: modo Team ativo em tempo real.`,
+      `A sala deve operar como conversa multiagente determinística, não como single speaker.`,
+      `Fila de fala obrigatória deste turno: ${orderedNames}.`,
+      `Agente promovido para o próximo turno: ${focusName} (${focusSlug}).`,
+      `Formato obrigatório: responda em blocos muito curtos identificados por nome: Orkio, Orion, Chris e Laura.`,
+      `Quando o usuário selecionar um agente individual durante Team, inclua esse agente como próximo bloco/turno sem derrubar a sala Team.`,
+      `Não responda apenas como Orkio e não trate Team como especialista único.`,
+      `Se não houver informação suficiente para algum agente, esse agente registra hipótese/risco breve em vez de ficar ausente.`,
+      `Se a fala do usuário for apenas teste/checagem, faça apresentações breves: "Nome: estou aqui."`,
+      rawInput ? `Mensagem do usuário para a sala: ${String(rawInput || "").slice(0, 1200)}` : "",
+    ].filter(Boolean).join("\n");
+  }
+
+  function buildPatch33TeamConversationIdentityLock(focusSlug = "orkio", voiceResolution = {}) {
+    const queue = getManualTeamConversationTurnQueue(focusSlug);
+    const names = resolveManualTeamPanelNames(queue);
+    const focusName = registryCanonicalAgentDisplayNameFromSlug(focusSlug) || canonicalizeSpeakerLabel(focusSlug) || "Orkio";
+    const voiceId = voiceResolution?.voice || voiceResolution?.voice_profile?.voice_id || "";
+    return [
+      "PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR — contrato final de sala Team.",
+      `Modo ativo: ${PATCH_33_TEAM_CONVERSATION_MODE}.`,
+      `Speaker de áudio/moderação deste response.create: ${focusName} (${focusSlug}).`,
+      voiceId ? `Provider voice solicitado para o turno promovido/moderador: ${voiceId}.` : "",
+      `Participantes obrigatórios em painel: ${names.join(" → ") || "Orkio → Orion → Chris → Laura"}.`,
+      "A resposta deve materializar a sala Team em blocos identificados, sem afirmar que houve deploy, commit, PR, auditoria executada ou chamada externa sem evidência.",
+      "Não finalize dizendo que outro agente ainda vai falar; entregue os blocos da sala na própria resposta.",
+    ].filter(Boolean).join("\n");
+  }
+
   function buildManualTeamPanelInstruction(contract = {}) {
     const manualTarget = normalizeManualAuthoritySlug(
       contract?.manual_target_slug || contract?.target_agent_slug || getManualAuthoritySlug(),
       ""
     );
-    const isManualTeam = manualTarget === "team" || contract?.response_control === "manual_team_panel";
+    const responseControl = String(contract?.response_control || "").trim();
+    const isManualTeam = (
+      manualTarget === "team" ||
+      contract?.manual_team_conversation_active === true ||
+      contract?.manual_team_panel_required === true ||
+      responseControl === "manual_team_panel" ||
+      responseControl === PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL
+    );
     if (!isManualTeam) return "";
 
     const panelSlugs = Array.isArray(contract?.manual_team_panel_order) && contract.manual_team_panel_order.length
@@ -4565,6 +4945,7 @@ function formatAgentOptionLabel(agent) {
 
     return [
       `PATCH_32_REV_D_TEAM_PANEL_PRESTAGING: botão Team ativo; trate esta resposta como painel executivo determinístico.`,
+      `PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR: sala Team deve permanecer em modo multiagente, não single speaker.`,
       `Ordem obrigatória do painel: ${orderedNames}.`,
       `Cada agente deve responder em bloco próprio, curto e identificado pelo nome: Orkio, Orion, Chris e Laura.`,
       `Não escolha apenas um especialista. Não trate Team como especialista único. Não aplique handoff automático por nome dentro desta mensagem.`,
@@ -4578,8 +4959,12 @@ function formatAgentOptionLabel(agent) {
     return fallback;
   }
 
-  function setManualAuthoritySlug(rawSlug = "orkio", source = PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE) {
+  function setManualAuthoritySlug(rawSlug = "orkio", source = PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE, options = {}) {
     const slug = normalizeManualAuthoritySlug(rawSlug, "orkio");
+    const preserveTeamConversation = Boolean(options?.preserveTeamConversation);
+    if (slug !== "team" && !preserveTeamConversation) {
+      deactivateManualTeamConversationRoomState();
+    }
     const now = Date.now();
     const next = {
       slug,
@@ -4588,7 +4973,20 @@ function formatAgentOptionLabel(agent) {
       lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
       updatedAt: now,
       source: source || PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE,
-      lockKind: "manual_button_visual_authority",
+      lockKind: preserveTeamConversation ? "manual_team_conversation_room_authority" : "manual_button_visual_authority",
+      ...(preserveTeamConversation ? {
+        teamConversationActive: true,
+        manual_team_conversation_active: true,
+        teamConversationFocusSlug: normalizeManualAuthoritySlug(options?.focusSlug || slug || "orkio", "orkio"),
+        manual_team_focus_slug: normalizeManualAuthoritySlug(options?.focusSlug || slug || "orkio", "orkio"),
+        teamConversationTurnQueue: normalizePatch33TeamQueue(options?.turnQueue || resolveManualTeamPanelSlugs(), options?.focusSlug || slug || "orkio"),
+        manual_team_turn_queue: normalizePatch33TeamQueue(options?.turnQueue || resolveManualTeamPanelSlugs(), options?.focusSlug || slug || "orkio"),
+        manual_team_turn_index: manualTeamConversationTurnIndexRef.current || 0,
+        response_control: PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL,
+        team_conversation_mode: PATCH_33_TEAM_CONVERSATION_MODE,
+        team_conversation_orchestrator_version: PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION,
+      team_conversation_staging_verification_version: PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_VERSION,
+      } : {}),
     };
 
     // PATCH_32_REV_F:
@@ -4602,6 +5000,7 @@ function formatAgentOptionLabel(agent) {
 
     try {
       if (slug === "team") {
+        try { setManualTeamConversationRoomState({ focusSlug: "orkio", selectedVisualSlug: "team", source, activate: true }); } catch {}
         setDestMode("team");
         setDestSingle("");
         setDestMulti([]);
@@ -4675,7 +5074,8 @@ function formatAgentOptionLabel(agent) {
         manual_sticky_state_version: PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
         manual_lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
         manual_lock_contract_propagation_version: PATCH_32_REV_G_MANUAL_LOCK_CONTRACT_PROPAGATION_VERSION,
-        manual_lock_staging_proof_version: PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION,
+        manual_lock_staging_proof_version: getPatch32ManualLockStagingProofVersion(),
+        manual_lock_staging_proof_production_guard_version: PATCH_32_REV_J_MANUAL_LOCK_STAGING_PROOF_PRODUCTION_GUARD_VERSION,
         manual_authority_source: next.source,
         manual_authority_updated_at: next.updatedAt,
       });
@@ -4693,6 +5093,11 @@ function formatAgentOptionLabel(agent) {
   }
 
   function getManualAuthoritySlug() {
+    // PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR:
+    // Visual selection can be Orion/Chris/Laura while the manual authority remains
+    // Team. This is what allows adding a participant to the room without falling
+    // back to manual_agent_authority_single.
+    if (isManualTeamConversationActive()) return "team";
     const sticky = normalizeManualAuthoritySlug(selectedManualAgentSlugRef.current || selectedManualAgentSlug || "", "");
     if (sticky) return sticky;
     const current = manualAuthorityRef.current || {};
@@ -4717,10 +5122,22 @@ function formatAgentOptionLabel(agent) {
       manual_authority_version: PATCH_32_REV_C_MANUAL_TARGET_SOURCE_OF_TRUTH_VERSION,
       manual_sticky_state_version: PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
       manual_lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
-      manual_lock_staging_proof_version: PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION,
+      manual_lock_staging_proof_version: getPatch32ManualLockStagingProofVersion(),
+      manual_lock_staging_proof_production_guard_version: PATCH_32_REV_J_MANUAL_LOCK_STAGING_PROOF_PRODUCTION_GUARD_VERSION,
       manual_authority_source: authority.source || PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE,
       manual_authority_updated_at: authority.updatedAt || 0,
       session_id: activeSessionId || eventSessionId || undefined,
+      ...(isManualTeamConversationActive() ? {
+        manual_team_conversation_active: true,
+        manual_team_focus_slug: getManualTeamConversationFocusSlug(),
+        manual_team_turn_queue: getManualTeamConversationTurnQueue(),
+        manual_team_turn_index: manualTeamConversationTurnIndexRef.current || 0,
+        team_conversation_mode: PATCH_33_TEAM_CONVERSATION_MODE,
+        team_conversation_orchestrator_version: PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION,
+      team_conversation_staging_verification_version: PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_VERSION,
+        response_control: PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL,
+        multi_agent_turn: true,
+      } : {}),
     };
     try {
       logRealtimeStep("patch32_revc:manual_authority_payload_built", {
@@ -4734,6 +5151,7 @@ function formatAgentOptionLabel(agent) {
 
   function logManualLockStagingProof(eventName = "manual_lock_staging_proof", payload = {}) {
     try {
+      if (!isPatch32ManualLockStagingProofEnabled()) return;
       const manualSlug = normalizeManualAuthoritySlug(
         payload?.expected_manual_slug ||
         getManualAuthoritySlug() ||
@@ -4756,7 +5174,11 @@ function formatAgentOptionLabel(agent) {
       const proofPayload = {
         ...(payload && typeof payload === "object" ? payload : {}),
         patch: "PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF",
-        manual_lock_staging_proof_version: PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION,
+        patch_silence: "PATCH_32_REV_I_MANUAL_LOCK_STAGING_PROOF_SILENCE",
+        manual_lock_staging_proof_enabled: true,
+        manual_lock_staging_proof_version: getPatch32ManualLockStagingProofVersion(),
+        manual_lock_staging_proof_silence_version: PATCH_32_REV_I_MANUAL_LOCK_STAGING_PROOF_SILENCE_VERSION,
+        manual_lock_staging_proof_production_guard_version: PATCH_32_REV_J_MANUAL_LOCK_STAGING_PROOF_PRODUCTION_GUARD_VERSION,
         manual_sticky_state_version: PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
         manual_lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
         manual_lock_contract_propagation_version: PATCH_32_REV_G_MANUAL_LOCK_CONTRACT_PROPAGATION_VERSION,
@@ -4793,6 +5215,54 @@ function formatAgentOptionLabel(agent) {
     const mentionedNames = extractMentionNamesFromText(rawMessage);
     const realtime = Boolean(options?.realtime);
     const manualPayload = buildManualAuthorityPayload(options?.sessionId || null);
+
+    if (isManualTeamConversationActive()) {
+      const focusSlug = getManualTeamConversationFocusSlug();
+      const turnQueue = getManualTeamConversationTurnQueue(focusSlug);
+      const teamAgents = resolveManualTeamAgents();
+      const focusAgent =
+        findAgentByCanonicalSlug(focusSlug) ||
+        findAgentByRuntimeIdentity(focusSlug) ||
+        findAgentByCanonicalSlug("orkio") ||
+        null;
+      const focusName = canonicalizeSpeakerLabel(
+        focusAgent?.name ||
+        registryCanonicalAgentDisplayNameFromSlug(focusSlug) ||
+        focusSlug
+      );
+      const teamNames = resolveManualTeamPanelNames(turnQueue);
+      return {
+        dest_mode: "team",
+        agent_id: focusAgent?.id || hostAgentId || null,
+        agent_ids: teamAgents.map((agent) => String(agent.id || "")).filter(Boolean),
+        target_agent_slug: focusSlug,
+        target_agent_slugs: turnQueue,
+        visible_agent: "Team",
+        requested_agent_names: Array.from(new Set([...(teamNames || []), ...(Array.isArray(mentionedNames) ? mentionedNames : [])].filter(Boolean))),
+        multi_agent_turn: true,
+        response_control: PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL,
+        manual_team_conversation_active: true,
+        manual_team_focus_slug: focusSlug,
+        manual_team_turn_queue: turnQueue,
+        manual_team_turn_index: manualTeamConversationTurnIndexRef.current || 0,
+        team_conversation_mode: PATCH_33_TEAM_CONVERSATION_MODE,
+        team_conversation_orchestrator_version: PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION,
+      team_conversation_staging_verification_version: PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_VERSION,
+        manual_team_panel_required: true,
+        manual_team_panel_order: turnQueue,
+        team_panel_version: PATCH_32_REV_D_TEAM_PANEL_VERSION,
+        team_panel_mode: PATCH_32_REV_D_TEAM_PANEL_MODE,
+        team_panel_voice_moderator_slug: focusSlug || PATCH_32_REV_D_TEAM_PANEL_VOICE_MODERATOR_SLUG,
+        ...manualPayload,
+        manual_target_slug: "team",
+        manual_agent_lock: true,
+        manual_agent_source: PATCH_33_TEAM_CONVERSATION_SOURCE,
+        manual_authority_version: PATCH_32_REV_C_MANUAL_TARGET_SOURCE_OF_TRUTH_VERSION,
+        auto_handoff_enabled: false,
+        auto_handoff_ignored: true,
+        realtime_voice_agent_slug: focusSlug || "orkio",
+      };
+    }
 
     if (mode === "single") {
       const singleAgent =
@@ -4879,7 +5349,14 @@ function formatAgentOptionLabel(agent) {
       visible_agent: "Team",
       requested_agent_names: Array.from(new Set([...(teamNames || []), ...(Array.isArray(mentionedNames) ? mentionedNames : [])].filter(Boolean))),
       multi_agent_turn: safeTeamSlugs.length > 1,
-      response_control: "manual_team_panel",
+      response_control: PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL,
+      manual_team_conversation_active: true,
+      manual_team_focus_slug: "orkio",
+      manual_team_turn_queue: safeTeamSlugs,
+      manual_team_turn_index: manualTeamConversationTurnIndexRef.current || 0,
+      team_conversation_mode: PATCH_33_TEAM_CONVERSATION_MODE,
+      team_conversation_orchestrator_version: PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION,
+      team_conversation_staging_verification_version: PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_VERSION,
       manual_team_panel_required: true,
       manual_team_panel_order: safeTeamSlugs,
       team_panel_version: PATCH_32_REV_D_TEAM_PANEL_VERSION,
@@ -4904,6 +5381,7 @@ function formatAgentOptionLabel(agent) {
   }
 
   function getManualRealtimeTargetSlug() {
+    if (isManualTeamConversationActive()) return getManualTeamConversationFocusSlug() || "orkio";
     return getManualAuthoritySlug() || "orkio";
   }
 
@@ -4915,7 +5393,10 @@ function formatAgentOptionLabel(agent) {
     teamMode = false,
   } = {}) {
     const safeSlug = canonicalAgentSlug(targetSlug || "orkio") || "orkio";
-    const manualTargetSlug = getManualAuthoritySlug() || safeSlug;
+    const teamConversationActive = Boolean(teamMode || isManualTeamConversationActive());
+    const teamFocusSlug = teamConversationActive ? (getManualTeamConversationFocusSlug() || safeSlug || "orkio") : "";
+    const teamTurnQueue = teamConversationActive ? getManualTeamConversationTurnQueue(teamFocusSlug) : [];
+    const manualTargetSlug = teamConversationActive ? "team" : (getManualAuthoritySlug() || safeSlug);
     const safeName = canonicalizeSpeakerLabel(targetName || registryCanonicalAgentDisplayNameFromSlug(safeSlug) || safeSlug);
     const providerVoice = coerceVoiceId(
       voiceResolution?.voice ||
@@ -4929,8 +5410,8 @@ function formatAgentOptionLabel(agent) {
       includeKnownAgents: true,
     });
 
-    const authorityLine = teamMode
-      ? `PATCH_32_REV_D_TEAM_PANEL_PRESTAGING: o botão Team está ativo. No áudio, Orkio atua como moderador; no texto, o contrato exige painel em fila com ${resolveManualTeamPanelNames(resolveManualTeamPanelSlugs()).join(" → ")}.`
+    const authorityLine = teamConversationActive
+      ? `PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR: o modo Team está ativo. Mantenha a sala como conversa multiagente; próximo agente promovido=${teamFocusSlug || safeSlug}; fila=${resolveManualTeamPanelNames(teamTurnQueue).join(" → ")}.`
       : `PATCH_32_PREDEPLOY_MANUAL_AGENT_AUTHORITY: o botão selecionado pelo usuário é a autoridade. Responda somente como ${safeName}. Ignore menções a outros agentes até o usuário trocar o botão no topo.`;
 
     return {
@@ -4954,12 +5435,23 @@ function formatAgentOptionLabel(agent) {
       manual_lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
       manual_authority_source: PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE,
       manual_authority_updated_at: manualAuthorityRef.current?.updatedAt || 0,
-      ...(teamMode ? {
+      ...(teamConversationActive ? {
+        target_agent_slug: teamFocusSlug || safeSlug,
+        target_agent_slugs: teamTurnQueue,
+        multi_agent_turn: true,
+        response_control: PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL,
+        manual_team_conversation_active: true,
+        manual_team_focus_slug: teamFocusSlug || safeSlug,
+        manual_team_turn_queue: teamTurnQueue,
+        manual_team_turn_index: manualTeamConversationTurnIndexRef.current || 0,
+        team_conversation_mode: PATCH_33_TEAM_CONVERSATION_MODE,
+        team_conversation_orchestrator_version: PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION,
+      team_conversation_staging_verification_version: PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_VERSION,
         manual_team_panel_required: true,
-        manual_team_panel_order: resolveManualTeamPanelSlugs(),
+        manual_team_panel_order: teamTurnQueue,
         team_panel_version: PATCH_32_REV_D_TEAM_PANEL_VERSION,
         team_panel_mode: PATCH_32_REV_D_TEAM_PANEL_MODE,
-        team_panel_voice_moderator_slug: PATCH_32_REV_D_TEAM_PANEL_VOICE_MODERATOR_SLUG,
+        team_panel_voice_moderator_slug: teamFocusSlug || PATCH_32_REV_D_TEAM_PANEL_VOICE_MODERATOR_SLUG,
       } : {}),
     };
   }
@@ -5300,6 +5792,99 @@ function formatAgentOptionLabel(agent) {
     return true;
   }
 
+  function promoteManualTeamParticipantToRealtime(agentIdOrSlug = "", source = "quick_team_participant_button") {
+    const targetAgent =
+      findAgentByRuntimeIdentity(agentIdOrSlug) ||
+      findAgentByCanonicalSlug(agentIdOrSlug) ||
+      findAgentByCanonicalSlug("orkio") ||
+      null;
+
+    if (!targetAgent?.id) {
+      try {
+        logRealtimeStep("patch33_team:participant_missing", {
+          source,
+          requested: agentIdOrSlug || null,
+          version: PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION,
+        });
+      } catch {}
+      return false;
+    }
+
+    const targetSlug = canonicalAgentSlug(targetAgent?.slug || targetAgent?.key || targetAgent?.name || targetAgent?.id || "orkio") || "orkio";
+    const targetName = canonicalizeSpeakerLabel(targetAgent?.name || registryCanonicalAgentDisplayNameFromSlug(targetSlug) || targetSlug);
+    const roomState = setManualTeamConversationRoomState({
+      focusSlug: targetSlug,
+      selectedVisualSlug: targetSlug,
+      source,
+      activate: true,
+    });
+
+    try {
+      rtcHostAgentIdRef.current = targetAgent.id;
+      rtcHostAgentNameRef.current = targetName;
+      const voiceResolution = resolveAgentVoiceResolution(targetAgent);
+      if (voiceResolution?.voice) rtcVoiceRef.current = voiceResolution.voice;
+
+      const dc = rtcDcRef.current;
+      if (dc?.readyState === "open") {
+        const sessionPatch = buildManualRealtimeSessionUpdate({
+          targetAgent,
+          targetSlug,
+          targetName,
+          voiceResolution,
+          teamMode: true,
+        });
+        sendRealtimeClientEvent(dc, {
+          type: "session.update",
+          session: sessionPatch,
+        }, "patch33_team_participant_session_update");
+      }
+
+      setActiveRuntimeAgent(targetName);
+      setRuntimeHandoffLabel(`Team: ${targetName} incluído no próximo turno.`);
+      queueRealtimeTelemetry("patch33_team_participant_promoted", {
+        source,
+        selected_agent_slug: targetSlug,
+        selected_agent_id: targetAgent.id,
+        selected_agent_name: targetName,
+        target_agent_slug: targetSlug,
+        target_agent_slugs: roomState.queue,
+        manual_target_slug: "team",
+        manual_agent_lock: true,
+        manual_team_conversation_active: true,
+        manual_team_focus_slug: targetSlug,
+        manual_team_turn_queue: roomState.queue,
+        manual_team_turn_index: manualTeamConversationTurnIndexRef.current || 0,
+        multi_agent_turn: true,
+        response_control: PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL,
+        team_conversation_mode: PATCH_33_TEAM_CONVERSATION_MODE,
+        team_conversation_orchestrator_version: PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION,
+      team_conversation_staging_verification_version: PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_VERSION,
+        provider_voice: voiceResolution?.voice || null,
+        voice_source: voiceResolution?.voice_source || null,
+      });
+      logRealtimeStep("patch33_team:participant_promoted", {
+        source,
+        selected_agent_slug: targetSlug,
+        selected_agent_name: targetName,
+        turn_queue: roomState.queue,
+        response_control: PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL,
+        version: PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION,
+      });
+      return true;
+    } catch (err) {
+      try {
+        logRealtimeStep("patch33_team:participant_promote_failed", {
+          source,
+          requested: agentIdOrSlug || null,
+          message: err?.message || null,
+          version: PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION,
+        });
+      } catch {}
+      return false;
+    }
+  }
+
   function applyManualAgentSelectionToRealtime(agentIdOrSlug = "", source = "manual_agent_button") {
     if (!realtimeModeRef.current) return false;
 
@@ -5391,7 +5976,8 @@ function formatAgentOptionLabel(agent) {
   }
 
   function applyManualTeamSelectionToRealtime(source = "manual_team_button") {
-    setManualAuthoritySlug("team", source || PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE);
+    setManualTeamConversationRoomState({ focusSlug: "orkio", selectedVisualSlug: "team", source: source || PATCH_33_TEAM_CONVERSATION_SOURCE, activate: true });
+    setManualAuthoritySlug("team", source || PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE, { preserveTeamConversation: true, focusSlug: "orkio", turnQueue: resolveManualTeamPanelSlugs() });
     setActiveRuntimeAgent("Team");
     setRuntimeHandoffLabel("Controle manual: Team.");
     if (!realtimeModeRef.current) return false;
@@ -5434,6 +6020,15 @@ function formatAgentOptionLabel(agent) {
         manual_team_panel_required: true,
         manual_team_panel_order: resolveManualTeamPanelSlugs(),
         team_panel_version: PATCH_32_REV_D_TEAM_PANEL_VERSION,
+        manual_team_conversation_active: true,
+        manual_team_focus_slug: "orkio",
+        manual_team_turn_queue: getManualTeamConversationTurnQueue("orkio"),
+        manual_team_turn_index: manualTeamConversationTurnIndexRef.current || 0,
+        multi_agent_turn: true,
+        response_control: PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL,
+        team_conversation_mode: PATCH_33_TEAM_CONVERSATION_MODE,
+        team_conversation_orchestrator_version: PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION,
+      team_conversation_staging_verification_version: PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_VERSION,
       });
       return true;
     } catch {
@@ -6042,6 +6637,8 @@ async function sendMessage(presetMsg = null, opts = {}) {
             manual_authority_version: destinationContract.manual_authority_version || "",
             manual_sticky_state_version: destinationContract.manual_sticky_state_version || PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
             manual_lock_persistence_version: destinationContract.manual_lock_persistence_version || PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
+            manual_lock_staging_proof_version: getPatch32ManualLockStagingProofVersion(),
+            manual_lock_staging_proof_production_guard_version: PATCH_32_REV_J_MANUAL_LOCK_STAGING_PROOF_PRODUCTION_GUARD_VERSION,
             auto_handoff_enabled: destinationContract.auto_handoff_enabled !== false,
             response_control: destinationContract.response_control,
             multi_agent_turn: destinationContract.multi_agent_turn,
@@ -6181,6 +6778,8 @@ async function sendMessage(presetMsg = null, opts = {}) {
             manual_authority_version: destinationContract.manual_authority_version || "",
             manual_sticky_state_version: destinationContract.manual_sticky_state_version || PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
             manual_lock_persistence_version: destinationContract.manual_lock_persistence_version || PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
+            manual_lock_staging_proof_version: getPatch32ManualLockStagingProofVersion(),
+            manual_lock_staging_proof_production_guard_version: PATCH_32_REV_J_MANUAL_LOCK_STAGING_PROOF_PRODUCTION_GUARD_VERSION,
             auto_handoff_enabled: destinationContract.auto_handoff_enabled !== false,
             signal: ctl.signal,
           }), CHAT_STREAM_CONNECT_TIMEOUT_MS, "CHAT_STREAM_CONNECT_TIMEOUT");
@@ -7467,6 +8066,9 @@ async function confirmFounderHandoff() {
   }
 
   function getRealtimeAuthorityTargetSlug() {
+    if (isManualTeamConversationActive()) {
+      return getManualTeamConversationFocusSlug() || "orkio";
+    }
     if (isManualAgentAuthorityLocked()) {
       return getManualRealtimeTargetSlug() || "orkio";
     }
@@ -7530,7 +8132,11 @@ async function confirmFounderHandoff() {
       logRealtimeStep(`patch_premium_rev_b:${telemetryEventName}`, meta);
       queueRealtimeTelemetry(telemetryEventName, {
         ...meta,
-        manual_lock_staging_proof_version: PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION,
+        manual_lock_staging_proof_silence_version: PATCH_32_REV_I_MANUAL_LOCK_STAGING_PROOF_SILENCE_VERSION,
+        manual_lock_staging_proof_production_guard_version: PATCH_32_REV_J_MANUAL_LOCK_STAGING_PROOF_PRODUCTION_GUARD_VERSION,
+        ...(isPatch32ManualLockStagingProofEnabled()
+          ? { manual_lock_staging_proof_version: getPatch32ManualLockStagingProofVersion() }
+          : {}),
       });
       if (rawEventName === "authority_lock_released") {
         logManualLockStagingProof("response_authority_lock_released_preserved_manual_button", {
@@ -9294,16 +9900,31 @@ function scheduleRealtimeIdleFollowup() {
   } = {}) {
     const cleanInstructions = String(instructions || "").trim();
     const cleanInput = String(inputText || "").trim();
-    const manualTargetSlug = getManualAuthoritySlug();
-    const targetAgentSlugForResponse = canonicalAgentSlug(manualTargetSlug || getRealtimeAuthorityTargetSlug() || "orkio") || "orkio";
+    const teamConversationActive = isManualTeamConversationActive();
+    const manualTargetSlug = teamConversationActive ? "team" : getManualAuthoritySlug();
+    const teamFocusSlug = teamConversationActive ? (getManualTeamConversationFocusSlug() || "orkio") : "";
+    const targetAgentSlugForResponse = canonicalAgentSlug(
+      teamConversationActive
+        ? teamFocusSlug
+        : (manualTargetSlug || getRealtimeAuthorityTargetSlug() || "orkio")
+    ) || "orkio";
+    const personaSlugForResponse = teamConversationActive ? "team" : targetAgentSlugForResponse;
+    const teamTurnQueueForResponse = teamConversationActive ? getManualTeamConversationTurnQueue(targetAgentSlugForResponse) : [];
     try {
       logRealtimeStep("patch32_revc:manual_authority_request_target_resolved", {
         reason,
         manual_target_slug: manualTargetSlug || null,
         resolved_target_agent_slug: targetAgentSlugForResponse,
+        response_persona_slug: personaSlugForResponse,
         active_session_id: rtcActiveSessionIdRef.current || rtcSessionIdRef.current || null,
         event_session_id: rtcSessionIdRef.current || null,
         manual_agent_lock: Boolean(manualTargetSlug),
+        manual_team_conversation_active: teamConversationActive,
+        manual_team_focus_slug: teamConversationActive ? targetAgentSlugForResponse : null,
+        manual_team_turn_queue: teamTurnQueueForResponse,
+        response_control: teamConversationActive ? PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL : PATCH_32_SINGLE_AGENT_CONTROL,
+        team_conversation_orchestrator_version: teamConversationActive ? PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION : null,
+        team_conversation_staging_verification_version: teamConversationActive ? PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_VERSION : null,
         manual_authority_version: PATCH_32_REV_C_MANUAL_TARGET_SOURCE_OF_TRUTH_VERSION,
       });
     } catch {}
@@ -9318,18 +9939,27 @@ function scheduleRealtimeIdleFollowup() {
     }
     const voice = coerceVoiceId(resolvedAgentVoice || rtcVoiceRef.current || ORKIO_CANONICAL_VOICE_ID || ORKIO_DEFAULT_VOICE_ID);
     const voiceProfileForAudit = voiceResolution.voice_profile || resolveAgentVoiceProfile(targetAgentForResponse || { slug: targetAgentSlugForResponse, name: targetAgentSlugForResponse });
-    const canonicalPersonaInstructions = registryBuildCanonicalRealtimeAgentInstructions(targetAgentSlugForResponse, {
+    const canonicalPersonaInstructions = registryBuildCanonicalRealtimeAgentInstructions(personaSlugForResponse, {
       fallbackSlug: "orkio",
       includeKnownAgents: true,
     });
     const voiceTurnInstructions = buildRealtimeVoiceInstruction(
       rtcLanguageProfileRef.current,
       cleanInput || rtcLastFinalTranscriptRef.current || "",
-      targetAgentSlugForResponse
+      personaSlugForResponse
     );
-    const finalIdentityLock = buildFinalRealtimeIdentityLock(targetAgentSlugForResponse, voiceResolution);
+    const teamConversationInstructions = teamConversationActive
+      ? buildPatch33TeamConversationInstruction(cleanInput || rtcLastFinalTranscriptRef.current || "", targetAgentSlugForResponse, {
+          manual_team_turn_queue: teamTurnQueueForResponse,
+          response_control: PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL,
+        })
+      : "";
+    const finalIdentityLock = teamConversationActive
+      ? buildPatch33TeamConversationIdentityLock(targetAgentSlugForResponse, voiceResolution)
+      : buildFinalRealtimeIdentityLock(targetAgentSlugForResponse, voiceResolution);
     const responseInstructions = [
       canonicalPersonaInstructions,
+      teamConversationInstructions,
       cleanInstructions || voiceTurnInstructions,
       finalIdentityLock,
     ].filter(Boolean).join("\n\n");
@@ -9354,8 +9984,12 @@ function scheduleRealtimeIdleFollowup() {
         resolved_agent: targetAgentSlugForResponse,
         speaker_slug: meetingStateRef.current?.active_speaker_slug || targetAgentSlugForResponse,
         persona_slug: meetingStateRef.current?.active_persona_slug || targetAgentSlugForResponse,
-        prompt_profile: targetAgentSlugForResponse,
-        prompt_profile_version: "PATCH_31_FINAL_FULL_CANONICAL_REALTIME_PERSONA_V1",
+        prompt_profile: personaSlugForResponse,
+        prompt_profile_version: teamConversationActive ? PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION : "PATCH_31_FINAL_FULL_CANONICAL_REALTIME_PERSONA_V1",
+        manual_team_conversation_active: teamConversationActive,
+        manual_team_focus_slug: teamConversationActive ? targetAgentSlugForResponse : null,
+        manual_team_turn_queue: teamTurnQueueForResponse,
+        response_control: teamConversationActive ? PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL : PATCH_32_SINGLE_AGENT_CONTROL,
         voice_profile: voiceProfileForAudit?.profile_id || targetAgentSlugForResponse,
         voice_registry_version: voiceProfileForAudit?.version || "PATCH_31_CANONICAL_AGENT_VOICE_PROFILE_V1",
         voice_precedence_version: voiceResolution.precedence_version,
@@ -9416,6 +10050,13 @@ function scheduleRealtimeIdleFollowup() {
       prompt_profile: targetAgentSlugForResponse,
       prompt_profile_version: "PATCH_31_FINAL_FULL_CANONICAL_REALTIME_PERSONA_V1",
       final_identity_lock: true,
+      manual_team_conversation_active: teamConversationActive,
+      manual_team_focus_slug: teamConversationActive ? targetAgentSlugForResponse : null,
+      manual_team_turn_queue: teamTurnQueueForResponse,
+      team_conversation_mode: teamConversationActive ? PATCH_33_TEAM_CONVERSATION_MODE : null,
+      team_conversation_orchestrator_version: teamConversationActive ? PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION : null,
+        team_conversation_staging_verification_version: teamConversationActive ? PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_VERSION : null,
+      response_control: teamConversationActive ? PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL : PATCH_32_SINGLE_AGENT_CONTROL,
     });
 
     const ok = sendRealtimeClientEvent(dc, {
@@ -9439,9 +10080,20 @@ function scheduleRealtimeIdleFollowup() {
           voice_contract_version: voiceResolution.voice_contract_version,
           voice_override_policy: voiceResolution.voice_override_policy,
           target_agent_slug: targetAgentSlugForResponse,
+          target_agent_slugs: teamConversationActive ? teamTurnQueueForResponse : [targetAgentSlugForResponse],
           resolved_agent: targetAgentSlugForResponse,
           speaker_slug: meetingStateRef.current?.active_speaker_slug || targetAgentSlugForResponse,
-          persona_slug: meetingStateRef.current?.active_persona_slug || targetAgentSlugForResponse,
+          persona_slug: teamConversationActive ? "team" : (meetingStateRef.current?.active_persona_slug || targetAgentSlugForResponse),
+          manual_target_slug: teamConversationActive ? "team" : manualTargetSlug,
+          manual_team_conversation_active: teamConversationActive,
+          manual_team_focus_slug: teamConversationActive ? targetAgentSlugForResponse : null,
+          manual_team_turn_queue: teamTurnQueueForResponse,
+          manual_team_turn_index: manualTeamConversationTurnIndexRef.current || 0,
+          multi_agent_turn: teamConversationActive ? true : false,
+          response_control: teamConversationActive ? PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL : PATCH_32_SINGLE_AGENT_CONTROL,
+          team_conversation_mode: teamConversationActive ? PATCH_33_TEAM_CONVERSATION_MODE : null,
+          team_conversation_orchestrator_version: teamConversationActive ? PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION : null,
+        team_conversation_staging_verification_version: teamConversationActive ? PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_VERSION : null,
           provider_voice: voice,
           voice_source: voiceResolution.voice_source,
           session_voice_sync_version: PATCH_32_PREDEPLOY_PREMIUM_VERSION,
@@ -9786,7 +10438,8 @@ function scheduleRealtimeIdleFollowup() {
         manual_authority_version: realtimeManualContract.manual_authority_version || realtimeManualPayload.manual_authority_version || "",
         manual_sticky_state_version: realtimeManualContract.manual_sticky_state_version || realtimeManualPayload.manual_sticky_state_version || PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
         manual_lock_persistence_version: realtimeManualContract.manual_lock_persistence_version || realtimeManualPayload.manual_lock_persistence_version || PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
-        manual_lock_staging_proof_version: PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION,
+        manual_lock_staging_proof_version: getPatch32ManualLockStagingProofVersion(),
+        manual_lock_staging_proof_production_guard_version: PATCH_32_REV_J_MANUAL_LOCK_STAGING_PROOF_PRODUCTION_GUARD_VERSION,
         manual_authority_source: realtimeManualContract.manual_authority_source || realtimeManualPayload.manual_authority_source || PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE,
         manual_authority_updated_at: realtimeManualContract.manual_authority_updated_at || realtimeManualPayload.manual_authority_updated_at || 0,
         manual_team_panel_required: Boolean(realtimeManualContract.manual_team_panel_required),
@@ -9794,6 +10447,13 @@ function scheduleRealtimeIdleFollowup() {
         team_panel_version: realtimeManualContract.team_panel_version || "",
         team_panel_mode: realtimeManualContract.team_panel_mode || "",
         team_panel_voice_moderator_slug: realtimeManualContract.team_panel_voice_moderator_slug || "",
+        manual_team_conversation_active: Boolean(realtimeManualContract.manual_team_conversation_active),
+        manual_team_focus_slug: realtimeManualContract.manual_team_focus_slug || null,
+        manual_team_turn_queue: realtimeManualContract.manual_team_turn_queue || null,
+        manual_team_turn_index: realtimeManualContract.manual_team_turn_index || 0,
+        team_conversation_mode: realtimeManualContract.team_conversation_mode || "",
+        team_conversation_orchestrator_version: realtimeManualContract.team_conversation_orchestrator_version || "",
+        team_conversation_staging_verification_version: realtimeManualContract.team_conversation_staging_verification_version || "",
         session_voice_sync_version: PATCH_32_PREDEPLOY_PREMIUM_VERSION,
         preferred_address_names: resolveProfileAddressNames(user, typeof window !== "undefined" ? window.localStorage : null),
         profile_address_preference_version: PROFILE_ADDRESS_PREFERENCE_VERSION,
@@ -10392,7 +11052,8 @@ function scheduleRealtimeIdleFollowup() {
                 manual_authority_version: PATCH_32_REV_C_MANUAL_TARGET_SOURCE_OF_TRUTH_VERSION,
                 manual_sticky_state_version: PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
                 manual_lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
-                manual_lock_staging_proof_version: PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION,
+                manual_lock_staging_proof_version: getPatch32ManualLockStagingProofVersion(),
+                manual_lock_staging_proof_production_guard_version: PATCH_32_REV_J_MANUAL_LOCK_STAGING_PROOF_PRODUCTION_GUARD_VERSION,
                 manual_authority_source: PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE,
                 manual_authority_updated_at: manualAuthorityRef.current?.updatedAt || 0,
                 selected_agent_slug: getManualAuthoritySlug(),
@@ -10949,7 +11610,8 @@ function scheduleRealtimeIdleFollowup() {
       ""
     ).trim();
     const activeAgentSlug = canonicalAgentSlug(
-      (isManualAgentAuthorityLocked() ? getManualAuthoritySlug() : "") ||
+      (isManualTeamConversationActive() ? getManualTeamConversationFocusSlug() : "") ||
+      (isManualAgentAuthorityLocked() ? getManualRealtimeTargetSlug() : "") ||
       baseMeta.target_agent_slug ||
       baseMeta.agent_slug ||
       meetingEchoSpeaker.slug ||
@@ -10970,6 +11632,12 @@ function scheduleRealtimeIdleFollowup() {
       active_agent: activeAgentName || undefined,
       target_agent_slug: activeAgentSlug || undefined,
       manual_target_slug: isManualAgentAuthorityLocked() ? getManualAuthoritySlug() : undefined,
+      manual_team_conversation_active: isManualTeamConversationActive() || undefined,
+      manual_team_focus_slug: isManualTeamConversationActive() ? getManualTeamConversationFocusSlug() : undefined,
+      manual_team_turn_queue: isManualTeamConversationActive() ? getManualTeamConversationTurnQueue() : undefined,
+      team_conversation_orchestrator_version: isManualTeamConversationActive() ? PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION : undefined,
+      team_conversation_staging_verification_version: isManualTeamConversationActive() ? PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_VERSION : undefined,
+      response_control: isManualTeamConversationActive() ? PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL : undefined,
       agent_id: activeAgentId || undefined,
     };
 
@@ -11085,7 +11753,8 @@ function scheduleRealtimeIdleFollowup() {
             manual_target_slug: getManualAuthoritySlug() || null,
             manual_agent_lock: isManualAgentAuthorityLocked(),
             manual_sticky_state_version: PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
-            manual_lock_staging_proof_version: PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION,
+            manual_lock_staging_proof_version: getPatch32ManualLockStagingProofVersion(),
+            manual_lock_staging_proof_production_guard_version: PATCH_32_REV_J_MANUAL_LOCK_STAGING_PROOF_PRODUCTION_GUARD_VERSION,
           });
           logManualLockStagingProof("empty_meeting_state_ignored_preserved_manual_button", {
             source,
@@ -11601,7 +12270,8 @@ function scheduleRealtimeIdleFollowup() {
         manual_authority_version: manualEventContract.manual_authority_version || manualEventPayload.manual_authority_version || PATCH_32_REV_C_MANUAL_TARGET_SOURCE_OF_TRUTH_VERSION,
         manual_sticky_state_version: manualEventContract.manual_sticky_state_version || manualEventPayload.manual_sticky_state_version || PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
         manual_lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
-        manual_lock_staging_proof_version: PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION,
+        manual_lock_staging_proof_version: getPatch32ManualLockStagingProofVersion(),
+        manual_lock_staging_proof_production_guard_version: PATCH_32_REV_J_MANUAL_LOCK_STAGING_PROOF_PRODUCTION_GUARD_VERSION,
         manual_authority_source: manualEventContract.manual_authority_source || manualEventPayload.manual_authority_source || PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE,
         manual_authority_updated_at: manualEventContract.manual_authority_updated_at || manualEventPayload.manual_authority_updated_at || 0,
         manual_team_panel_required: Boolean(manualEventContract.manual_team_panel_required),
@@ -11609,6 +12279,13 @@ function scheduleRealtimeIdleFollowup() {
         team_panel_version: manualEventContract.team_panel_version || "",
         team_panel_mode: manualEventContract.team_panel_mode || "",
         team_panel_voice_moderator_slug: manualEventContract.team_panel_voice_moderator_slug || "",
+        manual_team_conversation_active: Boolean(manualEventContract.manual_team_conversation_active || manualEventPayload.manual_team_conversation_active),
+        manual_team_focus_slug: manualEventContract.manual_team_focus_slug || manualEventPayload.manual_team_focus_slug || null,
+        manual_team_turn_queue: manualEventContract.manual_team_turn_queue || manualEventPayload.manual_team_turn_queue || null,
+        manual_team_turn_index: manualEventContract.manual_team_turn_index || manualEventPayload.manual_team_turn_index || 0,
+        team_conversation_mode: manualEventContract.team_conversation_mode || manualEventPayload.team_conversation_mode || "",
+        team_conversation_orchestrator_version: manualEventContract.team_conversation_orchestrator_version || manualEventPayload.team_conversation_orchestrator_version || "",
+          team_conversation_staging_verification_version: manualEventContract.team_conversation_staging_verification_version || manualEventPayload.team_conversation_staging_verification_version || "",
         meeting_state: meetingStateEcho,
         client_echo_version: "PATCH_30_SERVER_SPEAKER_AUTHORITY_CLIENT_ECHO_QUARANTINE_V1",
         },
@@ -14522,6 +15199,17 @@ async function stopRealtime(reason = 'client_stop') {
                               } catch {}
                               return;
                             }
+                            if (realtimeModeRef.current && isManualTeamConversationActive()) {
+                              const okTeam = promoteManualTeamParticipantToRealtime(agentSlug, "quick_team_participant_button");
+                              if (okTeam) {
+                                try {
+                                  setRuntimeHandoffLabel(`Team: ${agentLabel} incluído no próximo turno.`);
+                                  setUploadStatus(`🤝 ${agentLabel} incluído na sala Team sem reiniciar o Realtime.`);
+                                  setTimeout(() => setUploadStatus(""), 2200);
+                                } catch {}
+                                return;
+                              }
+                            }
                             const ok = selectSingleAgentForRuntime(agentSlug, "quick_agent_button");
                             if (ok) {
                               applyManualAgentSelectionToRealtime(agentSlug, "quick_agent_button");
@@ -14593,9 +15281,9 @@ async function stopRealtime(reason = 'client_stop') {
                     Speaker ativo: <strong style={{ color: "#fff" }}>{meetingRoomActiveSpeaker}</strong>
                   </span>
                 ) : null}
-                {manualStickySlugForUi ? (
+                {isPatch32ManualLockStagingProofEnabled() && manualStickySlugForUi ? (
                   <span
-                    title={PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION}
+                    title={`${PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION} | ${PATCH_32_REV_I_MANUAL_LOCK_STAGING_PROOF_SILENCE_VERSION} | ${PATCH_32_REV_J_MANUAL_LOCK_STAGING_PROOF_PRODUCTION_GUARD_VERSION}`}
                     style={{
                       color: "rgba(187,247,208,0.92)",
                       border: "1px solid rgba(34,197,94,0.26)",
