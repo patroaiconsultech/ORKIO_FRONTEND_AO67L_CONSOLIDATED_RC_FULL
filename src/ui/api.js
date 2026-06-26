@@ -1,4 +1,5 @@
 // PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER
+// PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX
 /* PATCH_32_REV_D_TEAM_PANEL_PRESTAGING */
 /* PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE */
 /* PATCH_32_REV_G_MANUAL_LOCK_CONTRACT_PROPAGATION */
@@ -12,6 +13,7 @@ import {
 } from "../lib/auth.js";
 
 const PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION = "PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_V1";
+const PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX_VERSION = "PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX_V1";
 
 function normalizeBaseUrl(v) {
   let s = String(v || "").trim();
@@ -515,6 +517,7 @@ export const chat = ({
   team_conversation_orchestrator_version = null,
   team_conversation_staging_verification_version = null,
   realtime_provider_payload_sanitizer_version = PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION,
+  live_agent_switch_runtime_fix_version = PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX_VERSION,
   top_k,
   trace_id,
   client_message_id,
@@ -560,6 +563,7 @@ export const chat = ({
       team_conversation_orchestrator_version,
       team_conversation_staging_verification_version,
       realtime_provider_payload_sanitizer_version,
+      live_agent_switch_runtime_fix_version,
       top_k,
       trace_id,
       client_message_id,
@@ -602,6 +606,7 @@ export async function chatStream({
   team_conversation_orchestrator_version = null,
   team_conversation_staging_verification_version = null,
   realtime_provider_payload_sanitizer_version = PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION,
+  live_agent_switch_runtime_fix_version = PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX_VERSION,
   top_k,
   trace_id,
   client_message_id,
@@ -651,6 +656,15 @@ export async function chatStream({
         manual_team_panel_required,
         manual_team_panel_order,
         team_panel_version,
+        manual_team_conversation_active,
+        manual_team_focus_slug,
+        manual_team_turn_queue,
+        manual_team_turn_index,
+        team_conversation_mode,
+        team_conversation_orchestrator_version,
+        team_conversation_staging_verification_version,
+        realtime_provider_payload_sanitizer_version,
+        live_agent_switch_runtime_fix_version,
         top_k,
         trace_id,
         client_message_id,
@@ -875,6 +889,7 @@ export async function startRealtimeSession({
   team_conversation_orchestrator_version = null,
   team_conversation_staging_verification_version = null,
   realtime_provider_payload_sanitizer_version = PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION,
+  live_agent_switch_runtime_fix_version = PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX_VERSION,
   preferred_address_names = null,
   profile_address_preference_version = null,
   client_controlled_response = null,
@@ -924,6 +939,7 @@ export async function startRealtimeSession({
       team_conversation_orchestrator_version,
       team_conversation_staging_verification_version,
       realtime_provider_payload_sanitizer_version,
+      live_agent_switch_runtime_fix_version,
       preferred_address_names,
       profile_address_preference_version,
       client_controlled_response,
@@ -974,6 +990,7 @@ export async function startSummitSession({
   team_conversation_orchestrator_version = null,
   team_conversation_staging_verification_version = null,
   realtime_provider_payload_sanitizer_version = PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION,
+  live_agent_switch_runtime_fix_version = PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX_VERSION,
   preferred_address_names = null,
   profile_address_preference_version = null,
   client_controlled_response = null,
@@ -1022,6 +1039,7 @@ export async function startSummitSession({
       team_conversation_orchestrator_version,
       team_conversation_staging_verification_version,
       realtime_provider_payload_sanitizer_version,
+      live_agent_switch_runtime_fix_version,
       preferred_address_names,
       profile_address_preference_version,
       client_controlled_response,
@@ -1066,6 +1084,7 @@ export const postRealtimeEventsBatch = ({
   team_conversation_orchestrator_version = null,
   team_conversation_staging_verification_version = null,
   realtime_provider_payload_sanitizer_version = PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION,
+  live_agent_switch_runtime_fix_version = PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX_VERSION,
   meeting_state = null,
 } = {}) =>
   apiFetch("/api/realtime/events:batch", {
@@ -1105,6 +1124,7 @@ export const postRealtimeEventsBatch = ({
       team_conversation_orchestrator_version,
       team_conversation_staging_verification_version,
       realtime_provider_payload_sanitizer_version,
+      live_agent_switch_runtime_fix_version,
       meeting_state,
     },
   });
