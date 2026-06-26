@@ -665,6 +665,9 @@ const PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX_VERSION = "PATCH_33_REV_C_LIV
 const PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL = "team_conversation_orchestrator";
 const PATCH_33_TEAM_CONVERSATION_MODE = "team_conversation_room";
 const PATCH_33_TEAM_CONVERSATION_SOURCE = "manual_team_conversation_orchestrator";
+const PATCH_34_REVB_REALTIME_ROOM_ENGINE_VERSION = "PATCH_34_REVB_REALTIME_ROOM_ENGINE_FULL_INTEGRATION_V1";
+const PATCH_34_REVB_ROOM_MODE = "team";
+const PATCH_34_REVB_ROOM_RESPONSE_CONTROL = "room_agent_authority";
 const PATCH_32_MANUAL_LOCK_STAGING_PROOF_STORAGE_KEY = "orkio_manual_lock_staging_proof";
 
 
@@ -3192,6 +3195,10 @@ const [onboardingForm, setOnboardingForm] = useState(() => sanitizeOnboardingFor
   const manualTeamConversationFocusSlugRef = useRef(selectedManualAgentSlug === "team" ? "orkio" : "");
   const manualTeamConversationTurnQueueRef = useRef([...PATCH_32_CANONICAL_TEAM_AGENT_SLUGS]);
   const manualTeamConversationTurnIndexRef = useRef(0);
+  // PATCH_34_REVB_REALTIME_ROOM_ENGINE_FULL_INTEGRATION:
+  // Client-side mirror of backend room_state. Backend remains authoritative; this echo prevents
+  // destructive empty/single meeting_state payloads during realtime telemetry batches.
+  const manualRealtimeRoomStateRef = useRef(null);
 
   // Upload modal
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -4998,6 +5005,147 @@ function formatAgentOptionLabel(agent) {
     } catch {}
   }
 
+  function isPatch34TeamRoomActive() {
+    const manualSlug = canonicalAgentSlug(selectedManualAgentSlugRef.current || getManualAuthoritySlug() || "");
+    const roomState = manualRealtimeRoomStateRef.current && typeof manualRealtimeRoomStateRef.current === "object"
+      ? manualRealtimeRoomStateRef.current
+      : null;
+    return Boolean(
+      manualTeamConversationActiveRef.current ||
+      manualSlug === "team" ||
+      String(destMode || "").trim().toLowerCase() === "team" ||
+      String(roomState?.room_mode || roomState?.mode || "").trim().toLowerCase() === PATCH_34_REVB_ROOM_MODE ||
+      String(roomState?.response_control || "").trim() === PATCH_34_REVB_ROOM_RESPONSE_CONTROL
+    );
+  }
+
+  function buildPatch34RoomState({
+    sessionId = "",
+    threadId: roomThreadId = "",
+    activeSlug = "orkio",
+    source = "client_room_state",
+    phase = "READY",
+    persisted = false,
+  } = {}) {
+    const safeActiveSlug = canonicalAgentSlug(activeSlug || "orkio") || "orkio";
+    const safeParticipants = Array.from(new Set(
+      (manualTeamConversationTurnQueueRef.current?.length ? manualTeamConversationTurnQueueRef.current : PATCH_32_CANONICAL_TEAM_AGENT_SLUGS)
+        .map((slug) => canonicalAgentSlug(slug))
+        .filter(Boolean)
+    ));
+    const participants = safeParticipants.length ? safeParticipants : [...PATCH_32_CANONICAL_TEAM_AGENT_SLUGS];
+    const nowIso = new Date().toISOString();
+    return {
+      org: tenant || "public",
+      session_id: String(sessionId || rtcActiveSessionIdRef.current || rtcSessionIdRef.current || "").trim(),
+      thread_id: String(roomThreadId || rtcThreadIdRef.current || activeThreadIdRef.current || threadId || "").trim(),
+      room_mode: PATCH_34_REVB_ROOM_MODE,
+      mode: PATCH_34_REVB_ROOM_MODE,
+      participants,
+      active_speaker_slug: safeActiveSlug,
+      active_persona_slug: safeActiveSlug,
+      active_speaker_name: registryCanonicalAgentDisplayNameFromSlug(safeActiveSlug) || canonicalizeSpeakerLabel(safeActiveSlug),
+      pending_speaker_slug: "",
+      target_agent_slug: safeActiveSlug,
+      target_agent_slugs: participants,
+      multi_agent_turn: true,
+      response_control: PATCH_34_REVB_ROOM_RESPONSE_CONTROL,
+      phase,
+      state: phase,
+      turn_index: Number(meetingStateRef.current?.turn_index || 0),
+      transition_reason: source,
+      has_snapshot: true,
+      persisted: Boolean(persisted),
+      room_state_persisted: Boolean(persisted),
+      realtime_session_active: Boolean(realtimeModeRef.current),
+      version: PATCH_34_REVB_REALTIME_ROOM_ENGINE_VERSION,
+      updated_at: nowIso,
+    };
+  }
+
+  function updatePatch34RoomState({
+    sessionId = "",
+    activeSlug = "orkio",
+    source = "client_room_state_update",
+    phase = "READY",
+    persisted = false,
+    telemetry = true,
+  } = {}) {
+    const nextState = buildPatch34RoomState({ sessionId, activeSlug, source, phase, persisted });
+    manualRealtimeRoomStateRef.current = nextState;
+    meetingStateRef.current = {
+      ...(meetingStateRef.current || {}),
+      ...nextState,
+    };
+    try {
+      window.localStorage?.setItem("orkio_realtime_room_state", JSON.stringify(nextState));
+    } catch {}
+    if (telemetry) {
+      try {
+        logRealtimeStep("patch34_revb:room_state_updated", {
+          source,
+          session_id: nextState.session_id || null,
+          room_mode: nextState.room_mode,
+          active_speaker_slug: nextState.active_speaker_slug,
+          target_agent_slugs: nextState.target_agent_slugs,
+          response_control: nextState.response_control,
+          has_snapshot: true,
+          room_state_persisted: Boolean(persisted),
+          version: PATCH_34_REVB_REALTIME_ROOM_ENGINE_VERSION,
+        });
+        queueRealtimeTelemetry("patch34_revb_room_state_updated", {
+          source,
+          session_id: nextState.session_id || null,
+          room_mode: nextState.room_mode,
+          active_speaker_slug: nextState.active_speaker_slug,
+          target_agent_slugs: nextState.target_agent_slugs,
+          multi_agent_turn: true,
+          response_control: PATCH_34_REVB_ROOM_RESPONSE_CONTROL,
+          has_snapshot: true,
+          room_state_persisted: Boolean(persisted),
+          realtime_room_engine_version: PATCH_34_REVB_REALTIME_ROOM_ENGINE_VERSION,
+        });
+      } catch {}
+    }
+    return nextState;
+  }
+
+  function getPatch34RoomStateEcho(sessionId = "") {
+    if (!isPatch34TeamRoomActive()) return null;
+    const current = manualRealtimeRoomStateRef.current && typeof manualRealtimeRoomStateRef.current === "object"
+      ? manualRealtimeRoomStateRef.current
+      : null;
+    const activeSlug = canonicalAgentSlug(
+      manualTeamConversationFocusSlugRef.current ||
+      current?.active_speaker_slug ||
+      getManualAuthoritySlug() ||
+      selectedManualAgentSlugRef.current ||
+      "orkio"
+    ) || "orkio";
+    const shouldRefresh = !current || String(current.session_id || "") !== String(sessionId || rtcSessionIdRef.current || "");
+    if (shouldRefresh) {
+      return updatePatch34RoomState({
+        sessionId,
+        activeSlug,
+        source: "events_batch_room_state_echo",
+        phase: "READY",
+        persisted: Boolean(current?.persisted || false),
+        telemetry: false,
+      });
+    }
+    return {
+      ...current,
+      session_id: String(sessionId || current.session_id || rtcSessionIdRef.current || "").trim(),
+      thread_id: String(current.thread_id || rtcThreadIdRef.current || activeThreadIdRef.current || threadId || "").trim(),
+      has_snapshot: true,
+      room_mode: PATCH_34_REVB_ROOM_MODE,
+      mode: PATCH_34_REVB_ROOM_MODE,
+      multi_agent_turn: true,
+      response_control: PATCH_34_REVB_ROOM_RESPONSE_CONTROL,
+      version: PATCH_34_REVB_REALTIME_ROOM_ENGINE_VERSION,
+    };
+  }
+
 
   function buildPatch33RevATeamStagingVerificationPayload({
     source = PATCH_33_TEAM_CONVERSATION_SOURCE,
@@ -5548,7 +5696,7 @@ function formatAgentOptionLabel(agent) {
     });
 
     const authorityLine = teamConversationActive
-      ? `PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR: o modo Team está ativo. Mantenha a sala como conversa multiagente; próximo agente promovido=${teamFocusSlug || safeSlug}; fila=${resolveManualTeamPanelNames(teamTurnQueue).join(" → ")}.`
+      ? `PATCH_34_REVB_REALTIME_ROOM_ENGINE: o modo Team está ativo como sala persistente. Troque apenas o speaker para ${teamFocusSlug || safeSlug}; não colapse a sala para single. Fila=${resolveManualTeamPanelNames(teamTurnQueue).join(" → ")}.`
       : `PATCH_32_PREDEPLOY_MANUAL_AGENT_AUTHORITY: o botão selecionado pelo usuário é a autoridade. Responda somente como ${safeName}. Ignore menções a outros agentes até o usuário trocar o botão no topo.`;
 
     // PATCH_33_REV_C:
@@ -5633,6 +5781,24 @@ function formatAgentOptionLabel(agent) {
         sendRealtimeClientEvent(dc, { type: "input_audio_buffer.clear" }, "patch33_revc_clear_input_before_agent_switch");
       } catch {}
 
+      if (teamMode || isPatch34TeamRoomActive()) {
+        updatePatch34RoomState({
+          sessionId: rtcActiveSessionIdRef.current || rtcSessionIdRef.current || "",
+          activeSlug: safeSlug,
+          source: "patch34_revb_provider_switching",
+          phase: "SWITCHING",
+          persisted: Boolean(manualRealtimeRoomStateRef.current?.persisted || false),
+        });
+        try {
+          logRealtimeStep("patch34_revb:provider_switching", {
+            selected_agent_slug: safeSlug,
+            room_mode: PATCH_34_REVB_ROOM_MODE,
+            voice_update_waited_for_idle: Boolean(!rtcResponseInFlightRef.current),
+            realtime_room_engine_version: PATCH_34_REVB_REALTIME_ROOM_ENGINE_VERSION,
+          });
+        } catch {}
+      }
+
       const sessionPatch = buildManualRealtimeSessionUpdate({
         targetAgent,
         targetSlug: safeSlug,
@@ -5647,14 +5813,35 @@ function formatAgentOptionLabel(agent) {
       }, "patch33_revc_live_agent_switch_session_update");
 
       const applied = Boolean(sent);
+      const patch34AppliedRoomState = (teamMode || isPatch34TeamRoomActive())
+        ? updatePatch34RoomState({
+            sessionId: rtcActiveSessionIdRef.current || rtcSessionIdRef.current || "",
+            activeSlug: safeSlug,
+            source: "patch34_revb_provider_switch_applied",
+            phase: applied ? "READY" : "SWITCH_PENDING",
+            persisted: Boolean(manualRealtimeRoomStateRef.current?.persisted || false),
+            telemetry: false,
+          })
+        : null;
       const meta = {
         ...auditBase,
         agent_switch_applied: applied,
         provider_session_payload_clean: true,
         provider_session_payload_kind: "provider_session_payload",
         orkio_orchestration_context_preserved: true,
-        team_runtime_state_preserved: Boolean(teamMode),
+        team_runtime_state_preserved: Boolean(teamMode || patch34AppliedRoomState),
+        room_mode: patch34AppliedRoomState ? PATCH_34_REVB_ROOM_MODE : null,
+        room_state_persisted: Boolean(patch34AppliedRoomState?.persisted || false),
+        has_snapshot: Boolean(patch34AppliedRoomState?.has_snapshot || false),
+        realtime_room_engine_version: patch34AppliedRoomState ? PATCH_34_REVB_REALTIME_ROOM_ENGINE_VERSION : null,
       };
+
+      if (patch34AppliedRoomState) {
+        try {
+          logRealtimeStep(applied ? "patch34_revb:provider_switch_applied" : "patch34_revb:provider_switch_not_applied", meta);
+          queueRealtimeTelemetry(applied ? "patch34_revb_provider_switch_applied" : "patch34_revb_provider_switch_not_applied", meta);
+        } catch {}
+      }
 
       logRealtimeStep(applied ? "patch33_revc:live_agent_switch_applied" : "patch33_revc:live_agent_switch_not_applied", meta);
       queueRealtimeTelemetry(applied ? "patch33_revc_live_agent_switch_applied" : "patch33_revc_live_agent_switch_not_applied", meta);
@@ -10637,6 +10824,30 @@ function scheduleRealtimeIdleFollowup() {
       );
       rtcLanguageProfileRef.current = languageProfile;
 
+      const patch34StartRoomActive = Boolean(
+        realtimeManualContract.manual_team_conversation_active ||
+        realtimeManualContract.manual_target_slug === "team" ||
+        String(realtimeManualContract.dest_mode || destMode || "").trim().toLowerCase() === "team"
+      );
+      const patch34StartRoomFocusSlug = canonicalAgentSlug(
+        realtimeManualContract.manual_team_focus_slug ||
+        realtimeManualContract.target_agent_slug ||
+        selectedAgentObj?.slug ||
+        selectedAgentObj?.key ||
+        selectedAgentObj?.name ||
+        "orkio"
+      ) || "orkio";
+      const patch34StartRoomState = patch34StartRoomActive
+        ? buildPatch34RoomState({
+            sessionId: "",
+            threadId: effectiveRealtimeThreadId || threadId || "",
+            activeSlug: patch34StartRoomFocusSlug,
+            source: "realtime_start_payload",
+            phase: "READY",
+            persisted: false,
+          })
+        : null;
+
       const realtimeStartPayload = {
         agent_id: agentIdToSend,
         thread_id: effectiveRealtimeThreadId || null,
@@ -10681,6 +10892,9 @@ function scheduleRealtimeIdleFollowup() {
         team_conversation_staging_verification_version: realtimeManualContract.team_conversation_staging_verification_version || "",
         realtime_provider_payload_sanitizer_version: PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION,
         live_agent_switch_runtime_fix_version: PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX_VERSION,
+        realtime_room_engine_version: patch34StartRoomActive ? PATCH_34_REVB_REALTIME_ROOM_ENGINE_VERSION : "",
+        room_mode: patch34StartRoomActive ? PATCH_34_REVB_ROOM_MODE : "",
+        room_state: patch34StartRoomState,
         session_voice_sync_version: PATCH_32_PREDEPLOY_PREMIUM_VERSION,
         preferred_address_names: resolveProfileAddressNames(user, typeof window !== "undefined" ? window.localStorage : null),
         profile_address_preference_version: PROFILE_ADDRESS_PREFERENCE_VERSION,
@@ -10797,6 +11011,31 @@ function scheduleRealtimeIdleFollowup() {
       logRealtimeStep('start:ephemeral_ok', { session_id: start?.session_id || null, thread_id: start?.thread_id || null });
 
       applyRealtimeMeetingStateFromPayload(start, "realtime_start");
+      if (start?.room_state || start?.meeting_state?.room_mode === PATCH_34_REVB_ROOM_MODE) {
+        const startRoomState = start?.room_state || start?.meeting_state || null;
+        if (startRoomState && typeof startRoomState === "object") {
+          manualRealtimeRoomStateRef.current = {
+            ...startRoomState,
+            session_id: start?.session_id || startRoomState.session_id || "",
+            room_mode: PATCH_34_REVB_ROOM_MODE,
+            mode: PATCH_34_REVB_ROOM_MODE,
+            multi_agent_turn: true,
+            response_control: PATCH_34_REVB_ROOM_RESPONSE_CONTROL,
+            has_snapshot: true,
+            version: PATCH_34_REVB_REALTIME_ROOM_ENGINE_VERSION,
+          };
+          try {
+            logRealtimeStep("patch34_revb:room_state_from_start", {
+              session_id: start?.session_id || null,
+              room_mode: PATCH_34_REVB_ROOM_MODE,
+              active_speaker_slug: manualRealtimeRoomStateRef.current.active_speaker_slug || null,
+              room_state_persisted: Boolean(manualRealtimeRoomStateRef.current.persisted || manualRealtimeRoomStateRef.current.room_state_persisted),
+              has_snapshot: true,
+              version: PATCH_34_REVB_REALTIME_ROOM_ENGINE_VERSION,
+            });
+          } catch {}
+        }
+      }
 
       rtcSessionIdRef.current = start?.session_id || null;
       const ownedRealtimeSessionId = String(start?.session_id || "").trim();
@@ -12103,6 +12342,32 @@ function scheduleRealtimeIdleFollowup() {
       };
       meetingStateRef.current = stateForClient;
       setMeetingState(stateForClient);
+      if (
+        String(stateForClient?.version || "").startsWith("PATCH_34") ||
+        String(stateForClient?.room_mode || stateForClient?.mode || "").trim().toLowerCase() === PATCH_34_REVB_ROOM_MODE ||
+        String(stateForClient?.response_control || "").trim() === PATCH_34_REVB_ROOM_RESPONSE_CONTROL
+      ) {
+        manualRealtimeRoomStateRef.current = {
+          ...stateForClient,
+          room_mode: PATCH_34_REVB_ROOM_MODE,
+          mode: PATCH_34_REVB_ROOM_MODE,
+          multi_agent_turn: true,
+          response_control: PATCH_34_REVB_ROOM_RESPONSE_CONTROL,
+          has_snapshot: true,
+          version: PATCH_34_REVB_REALTIME_ROOM_ENGINE_VERSION,
+        };
+        try {
+          logRealtimeStep("patch34_revb:room_state_applied", {
+            source,
+            session_id: manualRealtimeRoomStateRef.current.session_id || null,
+            active_speaker_slug: manualRealtimeRoomStateRef.current.active_speaker_slug || null,
+            room_mode: PATCH_34_REVB_ROOM_MODE,
+            room_state_persisted: Boolean(manualRealtimeRoomStateRef.current.persisted || manualRealtimeRoomStateRef.current.room_state_persisted),
+            has_snapshot: true,
+            version: PATCH_34_REVB_REALTIME_ROOM_ENGINE_VERSION,
+          });
+        } catch {}
+      }
 
       if (activeName) {
         setActiveRuntimeAgent(activeName);
@@ -12460,7 +12725,14 @@ function scheduleRealtimeIdleFollowup() {
       const meetingStateEcho = isMeaningfulRealtimeMeetingStateEcho(meetingStateRef.current)
         ? meetingStateRef.current
         : null;
-      if (!meetingStateEcho) {
+      const patch34RoomStateEcho = getPatch34RoomStateEcho(sid);
+      const patch34RoomActive = Boolean(
+        patch34RoomStateEcho ||
+        manualEventContract.manual_team_conversation_active ||
+        manualEventPayload.manual_team_conversation_active ||
+        manualTargetSlug === "team"
+      );
+      if (!meetingStateEcho && !patch34RoomStateEcho) {
         try {
           logRealtimeStep("patch32_revf:empty_meeting_state_echo_not_sent", {
             session_id: sid,
@@ -12479,18 +12751,20 @@ function scheduleRealtimeIdleFollowup() {
         body: {
         session_id: sid,
         events: q,
-        dest_mode: manualEventContract.dest_mode || (manualTargetSlug === "team" ? "team" : "single"),
+        dest_mode: patch34RoomActive ? PATCH_34_REVB_ROOM_MODE : (manualEventContract.dest_mode || (manualTargetSlug === "team" ? "team" : "single")),
         agent_id: manualEventContract.agent_id || echoSpeaker.agent_id || rtcHostAgentIdRef.current || null,
         visible_agent: manualEventContract.visible_agent || echoSpeaker.name || rtcHostAgentNameRef.current || activeRuntimeAgent || "",
         target_agent_slug: manualEventContract.target_agent_slug || manualTargetSlug || echoSpeaker.slug || canonicalAgentSlug(rtcHostAgentNameRef.current || activeRuntimeAgent || ""),
-        target_agent_slugs: Array.isArray(manualEventContract.target_agent_slugs) && manualEventContract.target_agent_slugs.length
-          ? manualEventContract.target_agent_slugs
-          : [manualTargetSlug || echoSpeaker.slug || canonicalAgentSlug(rtcHostAgentNameRef.current || activeRuntimeAgent || "")].filter(Boolean),
+        target_agent_slugs: patch34RoomActive
+          ? (patch34RoomStateEcho?.target_agent_slugs || PATCH_32_CANONICAL_TEAM_AGENT_SLUGS)
+          : (Array.isArray(manualEventContract.target_agent_slugs) && manualEventContract.target_agent_slugs.length
+            ? manualEventContract.target_agent_slugs
+            : [manualTargetSlug || echoSpeaker.slug || canonicalAgentSlug(rtcHostAgentNameRef.current || activeRuntimeAgent || "")].filter(Boolean)),
         requested_agent_names: Array.isArray(manualEventContract.requested_agent_names) && manualEventContract.requested_agent_names.length
           ? manualEventContract.requested_agent_names
           : (echoSpeaker.name ? [echoSpeaker.name] : (rtcHostAgentNameRef.current ? [rtcHostAgentNameRef.current] : [])),
-        multi_agent_turn: Boolean(manualEventContract.multi_agent_turn),
-        response_control: manualEventContract.response_control || (manualTargetSlug === "team" ? "manual_team_panel" : PATCH_32_SINGLE_AGENT_CONTROL),
+        multi_agent_turn: patch34RoomActive ? true : Boolean(manualEventContract.multi_agent_turn),
+        response_control: patch34RoomActive ? PATCH_34_REVB_ROOM_RESPONSE_CONTROL : (manualEventContract.response_control || (manualTargetSlug === "team" ? "manual_team_panel" : PATCH_32_SINGLE_AGENT_CONTROL)),
         manual_agent_lock: Boolean(manualTargetSlug),
         manual_target_slug: manualTargetSlug,
         manual_agent_source: manualEventContract.manual_agent_source || PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE,
@@ -12506,14 +12780,19 @@ function scheduleRealtimeIdleFollowup() {
         team_panel_version: manualEventContract.team_panel_version || "",
         team_panel_mode: manualEventContract.team_panel_mode || "",
         team_panel_voice_moderator_slug: manualEventContract.team_panel_voice_moderator_slug || "",
-        manual_team_conversation_active: Boolean(manualEventContract.manual_team_conversation_active || manualEventPayload.manual_team_conversation_active),
-        manual_team_focus_slug: manualEventContract.manual_team_focus_slug || manualEventPayload.manual_team_focus_slug || null,
-        manual_team_turn_queue: manualEventContract.manual_team_turn_queue || manualEventPayload.manual_team_turn_queue || null,
+        manual_team_conversation_active: patch34RoomActive ? true : Boolean(manualEventContract.manual_team_conversation_active || manualEventPayload.manual_team_conversation_active),
+        manual_team_focus_slug: patch34RoomActive ? (patch34RoomStateEcho?.active_speaker_slug || manualEventContract.manual_team_focus_slug || manualEventPayload.manual_team_focus_slug || null) : (manualEventContract.manual_team_focus_slug || manualEventPayload.manual_team_focus_slug || null),
+        manual_team_turn_queue: patch34RoomActive ? (patch34RoomStateEcho?.target_agent_slugs || PATCH_32_CANONICAL_TEAM_AGENT_SLUGS) : (manualEventContract.manual_team_turn_queue || manualEventPayload.manual_team_turn_queue || null),
         manual_team_turn_index: manualEventContract.manual_team_turn_index || manualEventPayload.manual_team_turn_index || 0,
         team_conversation_mode: manualEventContract.team_conversation_mode || manualEventPayload.team_conversation_mode || "",
         team_conversation_orchestrator_version: manualEventContract.team_conversation_orchestrator_version || manualEventPayload.team_conversation_orchestrator_version || "",
           team_conversation_staging_verification_version: manualEventContract.team_conversation_staging_verification_version || manualEventPayload.team_conversation_staging_verification_version || "",
-        meeting_state: meetingStateEcho,
+        meeting_state: patch34RoomStateEcho || meetingStateEcho,
+        room_state: patch34RoomStateEcho,
+        room_mode: patch34RoomActive ? PATCH_34_REVB_ROOM_MODE : "",
+        realtime_room_engine_version: patch34RoomActive ? PATCH_34_REVB_REALTIME_ROOM_ENGINE_VERSION : "",
+        room_state_persisted: Boolean(patch34RoomStateEcho?.persisted || patch34RoomStateEcho?.room_state_persisted || false),
+        has_snapshot: Boolean(patch34RoomStateEcho?.has_snapshot || false),
         client_echo_version: "PATCH_30_SERVER_SPEAKER_AUTHORITY_CLIENT_ECHO_QUARANTINE_V1",
         },
       });
