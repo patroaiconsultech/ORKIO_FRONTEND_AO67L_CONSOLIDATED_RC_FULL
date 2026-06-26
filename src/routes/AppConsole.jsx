@@ -12815,6 +12815,18 @@ function scheduleRealtimeIdleFollowup() {
         manualEventPayload.manual_team_conversation_active ||
         manualTargetSlug === "team"
       );
+      const patch34RoomAuthoritySlug = patch34RoomActive
+        ? (
+          canonicalAgentSlug(
+            patch34RoomStateEcho?.target_agent_slug ||
+            patch34RoomStateEcho?.active_speaker_slug ||
+            manualEventContract.manual_team_focus_slug ||
+            manualEventPayload.manual_team_focus_slug ||
+            echoSpeaker.slug ||
+            canonicalAgentSlug(rtcHostAgentNameRef.current || activeRuntimeAgent || "")
+          ) || "orkio"
+        )
+        : "";
       if (!meetingStateEcho && !patch34RoomStateEcho) {
         try {
           logRealtimeStep("patch32_revf:empty_meeting_state_echo_not_sent", {
@@ -12837,7 +12849,9 @@ function scheduleRealtimeIdleFollowup() {
         dest_mode: patch34RoomActive ? PATCH_34_REVB_ROOM_MODE : (manualEventContract.dest_mode || (manualTargetSlug === "team" ? "team" : "single")),
         agent_id: manualEventContract.agent_id || echoSpeaker.agent_id || rtcHostAgentIdRef.current || null,
         visible_agent: manualEventContract.visible_agent || echoSpeaker.name || rtcHostAgentNameRef.current || activeRuntimeAgent || "",
-        target_agent_slug: manualEventContract.target_agent_slug || manualTargetSlug || echoSpeaker.slug || canonicalAgentSlug(rtcHostAgentNameRef.current || activeRuntimeAgent || ""),
+        target_agent_slug: patch34RoomActive
+          ? patch34RoomAuthoritySlug
+          : (manualEventContract.target_agent_slug || manualTargetSlug || echoSpeaker.slug || canonicalAgentSlug(rtcHostAgentNameRef.current || activeRuntimeAgent || "")),
         target_agent_slugs: patch34RoomActive
           ? (patch34RoomStateEcho?.target_agent_slugs || PATCH_32_CANONICAL_TEAM_AGENT_SLUGS)
           : (Array.isArray(manualEventContract.target_agent_slugs) && manualEventContract.target_agent_slugs.length
@@ -12864,7 +12878,7 @@ function scheduleRealtimeIdleFollowup() {
         team_panel_mode: manualEventContract.team_panel_mode || "",
         team_panel_voice_moderator_slug: manualEventContract.team_panel_voice_moderator_slug || "",
         manual_team_conversation_active: patch34RoomActive ? true : Boolean(manualEventContract.manual_team_conversation_active || manualEventPayload.manual_team_conversation_active),
-        manual_team_focus_slug: patch34RoomActive ? (patch34RoomStateEcho?.active_speaker_slug || manualEventContract.manual_team_focus_slug || manualEventPayload.manual_team_focus_slug || null) : (manualEventContract.manual_team_focus_slug || manualEventPayload.manual_team_focus_slug || null),
+        manual_team_focus_slug: patch34RoomActive ? patch34RoomAuthoritySlug : (manualEventContract.manual_team_focus_slug || manualEventPayload.manual_team_focus_slug || null),
         manual_team_turn_queue: patch34RoomActive ? (patch34RoomStateEcho?.target_agent_slugs || PATCH_32_CANONICAL_TEAM_AGENT_SLUGS) : (manualEventContract.manual_team_turn_queue || manualEventPayload.manual_team_turn_queue || null),
         manual_team_turn_index: manualEventContract.manual_team_turn_index || manualEventPayload.manual_team_turn_index || 0,
         team_conversation_mode: manualEventContract.team_conversation_mode || manualEventPayload.team_conversation_mode || "",
