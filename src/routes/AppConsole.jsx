@@ -670,6 +670,7 @@ const PATCH_34_REVB_ROOM_MODE = "team";
 const PATCH_34_REVB_ROOM_RESPONSE_CONTROL = "room_agent_authority";
 const PATCH_35_REV_D_REALTIME_FORCE_MANUAL_SWITCH_VERSION = "PATCH_35_REV_D_REALTIME_FORCE_MANUAL_SWITCH_V1";
 const PATCH_35_REV_E_FORENSIC_TEAM_AUTHORITY_CONTRACT_VERSION = "PATCH_35_REV_E_FORENSIC_TEAM_AUTHORITY_CONTRACT_V1";
+const PATCH_35_REV_F_TEAM_QUEUE_CONTRACT_AUDIT_VERSION = "PATCH_35_REV_F_TEAM_QUEUE_CONTRACT_AUDIT_V1";
 const PATCH_32_MANUAL_LOCK_STAGING_PROOF_STORAGE_KEY = "orkio_manual_lock_staging_proof";
 
 
@@ -4838,16 +4839,27 @@ function formatAgentOptionLabel(agent) {
   }
 
   function normalizePatch33TeamQueue(rawQueue = [], focusSlug = "") {
-    const canonicalQueue = Array.from(new Set(
-      (Array.isArray(rawQueue) && rawQueue.length ? rawQueue : PATCH_32_CANONICAL_TEAM_AGENT_SLUGS)
-        .map((slug) => canonicalAgentSlug(slug || ""))
-        .filter((slug) => ["orkio", "orion", "chris", "laura"].includes(slug))
-    ));
-    const fallbackQueue = canonicalQueue.length ? canonicalQueue : resolveManualTeamPanelSlugs();
-    const focus = normalizeManualAuthoritySlug(focusSlug || "", "");
-    if (focus && focus !== "team" && fallbackQueue.includes(focus)) {
-      return [focus, ...fallbackQueue.filter((slug) => slug !== focus)];
-    }
+    const rawSlugs = Array.isArray(rawQueue)
+      ? rawQueue.map((slug) => canonicalAgentSlug(slug || "")).filter(Boolean)
+      : [];
+    const allowedSlugs = new Set(["orkio", "orion", "chris", "laura"]);
+    const presentSlugs = new Set(rawSlugs.filter((slug) => allowedSlugs.has(slug)));
+    const stableQueue = PATCH_32_CANONICAL_TEAM_AGENT_SLUGS
+      .map((slug) => canonicalAgentSlug(slug || ""))
+      .filter((slug) => allowedSlugs.has(slug))
+      .filter((slug) => presentSlugs.size ? presentSlugs.has(slug) : true);
+    const fallbackQueue = stableQueue.length ? stableQueue : ["orkio", "orion", "chris", "laura"];
+    const normalizedFocus = normalizeManualAuthoritySlug(focusSlug || "", "");
+    try {
+      if (normalizedFocus && normalizedFocus !== "team" && fallbackQueue.includes(normalizedFocus)) {
+        logRealtimeStep("patch35_revf:team_queue_focus_preserved_without_reorder", {
+          focus_slug: normalizedFocus,
+          stable_turn_queue: fallbackQueue,
+          previous_queue: rawSlugs,
+          version: PATCH_35_REV_F_TEAM_QUEUE_CONTRACT_AUDIT_VERSION,
+        });
+      }
+    } catch {}
     return fallbackQueue;
   }
 
