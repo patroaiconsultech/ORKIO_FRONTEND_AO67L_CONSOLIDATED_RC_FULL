@@ -671,6 +671,7 @@ const PATCH_34_REVB_ROOM_RESPONSE_CONTROL = "room_agent_authority";
 const PATCH_35_REV_D_REALTIME_FORCE_MANUAL_SWITCH_VERSION = "PATCH_35_REV_D_REALTIME_FORCE_MANUAL_SWITCH_V1";
 const PATCH_35_REV_E_FORENSIC_TEAM_AUTHORITY_CONTRACT_VERSION = "PATCH_35_REV_E_FORENSIC_TEAM_AUTHORITY_CONTRACT_V1";
 const PATCH_35_REV_F_TEAM_QUEUE_CONTRACT_AUDIT_VERSION = "PATCH_35_REV_F_TEAM_QUEUE_CONTRACT_AUDIT_V1";
+const PATCH_35_REV_G_REALTIME_RESPONSE_CORRELATION_AUDIT_VERSION = "PATCH_35_REV_G_REALTIME_RESPONSE_CORRELATION_AUDIT_V1";
 const PATCH_32_MANUAL_LOCK_STAGING_PROOF_STORAGE_KEY = "orkio_manual_lock_staging_proof";
 
 
@@ -3568,6 +3569,8 @@ const messagesEndRef = useRef(null);
   }, [selectedManualAgentSlug]);
 
   const rtcResponseAuthorityRef = useRef(null);
+  const rtcPatch35RevGResponseCorrelationRef = useRef({});
+  const rtcPatch35RevGLastResponseCreateRef = useRef(null);
   const rtcResponseCreateDedupeRef = useRef(new Set());
   const rtcFinalCommitDedupeRef = useRef(new Set());
   const rtcStaleSessionEventCountRef = useRef(0);
@@ -10390,6 +10393,168 @@ function scheduleRealtimeIdleFollowup() {
     } catch {}
   }
 
+
+  function hashPatch35RevGText(value = "") {
+    const str = String(value || "");
+    let hash = 0;
+    for (let i = 0; i < str.length; i += 1) {
+      hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+    }
+    return `${Math.abs(hash).toString(16)}:${str.length}`;
+  }
+
+  function extractPatch35RevGVoiceFromClientPayload(payload = {}) {
+    try {
+      return (
+        payload?.response?.audio?.output?.voice ||
+        payload?.response?.audio?.voice ||
+        payload?.response?.voice ||
+        payload?.session?.audio?.output?.voice ||
+        payload?.session?.voice ||
+        rtcVoiceRef.current ||
+        null
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  function extractPatch35RevGInstructionsFromClientPayload(payload = {}) {
+    try {
+      return String(
+        payload?.response?.instructions ||
+        payload?.session?.instructions ||
+        ""
+      );
+    } catch {
+      return "";
+    }
+  }
+
+  function buildPatch35RevGCorrelationSnapshot(extra = {}) {
+    const meetingState = meetingStateRef.current || {};
+    const responseMetadata = extra?.response_metadata || extra?.metadata || {};
+    let teamMode = false;
+    let manualTargetSlug = "";
+    let manualTeamFocusSlug = "";
+    let manualTeamTurnQueue = [];
+    try { teamMode = Boolean(isManualTeamConversationActive()); } catch {}
+    try { manualTargetSlug = getManualAuthoritySlug() || ""; } catch {}
+    try { manualTeamFocusSlug = teamMode ? (getManualTeamConversationFocusSlug() || "") : ""; } catch {}
+    try { manualTeamTurnQueue = teamMode ? (getManualTeamConversationTurnQueue(manualTeamFocusSlug || "") || []) : []; } catch {}
+    const selectedManualAgentSlug = (() => {
+      try { return selectedManualAgentSlugRef.current || ""; } catch { return ""; }
+    })();
+    const activeSpeakerSlug = canonicalAgentSlug(
+      extra?.active_speaker_slug ||
+      responseMetadata?.speaker_slug ||
+      responseMetadata?.target_agent_slug ||
+      meetingState?.active_speaker_slug ||
+      meetingState?.last_speaker_slug ||
+      manualTeamFocusSlug ||
+      selectedManualAgentSlug ||
+      ""
+    );
+    const activePersonaSlug = canonicalAgentSlug(
+      extra?.active_persona_slug ||
+      responseMetadata?.persona_slug ||
+      meetingState?.active_persona_slug ||
+      activeSpeakerSlug ||
+      ""
+    );
+    return {
+      marker: PATCH_35_REV_G_REALTIME_RESPONSE_CORRELATION_AUDIT_VERSION,
+      source_function: extra?.source_function || null,
+      stage: extra?.stage || null,
+      direction: extra?.direction || null,
+      event_type: extra?.event_type || null,
+      event_id: extra?.event_id || null,
+      response_id: extra?.response_id || null,
+      item_id: extra?.item_id || null,
+      conversation_item_id: extra?.conversation_item_id || null,
+      previous_item_id: extra?.previous_item_id || null,
+      correlation_id: extra?.correlation_id || null,
+      session_id: rtcSessionIdRef.current || null,
+      realtime_session_id: rtcActiveSessionIdRef.current || rtcSessionIdRef.current || null,
+      created_at_ms: Date.now(),
+      active_speaker_slug: activeSpeakerSlug || null,
+      active_persona_slug: activePersonaSlug || null,
+      selected_manual_agent_slug: selectedManualAgentSlug || null,
+      manual_target_slug: manualTargetSlug || null,
+      manual_team_focus_slug: manualTeamFocusSlug || null,
+      manual_team_turn_queue: Array.isArray(manualTeamTurnQueue) ? manualTeamTurnQueue : [],
+      team_mode: teamMode,
+      room_mode: teamMode ? PATCH_34_REVB_ROOM_MODE : null,
+      response_control: teamMode ? PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL : null,
+      voice: extra?.voice || rtcVoiceRef.current || null,
+      instructions_hash: extra?.instructions_hash || null,
+      response_in_flight: Boolean(rtcResponseInFlightRef.current),
+      pending_session_update: Boolean(rtcPendingSessionUpdateRef.current),
+      raw_type: extra?.raw_type || null,
+    };
+  }
+
+  function logPatch35RevGRealtimeCorrelation(stage, extra = {}) {
+    try {
+      const audit = buildPatch35RevGCorrelationSnapshot({ ...extra, stage });
+      try { console.info("PATCH35_REVG_RT_CORRELATION", audit); } catch {}
+      try { logRealtimeStep("patch35_revg:rt_correlation", audit); } catch {}
+      try { queueRealtimeTelemetry("patch35_revg_rt_correlation", audit); } catch {}
+      return audit;
+    } catch (err) {
+      try {
+        console.warn("PATCH35_REVG_RT_CORRELATION_FAILED", {
+          marker: PATCH_35_REV_G_REALTIME_RESPONSE_CORRELATION_AUDIT_VERSION,
+          stage,
+          message: err?.message || null,
+        });
+      } catch {}
+      return null;
+    }
+  }
+
+  function rememberPatch35RevGResponseCreateCorrelation(eventId, payload = {}, reason = "") {
+    try {
+      const metadata = payload?.response?.metadata || {};
+      const correlationId = `revg_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+      const instructions = extractPatch35RevGInstructionsFromClientPayload(payload);
+      const record = {
+        correlation_id: correlationId,
+        event_id: eventId || null,
+        reason,
+        created_at_ms: Date.now(),
+        response_metadata: metadata,
+        active_speaker_slug: metadata?.speaker_slug || metadata?.target_agent_slug || null,
+        active_persona_slug: metadata?.persona_slug || null,
+        manual_team_focus_slug: metadata?.manual_team_focus_slug || null,
+        manual_target_slug: metadata?.manual_target_slug || null,
+        voice: extractPatch35RevGVoiceFromClientPayload(payload),
+        instructions_hash: hashPatch35RevGText(instructions),
+      };
+      rtcPatch35RevGLastResponseCreateRef.current = record;
+      if (eventId) {
+        rtcPatch35RevGResponseCorrelationRef.current[String(eventId)] = record;
+      }
+      return record;
+    } catch {
+      return null;
+    }
+  }
+
+  function attachPatch35RevGResponseIdToLastCorrelation(responseId) {
+    try {
+      if (!responseId) return null;
+      const last = rtcPatch35RevGLastResponseCreateRef.current || null;
+      if (!last) return null;
+      const record = { ...last, response_id: responseId, response_created_at_ms: Date.now() };
+      rtcPatch35RevGResponseCorrelationRef.current[String(responseId)] = record;
+      rtcPatch35RevGLastResponseCreateRef.current = record;
+      return record;
+    } catch {
+      return null;
+    }
+  }
+
   function sendRealtimeClientEvent(dc, payload, reason = "client_event") {
     try {
       if (!dc || dc.readyState !== "open") {
@@ -10409,6 +10574,29 @@ function scheduleRealtimeIdleFollowup() {
           : [];
       const providerSafePayload = sanitizePatch33RevBRealtimeClientEventPayload(payload || {});
       const finalPayload = { event_id: eventId, ...(providerSafePayload || {}) };
+
+      const patch35RevGInstructions = extractPatch35RevGInstructionsFromClientPayload(finalPayload);
+      const patch35RevGResponseMetadata = finalPayload?.response?.metadata || finalPayload?.session?.metadata || {};
+      const patch35RevGCreateRecord =
+        finalPayload?.type === "response.create"
+          ? rememberPatch35RevGResponseCreateCorrelation(eventId, finalPayload, reason)
+          : null;
+
+      if (["session.update", "response.cancel", "response.create", "conversation.item.create", "input_audio_buffer.clear"].includes(String(finalPayload?.type || ""))) {
+        logPatch35RevGRealtimeCorrelation("client_event_before_send", {
+          source_function: "sendRealtimeClientEvent",
+          direction: "client_to_provider",
+          event_type: finalPayload?.type || null,
+          event_id: eventId,
+          item_id: finalPayload?.item?.id || null,
+          conversation_item_id: finalPayload?.item?.id || null,
+          correlation_id: patch35RevGCreateRecord?.correlation_id || null,
+          response_metadata: patch35RevGResponseMetadata,
+          voice: extractPatch35RevGVoiceFromClientPayload(finalPayload),
+          instructions_hash: patch35RevGInstructions ? hashPatch35RevGText(patch35RevGInstructions) : null,
+          raw_type: finalPayload?.type || null,
+        });
+      }
 
       if (patch33RevBRejectedSessionKeys.length) {
         const sanitizerAudit = {
@@ -10438,6 +10626,21 @@ function scheduleRealtimeIdleFollowup() {
       } catch {}
 
       dc.send(JSON.stringify(finalPayload));
+      if (["session.update", "response.cancel", "response.create", "conversation.item.create", "input_audio_buffer.clear"].includes(String(finalPayload?.type || ""))) {
+        logPatch35RevGRealtimeCorrelation("client_event_after_send", {
+          source_function: "sendRealtimeClientEvent",
+          direction: "client_to_provider",
+          event_type: finalPayload?.type || null,
+          event_id: eventId,
+          item_id: finalPayload?.item?.id || null,
+          conversation_item_id: finalPayload?.item?.id || null,
+          correlation_id: patch35RevGCreateRecord?.correlation_id || null,
+          response_metadata: patch35RevGResponseMetadata,
+          voice: extractPatch35RevGVoiceFromClientPayload(finalPayload),
+          instructions_hash: patch35RevGInstructions ? hashPatch35RevGText(patch35RevGInstructions) : null,
+          raw_type: finalPayload?.type || null,
+        });
+      }
       try { queueRealtimeTelemetry("client_event_sent", { reason, type: finalPayload.type, event_id: eventId }); } catch {}
       logRealtimeStep("ao66r:client_event_sent", {
         reason,
@@ -11598,6 +11801,49 @@ function scheduleRealtimeIdleFollowup() {
         try {
           const ev = JSON.parse(e.data);
           if (shouldIgnoreStaleRealtimeSessionEvent(ownedRealtimeSessionId, ownedRealtimeSessionEpoch, ev?.type || "dc.message", "datachannel.message")) return;
+
+          try {
+            const patch35RevGServerEventType = String(ev?.type || "");
+            const patch35RevGResponseId = ev?.response?.id || ev?.response_id || null;
+            const patch35RevGItemId = ev?.item?.id || ev?.item_id || ev?.response?.output?.[0]?.id || null;
+            const patch35RevGCorrelationRecord = patch35RevGResponseId
+              ? (rtcPatch35RevGResponseCorrelationRef.current?.[String(patch35RevGResponseId)] || attachPatch35RevGResponseIdToLastCorrelation(patch35RevGResponseId))
+              : null;
+            if (
+              patch35RevGServerEventType === "response.created" ||
+              patch35RevGServerEventType === "response.output_item.added" ||
+              patch35RevGServerEventType === "response.output_item.done" ||
+              patch35RevGServerEventType === "response.audio.delta" ||
+              patch35RevGServerEventType === "response.output_audio.delta" ||
+              patch35RevGServerEventType === "response.audio.done" ||
+              patch35RevGServerEventType === "response.output_audio.done" ||
+              patch35RevGServerEventType === "response.audio_transcript.delta" ||
+              patch35RevGServerEventType === "response.output_audio_transcript.delta" ||
+              patch35RevGServerEventType === "response.audio_transcript.done" ||
+              patch35RevGServerEventType === "response.output_audio_transcript.done" ||
+              patch35RevGServerEventType === "response.done" ||
+              patch35RevGServerEventType === "conversation.item.created" ||
+              patch35RevGServerEventType === "conversation.item.completed" ||
+              patch35RevGServerEventType === "conversation.item.input_audio_transcription.completed" ||
+              patch35RevGServerEventType === "error"
+            ) {
+              logPatch35RevGRealtimeCorrelation("provider_event_received", {
+                source_function: "datachannel.message",
+                direction: "provider_to_client",
+                event_type: patch35RevGServerEventType,
+                event_id: ev?.event_id || null,
+                response_id: patch35RevGResponseId,
+                item_id: patch35RevGItemId,
+                conversation_item_id: patch35RevGItemId,
+                previous_item_id: ev?.previous_item_id || ev?.item?.previous_item_id || null,
+                correlation_id: patch35RevGCorrelationRecord?.correlation_id || null,
+                response_metadata: patch35RevGCorrelationRecord?.response_metadata || ev?.response?.metadata || {},
+                voice: patch35RevGCorrelationRecord?.voice || ev?.response?.audio?.output?.voice || null,
+                instructions_hash: patch35RevGCorrelationRecord?.instructions_hash || null,
+                raw_type: patch35RevGServerEventType,
+              });
+            }
+          } catch {}
 
           try {
             const eventTypeForLog = String(ev?.type || "");
