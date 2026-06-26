@@ -669,6 +669,7 @@ const PATCH_34_REVB_REALTIME_ROOM_ENGINE_VERSION = "PATCH_34_REVB_REALTIME_ROOM_
 const PATCH_34_REVB_ROOM_MODE = "team";
 const PATCH_34_REVB_ROOM_RESPONSE_CONTROL = "room_agent_authority";
 const PATCH_35_REV_D_REALTIME_FORCE_MANUAL_SWITCH_VERSION = "PATCH_35_REV_D_REALTIME_FORCE_MANUAL_SWITCH_V1";
+const PATCH_35_REV_E_FORENSIC_TEAM_AUTHORITY_CONTRACT_VERSION = "PATCH_35_REV_E_FORENSIC_TEAM_AUTHORITY_CONTRACT_V1";
 const PATCH_32_MANUAL_LOCK_STAGING_PROOF_STORAGE_KEY = "orkio_manual_lock_staging_proof";
 
 
@@ -10534,8 +10535,8 @@ function scheduleRealtimeIdleFollowup() {
         turn_index: getRealtimeAuthorityTurnIndex(),
         requested_agent: meetingStateRef.current?.last_turn?.target_agent_slug || targetAgentSlugForResponse,
         resolved_agent: targetAgentSlugForResponse,
-        speaker_slug: meetingStateRef.current?.active_speaker_slug || targetAgentSlugForResponse,
-        persona_slug: meetingStateRef.current?.active_persona_slug || targetAgentSlugForResponse,
+        speaker_slug: targetAgentSlugForResponse,
+        persona_slug: targetAgentSlugForResponse,
         prompt_profile: personaSlugForResponse,
         prompt_profile_version: teamConversationActive ? PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION : "PATCH_31_FINAL_FULL_CANONICAL_REALTIME_PERSONA_V1",
         manual_team_conversation_active: teamConversationActive,
@@ -10634,8 +10635,8 @@ function scheduleRealtimeIdleFollowup() {
           target_agent_slug: targetAgentSlugForResponse,
           target_agent_slugs: teamConversationActive ? teamTurnQueueForResponse : [targetAgentSlugForResponse],
           resolved_agent: targetAgentSlugForResponse,
-          speaker_slug: meetingStateRef.current?.active_speaker_slug || targetAgentSlugForResponse,
-          persona_slug: teamConversationActive ? "team" : (meetingStateRef.current?.active_persona_slug || targetAgentSlugForResponse),
+          speaker_slug: targetAgentSlugForResponse,
+          persona_slug: targetAgentSlugForResponse,
           manual_target_slug: teamConversationActive ? "team" : manualTargetSlug,
           manual_team_conversation_active: teamConversationActive,
           manual_team_focus_slug: teamConversationActive ? targetAgentSlugForResponse : null,
@@ -12397,7 +12398,10 @@ function scheduleRealtimeIdleFollowup() {
           state?.visible_agent ||
           ""
         );
-        const teamModeratorOk = manualTargetSlug === "team" && ["team", "orkio"].includes(incomingSlug);
+        const teamModeratorOk = (
+          manualTargetSlug === "team" &&
+          [...PATCH_32_CANONICAL_TEAM_AGENT_SLUGS, "team"].includes(incomingSlug)
+        );
         if (incomingSlug && manualTargetSlug && incomingSlug !== manualTargetSlug && incomingSlug !== "team" && !teamModeratorOk) {
           try {
             logRealtimeStep("patch32_revc:manual_authority_stale_session_ignored", {
@@ -12412,6 +12416,24 @@ function scheduleRealtimeIdleFollowup() {
             });
           } catch {}
           return false;
+        }
+        if (teamModeratorOk && incomingSlug && incomingSlug !== "team") {
+          try {
+            logRealtimeStep("patch35_reve:team_participant_state_accepted", {
+              marker: PATCH_35_REV_E_FORENSIC_TEAM_AUTHORITY_CONTRACT_VERSION,
+              source,
+              incoming_speaker_slug: incomingSlug,
+              manual_target_slug: manualTargetSlug,
+              active_session_id: rtcActiveSessionIdRef.current || rtcSessionIdRef.current || null,
+              event_session_id: stateSessionId || null,
+            });
+            queueRealtimeTelemetry("patch35_reve_team_participant_state_accepted", {
+              marker: PATCH_35_REV_E_FORENSIC_TEAM_AUTHORITY_CONTRACT_VERSION,
+              source,
+              incoming_speaker_slug: incomingSlug,
+              manual_target_slug: manualTargetSlug,
+            });
+          } catch {}
         }
       }
 
