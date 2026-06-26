@@ -17,6 +17,7 @@
 // PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF
 // PATCH_32_REV_I_MANUAL_LOCK_STAGING_PROOF_SILENCE
 // PATCH_32_REV_J_MANUAL_LOCK_STAGING_PROOF_PRODUCTION_GUARD
+// PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch, uploadFile, chat, chatStream, transcribeAudio, requestFounderHandoff, getRealtimeClientSecret, startRealtimeSession, startSummitSession, postRealtimeEventsBatch, endRealtimeSession, getRealtimeSession, getSummitSessionScore, submitSummitSessionReview, downloadRealtimeAta as downloadRealtimeAtaFile, guardRealtimeTranscript, getOrionSquadHealth, getOrionSquadPreview, getAgentCapabilities } from "../ui/api.js";
@@ -658,6 +659,7 @@ const PATCH_32_REV_I_MANUAL_LOCK_STAGING_PROOF_SILENCE_VERSION = "PATCH_32_REV_I
 const PATCH_32_REV_J_MANUAL_LOCK_STAGING_PROOF_PRODUCTION_GUARD_VERSION = "PATCH_32_REV_J_MANUAL_LOCK_STAGING_PROOF_PRODUCTION_GUARD_V1";
 const PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_VERSION = "PATCH_33_TEAM_CONVERSATION_ORCHESTRATOR_V1";
 const PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_VERSION = "PATCH_33_REV_A_TEAM_CONVERSATION_STAGING_VERIFICATION_V1";
+const PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION = "PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_V1";
 const PATCH_33_TEAM_CONVERSATION_RESPONSE_CONTROL = "team_conversation_orchestrator";
 const PATCH_33_TEAM_CONVERSATION_MODE = "team_conversation_room";
 const PATCH_33_TEAM_CONVERSATION_SOURCE = "manual_team_conversation_orchestrator";
@@ -1691,6 +1693,139 @@ function buildRealtimeResponseMetadata(payload = {}) {
   return out;
 }
 
+
+
+
+// PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER
+// Provider session.update accepts only provider-native session fields. Orkio
+// manual/team fields must remain in events:batch, meeting_state and internal
+// telemetry, never inside the session payload sent through the Realtime
+// DataChannel. This prevents provider errors such as:
+// Unknown parameter: "session.manual_agent_lock".
+const PATCH_33_REV_B_PROVIDER_SESSION_ALLOWED_KEYS = new Set([
+  "type",
+  "instructions",
+  "audio",
+  "modalities",
+  "output_modalities",
+  "input_audio_format",
+  "output_audio_format",
+  "input_audio_transcription",
+  "turn_detection",
+  "tools",
+  "tool_choice",
+  "temperature",
+  "max_response_output_tokens",
+  "model",
+  "voice",
+]);
+
+const PATCH_33_REV_B_PROVIDER_INTERNAL_SESSION_KEYS = new Set([
+  "agent_id",
+  "agent_ids",
+  "visible_agent",
+  "target_agent_slug",
+  "target_agent_slugs",
+  "requested_agent_names",
+  "multi_agent_turn",
+  "response_control",
+  "dest_mode",
+  "manual_agent_lock",
+  "manual_agent_source",
+  "manual_authority_source",
+  "manual_authority_updated_at",
+  "manual_authority_version",
+  "manual_target_slug",
+  "manual_sticky_state_version",
+  "manual_lock_persistence_version",
+  "manual_lock_staging_proof_version",
+  "manual_lock_staging_proof_production_guard_version",
+  "manual_lock_contract_propagation_version",
+  "manual_team_panel_required",
+  "manual_team_panel_order",
+  "manual_team_conversation_active",
+  "manual_team_focus_slug",
+  "manual_team_turn_queue",
+  "manual_team_turn_index",
+  "team_panel_version",
+  "team_panel_mode",
+  "team_panel_voice_moderator_slug",
+  "team_conversation_mode",
+  "team_conversation_orchestrator_version",
+  "team_conversation_staging_verification_version",
+  "session_voice_sync_version",
+  "profile_address_preference_version",
+  "preferred_address_names",
+  "auto_handoff_enabled",
+  "auto_handoff_ignored",
+  "realtime_voice_agent_slug",
+]);
+
+function isPatch33RevBProviderInternalSessionKey(key) {
+  const safeKey = String(key || "").trim();
+  if (!safeKey) return false;
+  return (
+    safeKey.startsWith("manual_") ||
+    safeKey.startsWith("team_") ||
+    safeKey.startsWith("target_agent") ||
+    safeKey.startsWith("requested_agent") ||
+    safeKey.startsWith("profile_address") ||
+    PATCH_33_REV_B_PROVIDER_INTERNAL_SESSION_KEYS.has(safeKey)
+  );
+}
+
+function collectPatch33RevBProviderSessionRejectedKeys(value, prefix = "session") {
+  const rejected = [];
+  const visit = (node, path) => {
+    if (!node || typeof node !== "object" || Array.isArray(node)) return;
+    Object.entries(node).forEach(([key, nested]) => {
+      const childPath = `${path}.${key}`;
+      if (
+        isPatch33RevBProviderInternalSessionKey(key) ||
+        (path === "session" && !PATCH_33_REV_B_PROVIDER_SESSION_ALLOWED_KEYS.has(key))
+      ) {
+        rejected.push(childPath);
+        return;
+      }
+      visit(nested, childPath);
+    });
+  };
+  visit(value, prefix);
+  return Array.from(new Set(rejected));
+}
+
+function sanitizePatch33RevBProviderSessionValue(value) {
+  if (!value || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map((item) => sanitizePatch33RevBProviderSessionValue(item));
+  const out = {};
+  Object.entries(value).forEach(([key, nested]) => {
+    if (isPatch33RevBProviderInternalSessionKey(key)) return;
+    out[key] = sanitizePatch33RevBProviderSessionValue(nested);
+  });
+  return out;
+}
+
+function sanitizePatch33RevBProviderSessionPayload(session = {}) {
+  if (!session || typeof session !== "object" || Array.isArray(session)) return session;
+  const out = {};
+  Object.entries(session).forEach(([key, value]) => {
+    if (!PATCH_33_REV_B_PROVIDER_SESSION_ALLOWED_KEYS.has(key)) return;
+    if (isPatch33RevBProviderInternalSessionKey(key)) return;
+    out[key] = sanitizePatch33RevBProviderSessionValue(value);
+  });
+  return out;
+}
+
+function sanitizePatch33RevBRealtimeClientEventPayload(payload = {}) {
+  if (!payload || typeof payload !== "object") return payload;
+  if (payload.type !== "session.update" || !payload.session || typeof payload.session !== "object") {
+    return payload;
+  }
+  return {
+    ...payload,
+    session: sanitizePatch33RevBProviderSessionPayload(payload.session),
+  };
+}
 
 
 function canonicalizeSpeakerLabel(raw) {
@@ -9860,7 +9995,27 @@ function scheduleRealtimeIdleFollowup() {
       }
 
       const eventId = payload?.event_id || `evt_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-      const finalPayload = { event_id: eventId, ...(payload || {}) };
+      const patch33RevBRejectedSessionKeys =
+        payload?.type === "session.update"
+          ? collectPatch33RevBProviderSessionRejectedKeys(payload?.session || {})
+          : [];
+      const providerSafePayload = sanitizePatch33RevBRealtimeClientEventPayload(payload || {});
+      const finalPayload = { event_id: eventId, ...(providerSafePayload || {}) };
+
+      if (patch33RevBRejectedSessionKeys.length) {
+        const sanitizerAudit = {
+          reason,
+          type: payload?.type || null,
+          event_id: eventId,
+          removed_keys: patch33RevBRejectedSessionKeys,
+          removed_count: patch33RevBRejectedSessionKeys.length,
+          provider_session_payload_clean: true,
+          version: PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION,
+        };
+        try { logRealtimeStep("patch33_revb:provider_payload_sanitized", sanitizerAudit); } catch {}
+        try { queueRealtimeTelemetry("patch33_revb_provider_payload_sanitized", sanitizerAudit); } catch {}
+        try { console.info("[PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER]", sanitizerAudit); } catch {}
+      }
 
       try {
         console.log("REALTIME_CLIENT_EVENT", {
@@ -9868,6 +10023,8 @@ function scheduleRealtimeIdleFollowup() {
           type: finalPayload.type,
           event_id: eventId,
           response_modalities: finalPayload?.response?.output_modalities || null,
+          provider_session_payload_clean: finalPayload?.type === "session.update" ? true : null,
+          sanitizer_version: finalPayload?.type === "session.update" ? PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION : null,
           marker: ORKIO_AO66R_HF4_BUILD_MARKER,
         });
       } catch {}
@@ -10454,6 +10611,7 @@ function scheduleRealtimeIdleFollowup() {
         team_conversation_mode: realtimeManualContract.team_conversation_mode || "",
         team_conversation_orchestrator_version: realtimeManualContract.team_conversation_orchestrator_version || "",
         team_conversation_staging_verification_version: realtimeManualContract.team_conversation_staging_verification_version || "",
+        realtime_provider_payload_sanitizer_version: PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION,
         session_voice_sync_version: PATCH_32_PREDEPLOY_PREMIUM_VERSION,
         preferred_address_names: resolveProfileAddressNames(user, typeof window !== "undefined" ? window.localStorage : null),
         profile_address_preference_version: PROFILE_ADDRESS_PREFERENCE_VERSION,
