@@ -11,6 +11,10 @@
 // PATCH_32_PREDEPLOY_PREMIUM_MANUAL_AGENT_VOICE_SYNC
 // PATCH_32_REV_C_PROFILE_ADDRESS_MERGE
 // PATCH_32_REV_D_TEAM_PANEL_PRESTAGING
+// PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE
+// PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE
+// PATCH_32_REV_G_MANUAL_LOCK_CONTRACT_PROPAGATION
+// PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch, uploadFile, chat, chatStream, transcribeAudio, requestFounderHandoff, getRealtimeClientSecret, startRealtimeSession, startSummitSession, postRealtimeEventsBatch, endRealtimeSession, getRealtimeSession, getSummitSessionScore, submitSummitSessionReview, downloadRealtimeAta as downloadRealtimeAtaFile, guardRealtimeTranscript, getOrionSquadHealth, getOrionSquadPreview, getAgentCapabilities } from "../ui/api.js";
@@ -644,6 +648,10 @@ const PATCH_32_CANONICAL_TEAM_AGENT_SLUGS = ["orkio", "orion", "chris", "laura"]
 const PATCH_32_REV_D_TEAM_PANEL_VERSION = "PATCH_32_REV_D_TEAM_PANEL_PRESTAGING_V1";
 const PATCH_32_REV_D_TEAM_PANEL_MODE = "manual_team_panel_deterministic_queue";
 const PATCH_32_REV_D_TEAM_PANEL_VOICE_MODERATOR_SLUG = "orkio";
+const PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION = "PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_V1";
+const PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION = "PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_V1";
+const PATCH_32_REV_G_MANUAL_LOCK_CONTRACT_PROPAGATION_VERSION = "PATCH_32_REV_G_MANUAL_LOCK_CONTRACT_PROPAGATION_V1";
+const PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION = "PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_V1";
 
 const EMPTY_STATE_PREVIEW_STEPS = [
   { title: "Readiness", description: "Shell preservado, acessos visíveis e console pronto para a primeira ação com percepção premium." },
@@ -2881,6 +2889,33 @@ const [onboardingForm, setOnboardingForm] = useState(() => sanitizeOnboardingFor
       return [];
     }
   });   // agent ids
+  // PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE:
+  // Visual/manual button selection has its own sticky source of truth. It must not
+  // be derived from backend meeting_state because telemetry/state_update batches
+  // can be empty during realtime reconnects.
+  const [selectedManualAgentSlug, setSelectedManualAgentSlug] = useState(() => {
+    if (typeof window === "undefined") return "team";
+    try {
+      const synced = readPwaMobileDestinationState();
+      const stored = String(
+        synced.manual_target_slug ||
+        synced.manual_slug ||
+        window.localStorage?.getItem("orkio_manual_authority_slug") ||
+        ""
+      ).trim();
+      if (stored) return normalizeManualAuthoritySlug(stored, "team");
+      const storedMode = String(synced.mode || window.localStorage?.getItem("orkio_last_dest_mode") || "").trim().toLowerCase();
+      if (storedMode === "team") return "team";
+      if (storedMode === "single") {
+        const storedSingle = String(synced.single || window.localStorage?.getItem("orkio_last_dest_single") || "").trim();
+        return normalizeManualAuthoritySlug(storedSingle, "orkio");
+      }
+      return "team";
+    } catch {
+      return "team";
+    }
+  });
+  const selectedManualAgentSlugRef = useRef(selectedManualAgentSlug || "team");
 
   // Upload modal
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -3207,11 +3242,42 @@ const messagesEndRef = useRef(null);
   const rtcActiveSessionIdRef = useRef(null);
   const rtcActiveSessionEpochRef = useRef(0);
   const manualAuthorityRef = useRef({
-    slug: "orkio",
+    slug: selectedManualAgentSlug || "team",
     version: PATCH_32_REV_C_MANUAL_TARGET_SOURCE_OF_TRUTH_VERSION,
-    updatedAt: 0,
+    updatedAt: selectedManualAgentSlug ? Date.now() : 0,
     source: PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE,
   });
+  useEffect(() => {
+    const stickySlug = normalizeManualAuthoritySlug(selectedManualAgentSlug || "team", "team");
+    selectedManualAgentSlugRef.current = stickySlug;
+    if (stickySlug && manualAuthorityRef.current?.slug !== stickySlug) {
+      manualAuthorityRef.current = {
+        ...(manualAuthorityRef.current || {}),
+        slug: stickySlug,
+        version: PATCH_32_REV_C_MANUAL_TARGET_SOURCE_OF_TRUTH_VERSION,
+        updatedAt: manualAuthorityRef.current?.updatedAt || Date.now(),
+        source: manualAuthorityRef.current?.source || PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE,
+      };
+    }
+    try {
+      window.localStorage?.setItem("orkio_manual_authority_slug", stickySlug);
+      persistPwaMobileDestinationState({
+        manual_target_slug: stickySlug,
+        manual_slug: stickySlug,
+        manual_agent_lock: true,
+        manual_lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
+        manual_lock_staging_proof_version: PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION,
+      });
+    } catch {}
+
+    try {
+      logManualLockStagingProof("manual_button_visual_state_confirmed", {
+        expected_manual_slug: stickySlug || null,
+        proof_scope: "selectedManualAgentSlug_effect",
+      });
+    } catch {}
+  }, [selectedManualAgentSlug]);
+
   const rtcResponseAuthorityRef = useRef(null);
   const rtcResponseCreateDedupeRef = useRef(new Set());
   const rtcFinalCommitDedupeRef = useRef(new Set());
@@ -4514,38 +4580,124 @@ function formatAgentOptionLabel(agent) {
 
   function setManualAuthoritySlug(rawSlug = "orkio", source = PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE) {
     const slug = normalizeManualAuthoritySlug(rawSlug, "orkio");
+    const now = Date.now();
     const next = {
       slug,
       version: PATCH_32_REV_C_MANUAL_TARGET_SOURCE_OF_TRUTH_VERSION,
-      updatedAt: Date.now(),
+      sticky_state_version: PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
+      lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
+      updatedAt: now,
       source: source || PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE,
+      lockKind: "manual_button_visual_authority",
     };
+
+    // PATCH_32_REV_F:
+    // The quick button is now the visual/manual source of truth. Updating only a
+    // ref was not enough: older UI branches still rendered from destMode/destSingle
+    // and could return to Overview/Orkio after authority telemetry or blank
+    // meeting_state updates.
     manualAuthorityRef.current = next;
+    selectedManualAgentSlugRef.current = slug;
+    try { setSelectedManualAgentSlug(slug); } catch {}
+
     try {
-      logRealtimeStep("patch32_revc:manual_authority_selected", {
+      if (slug === "team") {
+        setDestMode("team");
+        setDestSingle("");
+        setDestMulti([]);
+        setActiveRuntimeAgent("Team");
+        persistDestinationState({
+          mode: "team",
+          single: "",
+          multi: [],
+          manual_target_slug: "team",
+          manual_slug: "team",
+          manual_agent_lock: true,
+          manual_lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
+        });
+      } else {
+        const targetAgent =
+          findAgentByCanonicalSlug(slug) ||
+          findAgentByRuntimeIdentity(slug) ||
+          null;
+        const targetId = String(targetAgent?.id || slug || "").trim();
+        const targetName = canonicalizeSpeakerLabel(
+          targetAgent?.name ||
+          registryCanonicalAgentDisplayNameFromSlug(slug) ||
+          slug
+        );
+        setDestMode("single");
+        setDestSingle(targetId);
+        setDestMulti([]);
+        setActiveRuntimeAgent(targetName);
+        persistDestinationState({
+          mode: "single",
+          single: targetId,
+          multi: [],
+          manual_target_slug: slug,
+          manual_slug: slug,
+          manual_agent_lock: true,
+          manual_lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
+        });
+      }
+    } catch {}
+
+    try {
+      window.localStorage?.setItem("orkio_manual_authority_slug", slug);
+      window.localStorage?.setItem("orkio_manual_authority_lock", "true");
+      window.localStorage?.setItem("orkio_manual_authority_updated_at", String(now));
+      persistPwaMobileDestinationState({
+        manual_target_slug: slug,
+        manual_slug: slug,
+        manual_agent_lock: true,
+        manual_lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
+      });
+    } catch {}
+
+    try {
+      logRealtimeStep("patch32_revf:manual_button_lock_persisted", {
         manual_target_slug: slug,
         active_session_id: rtcActiveSessionIdRef.current || rtcSessionIdRef.current || null,
         manual_agent_lock: true,
         manual_authority_version: PATCH_32_REV_C_MANUAL_TARGET_SOURCE_OF_TRUTH_VERSION,
+        manual_sticky_state_version: PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
+        manual_lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
+        manual_lock_contract_propagation_version: PATCH_32_REV_G_MANUAL_LOCK_CONTRACT_PROPAGATION_VERSION,
         manual_authority_source: next.source,
         manual_authority_updated_at: next.updatedAt,
       });
-      queueRealtimeTelemetry("patch32_revc_manual_authority_selected", {
+      queueRealtimeTelemetry("patch32_revf_manual_button_lock_persisted", {
         manual_target_slug: slug,
+        selected_agent_slug: slug,
         active_session_id: rtcActiveSessionIdRef.current || rtcSessionIdRef.current || null,
         manual_agent_lock: true,
         manual_authority_version: PATCH_32_REV_C_MANUAL_TARGET_SOURCE_OF_TRUTH_VERSION,
+        manual_sticky_state_version: PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
+        manual_lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
+        manual_lock_contract_propagation_version: PATCH_32_REV_G_MANUAL_LOCK_CONTRACT_PROPAGATION_VERSION,
+        manual_lock_staging_proof_version: PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION,
         manual_authority_source: next.source,
         manual_authority_updated_at: next.updatedAt,
+      });
+    } catch {}
+
+    try {
+      logManualLockStagingProof("manual_button_selected", {
+        expected_manual_slug: slug,
+        manual_authority_source: next.source,
+        manual_authority_updated_at: next.updatedAt,
+        proof_scope: "quick_agent_button_click",
       });
     } catch {}
     return next;
   }
 
   function getManualAuthoritySlug() {
+    const sticky = normalizeManualAuthoritySlug(selectedManualAgentSlugRef.current || selectedManualAgentSlug || "", "");
+    if (sticky) return sticky;
     const current = manualAuthorityRef.current || {};
     const direct = normalizeManualAuthoritySlug(current.slug || "", "");
-    if (direct && Number(current.updatedAt || 0) > 0) return direct;
+    if (direct) return direct;
     const mode = String(destMode || "").trim().toLowerCase();
     if (mode === "team") return "team";
     if (mode === "single") {
@@ -4563,6 +4715,9 @@ function formatAgentOptionLabel(agent) {
       manual_agent_lock: Boolean(manualTargetSlug),
       manual_target_slug: manualTargetSlug || undefined,
       manual_authority_version: PATCH_32_REV_C_MANUAL_TARGET_SOURCE_OF_TRUTH_VERSION,
+      manual_sticky_state_version: PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
+      manual_lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
+      manual_lock_staging_proof_version: PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION,
       manual_authority_source: authority.source || PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE,
       manual_authority_updated_at: authority.updatedAt || 0,
       session_id: activeSessionId || eventSessionId || undefined,
@@ -4575,6 +4730,54 @@ function formatAgentOptionLabel(agent) {
       });
     } catch {}
     return payload;
+  }
+
+  function logManualLockStagingProof(eventName = "manual_lock_staging_proof", payload = {}) {
+    try {
+      const manualSlug = normalizeManualAuthoritySlug(
+        payload?.expected_manual_slug ||
+        getManualAuthoritySlug() ||
+        selectedManualAgentSlugRef.current ||
+        selectedManualAgentSlug ||
+        "",
+        ""
+      );
+      const state = meetingStateRef.current && typeof meetingStateRef.current === "object"
+        ? meetingStateRef.current
+        : {};
+      const stateSlug = canonicalAgentSlug(
+        state?.active_speaker_slug ||
+        state?.active_persona_slug ||
+        state?.target_agent_slug ||
+        state?.visible_agent ||
+        ""
+      );
+      const participants = Array.isArray(state?.participants) ? state.participants : [];
+      const proofPayload = {
+        ...(payload && typeof payload === "object" ? payload : {}),
+        patch: "PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF",
+        manual_lock_staging_proof_version: PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION,
+        manual_sticky_state_version: PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
+        manual_lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
+        manual_lock_contract_propagation_version: PATCH_32_REV_G_MANUAL_LOCK_CONTRACT_PROPAGATION_VERSION,
+        expected_manual_slug: manualSlug || null,
+        selected_manual_agent_slug: selectedManualAgentSlugRef.current || selectedManualAgentSlug || null,
+        manual_authority_slug: manualAuthorityRef.current?.slug || null,
+        manual_agent_lock: isManualAgentAuthorityLocked(),
+        visual_button_fixed: Boolean(manualSlug && normalizeManualAuthoritySlug(selectedManualAgentSlugRef.current || selectedManualAgentSlug || "", "") === manualSlug),
+        dest_mode: destMode || null,
+        dest_single: destSingle || null,
+        active_runtime_agent: activeRuntimeAgent || null,
+        meeting_state_active_slug: stateSlug || null,
+        meeting_state_participants_count: participants.length,
+        active_session_id: rtcActiveSessionIdRef.current || rtcSessionIdRef.current || null,
+      };
+      logRealtimeStep(`patch32_revh:${eventName}`, proofPayload);
+      queueRealtimeTelemetry(`patch32_revh_${eventName}`, proofPayload);
+      try {
+        console.info("[PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF]", eventName, proofPayload);
+      } catch {}
+    } catch {}
   }
 
   function buildManualAgentAuthorityContract(rawMessage = "", hostAgentId = null, options = {}) {
@@ -4641,9 +4844,11 @@ function formatAgentOptionLabel(agent) {
           requested_agent_names: Array.from(new Set([...selectedNames, ...(Array.isArray(mentionedNames) ? mentionedNames : [])].filter(Boolean))),
           multi_agent_turn: selectedSlugs.length > 1,
           response_control: selectedSlugs.length > 1 ? PATCH_32_TEAM_SEQUENCE_CONTROL : PATCH_32_SINGLE_AGENT_CONTROL,
+          ...manualPayload,
           manual_agent_lock: true,
           manual_agent_source: PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE,
           manual_authority_version: PATCH_32_MANUAL_AGENT_AUTHORITY_VERSION,
+          manual_sticky_state_version: PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
           auto_handoff_enabled: false,
           auto_handoff_ignored: true,
           realtime_voice_agent_slug: selectedSlugs[0] || "orkio",
@@ -4692,6 +4897,8 @@ function formatAgentOptionLabel(agent) {
 
   function isManualAgentAuthorityLocked() {
     if (publicBetaOrkioOnly) return false;
+    const sticky = normalizeManualAuthoritySlug(selectedManualAgentSlugRef.current || selectedManualAgentSlug || "", "");
+    if (sticky) return true;
     const mode = String(destMode || "team").trim().toLowerCase();
     return ["team", "single", "multi"].includes(mode);
   }
@@ -4743,6 +4950,8 @@ function formatAgentOptionLabel(agent) {
       manual_agent_lock: true,
       manual_target_slug: manualTargetSlug,
       manual_authority_version: PATCH_32_REV_C_MANUAL_TARGET_SOURCE_OF_TRUTH_VERSION,
+      manual_sticky_state_version: PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
+      manual_lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
       manual_authority_source: PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE,
       manual_authority_updated_at: manualAuthorityRef.current?.updatedAt || 0,
       ...(teamMode ? {
@@ -5014,6 +5223,10 @@ function formatAgentOptionLabel(agent) {
         const clean = Array.isArray(next.multi) ? next.multi.map((v) => String(v || "").trim()).filter(Boolean) : [];
         window.localStorage?.setItem("orkio_last_dest_multi", JSON.stringify(clean));
       }
+      if ("manual_target_slug" in next || "manual_slug" in next) {
+        const manualSlug = normalizeManualAuthoritySlug(next.manual_target_slug || next.manual_slug || "", "");
+        if (manualSlug) window.localStorage?.setItem("orkio_manual_authority_slug", manualSlug);
+      }
     } catch {}
     try { persistPwaMobileDestinationState(next); } catch {}
   }
@@ -5026,16 +5239,24 @@ function formatAgentOptionLabel(agent) {
     const nextId = String(agent?.id || agentIdOrSlug || "").trim();
     if (!nextId) return false;
 
+    const nextSlug = canonicalAgentSlug(agent?.slug || agent?.key || agent?.name || agent?.id || agentIdOrSlug || nextId) || "orkio";
+    const nextName = canonicalizeSpeakerLabel(agent?.name || registryCanonicalAgentDisplayNameFromSlug(nextSlug) || nextSlug);
+
+    setManualAuthoritySlug(nextSlug, source || PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE);
     setDestMode("single");
     setDestSingle(nextId);
     setDestMulti([]);
-    persistDestinationState({ mode: "single", single: nextId, multi: [] });
+    setActiveRuntimeAgent(nextName);
+    setRuntimeHandoffLabel(`Controle manual: ${nextName}.`);
+    persistDestinationState({ mode: "single", single: nextId, multi: [], manual_target_slug: nextSlug, manual_slug: nextSlug });
 
     try {
       logRealtimeStep("destination:single_agent_selected", {
         source,
         agent_id: nextId,
-        agent_name: agent?.name || null,
+        agent_name: agent?.name || nextName || null,
+        manual_target_slug: nextSlug,
+        manual_sticky_state_version: PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
       });
     } catch {}
 
@@ -5171,6 +5392,8 @@ function formatAgentOptionLabel(agent) {
 
   function applyManualTeamSelectionToRealtime(source = "manual_team_button") {
     setManualAuthoritySlug("team", source || PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE);
+    setActiveRuntimeAgent("Team");
+    setRuntimeHandoffLabel("Controle manual: Team.");
     if (!realtimeModeRef.current) return false;
     const orkioAgent = findAgentByCanonicalSlug("orkio") || findAgentByRuntimeIdentity("orkio") || null;
     if (!orkioAgent?.id) return false;
@@ -5817,6 +6040,8 @@ async function sendMessage(presetMsg = null, opts = {}) {
             manual_agent_lock: Boolean(destinationContract.manual_agent_lock),
             manual_agent_source: destinationContract.manual_agent_source || "",
             manual_authority_version: destinationContract.manual_authority_version || "",
+            manual_sticky_state_version: destinationContract.manual_sticky_state_version || PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
+            manual_lock_persistence_version: destinationContract.manual_lock_persistence_version || PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
             auto_handoff_enabled: destinationContract.auto_handoff_enabled !== false,
             response_control: destinationContract.response_control,
             multi_agent_turn: destinationContract.multi_agent_turn,
@@ -5954,6 +6179,8 @@ async function sendMessage(presetMsg = null, opts = {}) {
             manual_agent_lock: Boolean(destinationContract.manual_agent_lock),
             manual_agent_source: destinationContract.manual_agent_source || "",
             manual_authority_version: destinationContract.manual_authority_version || "",
+            manual_sticky_state_version: destinationContract.manual_sticky_state_version || PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
+            manual_lock_persistence_version: destinationContract.manual_lock_persistence_version || PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
             auto_handoff_enabled: destinationContract.auto_handoff_enabled !== false,
             signal: ctl.signal,
           }), CHAT_STREAM_CONNECT_TIMEOUT_MS, "CHAT_STREAM_CONNECT_TIMEOUT");
@@ -7275,6 +7502,15 @@ async function confirmFounderHandoff() {
 
   function logRealtimeAuthorityTelemetry(eventName, payload = {}) {
     try {
+      const rawEventName = String(eventName || "").trim();
+      // PATCH_32_REV_F:
+      // "authority_lock_released" belongs to the response-create guard, not to
+      // manual button authority. Rename the telemetry event so backend/ops never
+      // interpret it as releasing manual_agent_lock.
+      const telemetryEventName = rawEventName === "authority_lock_released"
+        ? "response_authority_lock_released"
+        : rawEventName;
+      const manualTargetSlug = getManualAuthoritySlug() || selectedManualAgentSlugRef.current || "";
       const meta = {
         ...(payload && typeof payload === "object" ? payload : {}),
         patch: "PATCH_PREMIUM_REV_B_RESPONSE_AUTHORITY_LOCK",
@@ -7283,9 +7519,26 @@ async function confirmFounderHandoff() {
         epoch: rtcActiveSessionEpochRef.current || 0,
         turn_index: getRealtimeAuthorityTurnIndex(),
         target_agent_slug: getRealtimeAuthorityTargetSlug(),
+        manual_target_slug: manualTargetSlug || null,
+        selected_agent_slug: manualTargetSlug || null,
+        manual_agent_lock: Boolean(manualTargetSlug),
+        manual_authority_version: PATCH_32_REV_C_MANUAL_TARGET_SOURCE_OF_TRUTH_VERSION,
+        manual_sticky_state_version: PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
+        manual_lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
+        response_authority_only: rawEventName === "authority_lock_released",
       };
-      logRealtimeStep(`patch_premium_rev_b:${eventName}`, meta);
-      queueRealtimeTelemetry(eventName, meta);
+      logRealtimeStep(`patch_premium_rev_b:${telemetryEventName}`, meta);
+      queueRealtimeTelemetry(telemetryEventName, {
+        ...meta,
+        manual_lock_staging_proof_version: PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION,
+      });
+      if (rawEventName === "authority_lock_released") {
+        logManualLockStagingProof("response_authority_lock_released_preserved_manual_button", {
+          ...meta,
+          response_authority_only: true,
+          proof_scope: "response_authority_reset",
+        });
+      }
     } catch {}
   }
 
@@ -9489,6 +9742,8 @@ function scheduleRealtimeIdleFollowup() {
         voice_source: selectedVoiceResolution.voice_source || null,
         selected_agent_slug: realtimeManualContract.realtime_voice_agent_slug || realtimeManualContract.target_agent_slug || null,
         manual_agent_lock: Boolean(realtimeManualContract.manual_agent_lock),
+        manual_lock_persistence_version: realtimeManualContract.manual_lock_persistence_version || PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
+        manual_lock_contract_propagation_version: PATCH_32_REV_G_MANUAL_LOCK_CONTRACT_PROPAGATION_VERSION,
         session_voice_sync_version: PATCH_32_PREDEPLOY_PREMIUM_VERSION,
         team_panel_version: realtimeManualContract.team_panel_version || null,
         manual_team_panel_order: realtimeManualContract.manual_team_panel_order || null,
@@ -9529,6 +9784,9 @@ function scheduleRealtimeIdleFollowup() {
         manual_target_slug: realtimeManualContract.manual_target_slug || realtimeManualPayload.manual_target_slug || null,
         manual_agent_source: realtimeManualContract.manual_agent_source || "",
         manual_authority_version: realtimeManualContract.manual_authority_version || realtimeManualPayload.manual_authority_version || "",
+        manual_sticky_state_version: realtimeManualContract.manual_sticky_state_version || realtimeManualPayload.manual_sticky_state_version || PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
+        manual_lock_persistence_version: realtimeManualContract.manual_lock_persistence_version || realtimeManualPayload.manual_lock_persistence_version || PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
+        manual_lock_staging_proof_version: PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION,
         manual_authority_source: realtimeManualContract.manual_authority_source || realtimeManualPayload.manual_authority_source || PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE,
         manual_authority_updated_at: realtimeManualContract.manual_authority_updated_at || realtimeManualPayload.manual_authority_updated_at || 0,
         manual_team_panel_required: Boolean(realtimeManualContract.manual_team_panel_required),
@@ -10132,6 +10390,9 @@ function scheduleRealtimeIdleFollowup() {
                 manual_agent_lock: isManualAgentAuthorityLocked(),
                 manual_target_slug: getManualAuthoritySlug(),
                 manual_authority_version: PATCH_32_REV_C_MANUAL_TARGET_SOURCE_OF_TRUTH_VERSION,
+                manual_sticky_state_version: PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
+                manual_lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
+                manual_lock_staging_proof_version: PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION,
                 manual_authority_source: PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE,
                 manual_authority_updated_at: manualAuthorityRef.current?.updatedAt || 0,
                 selected_agent_slug: getManualAuthoritySlug(),
@@ -10785,6 +11046,56 @@ function scheduleRealtimeIdleFollowup() {
       const state = normalizeRealtimeMeetingState(batchResult);
       if (!state || typeof state !== "object") return false;
       const stateSessionId = String(state?.session_id || "").trim();
+      const incomingStateSlug = canonicalAgentSlug(
+        state?.active_speaker_slug ||
+        state?.active_persona_slug ||
+        state?.target_agent_slug ||
+        state?.visible_agent ||
+        ""
+      );
+      const incomingParticipants = Array.isArray(state?.participant_slugs)
+        ? state.participant_slugs
+        : (Array.isArray(state?.participants) ? state.participants : []);
+      const isEmptyMeetingStateUpdate = Boolean(
+        !stateSessionId &&
+        !incomingStateSlug &&
+        !String(state?.active_speaker_name || state?.active_agent_name || "").trim() &&
+        incomingParticipants.length === 0 &&
+        !String(state?.transition_reason || state?.response_control || "").trim()
+      );
+      const isBlankStateUpdate = Boolean(
+        !stateSessionId &&
+        !incomingStateSlug &&
+        incomingParticipants.length === 0 &&
+        String(state?.transition_reason || "").trim().toLowerCase() === "state_update"
+      );
+      if (isEmptyMeetingStateUpdate || isBlankStateUpdate) {
+        try {
+          logRealtimeStep("patch32_reve:empty_meeting_state_ignored", {
+            source,
+            reason: isBlankStateUpdate ? "blank_state_update" : "empty_state",
+            manual_target_slug: getManualAuthoritySlug() || null,
+            selected_manual_agent_slug: selectedManualAgentSlugRef.current || null,
+            manual_agent_lock: isManualAgentAuthorityLocked(),
+            manual_sticky_state_version: PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
+          });
+          queueRealtimeTelemetry("patch32_reve_empty_meeting_state_ignored", {
+            source,
+            reason: isBlankStateUpdate ? "blank_state_update" : "empty_state",
+            manual_target_slug: getManualAuthoritySlug() || null,
+            manual_agent_lock: isManualAgentAuthorityLocked(),
+            manual_sticky_state_version: PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
+            manual_lock_staging_proof_version: PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION,
+          });
+          logManualLockStagingProof("empty_meeting_state_ignored_preserved_manual_button", {
+            source,
+            reason: isBlankStateUpdate ? "blank_state_update" : "empty_state",
+            expected_manual_slug: getManualAuthoritySlug() || selectedManualAgentSlugRef.current || null,
+            proof_scope: "meeting_state_guard",
+          });
+        } catch {}
+        return false;
+      }
       if (stateSessionId && !isRealtimeSessionCurrent(stateSessionId)) {
         logRealtimeStep("patch32_revc:manual_authority_stale_session_ignored", {
           source,
@@ -11211,6 +11522,23 @@ function scheduleRealtimeIdleFollowup() {
     }
   }
 
+  function isMeaningfulRealtimeMeetingStateEcho(state = null) {
+    if (!state || typeof state !== "object") return false;
+    const stateSessionId = String(state?.session_id || "").trim();
+    const activeSlug = canonicalAgentSlug(
+      state?.active_speaker_slug ||
+      state?.active_persona_slug ||
+      state?.target_agent_slug ||
+      state?.visible_agent ||
+      ""
+    );
+    const participants = Array.isArray(state?.participant_slugs)
+      ? state.participant_slugs
+      : (Array.isArray(state?.participants) ? state.participants : []);
+    const transition = String(state?.transition_reason || state?.response_control || "").trim();
+    return Boolean(stateSessionId || activeSlug || participants.length || transition);
+  }
+
   async function flushRealtimeEvents() {
     const sid = rtcSessionIdRef.current;
     if (!sid) return;
@@ -11232,6 +11560,22 @@ function scheduleRealtimeIdleFollowup() {
       }
       const manualEventContract = buildManualAgentAuthorityContract("", echoSpeaker.agent_id || rtcHostAgentIdRef.current || null, { realtime: true, sessionId: sid }) || {};
       const manualEventPayload = buildManualAuthorityPayload(sid);
+      const manualTargetSlug = manualEventContract.manual_target_slug || manualEventPayload.manual_target_slug || getManualAuthoritySlug() || null;
+      const meetingStateEcho = isMeaningfulRealtimeMeetingStateEcho(meetingStateRef.current)
+        ? meetingStateRef.current
+        : null;
+      if (!meetingStateEcho) {
+        try {
+          logRealtimeStep("patch32_revf:empty_meeting_state_echo_not_sent", {
+            session_id: sid,
+            manual_target_slug: manualTargetSlug,
+            manual_agent_lock: Boolean(manualTargetSlug),
+            queued_events: q.length,
+            manual_lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
+          });
+        } catch {}
+      }
+
       const { data: batchResult } = await apiFetch("/api/realtime/events:batch", {
         method: "POST",
         token,
@@ -11239,22 +11583,25 @@ function scheduleRealtimeIdleFollowup() {
         body: {
         session_id: sid,
         events: q,
-        dest_mode: manualEventContract.dest_mode || destMode || "team",
+        dest_mode: manualEventContract.dest_mode || (manualTargetSlug === "team" ? "team" : "single"),
         agent_id: manualEventContract.agent_id || echoSpeaker.agent_id || rtcHostAgentIdRef.current || null,
         visible_agent: manualEventContract.visible_agent || echoSpeaker.name || rtcHostAgentNameRef.current || activeRuntimeAgent || "",
-        target_agent_slug: manualEventContract.target_agent_slug || echoSpeaker.slug || canonicalAgentSlug(rtcHostAgentNameRef.current || activeRuntimeAgent || ""),
+        target_agent_slug: manualEventContract.target_agent_slug || manualTargetSlug || echoSpeaker.slug || canonicalAgentSlug(rtcHostAgentNameRef.current || activeRuntimeAgent || ""),
         target_agent_slugs: Array.isArray(manualEventContract.target_agent_slugs) && manualEventContract.target_agent_slugs.length
           ? manualEventContract.target_agent_slugs
-          : [echoSpeaker.slug || canonicalAgentSlug(rtcHostAgentNameRef.current || activeRuntimeAgent || "")].filter(Boolean),
+          : [manualTargetSlug || echoSpeaker.slug || canonicalAgentSlug(rtcHostAgentNameRef.current || activeRuntimeAgent || "")].filter(Boolean),
         requested_agent_names: Array.isArray(manualEventContract.requested_agent_names) && manualEventContract.requested_agent_names.length
           ? manualEventContract.requested_agent_names
           : (echoSpeaker.name ? [echoSpeaker.name] : (rtcHostAgentNameRef.current ? [rtcHostAgentNameRef.current] : [])),
         multi_agent_turn: Boolean(manualEventContract.multi_agent_turn),
-        response_control: manualEventContract.response_control || "single_turn",
-        manual_agent_lock: Boolean(manualEventContract.manual_agent_lock),
-        manual_target_slug: manualEventContract.manual_target_slug || manualEventPayload.manual_target_slug || null,
-        manual_agent_source: manualEventContract.manual_agent_source || "",
-        manual_authority_version: manualEventContract.manual_authority_version || manualEventPayload.manual_authority_version || "",
+        response_control: manualEventContract.response_control || (manualTargetSlug === "team" ? "manual_team_panel" : PATCH_32_SINGLE_AGENT_CONTROL),
+        manual_agent_lock: Boolean(manualTargetSlug),
+        manual_target_slug: manualTargetSlug,
+        manual_agent_source: manualEventContract.manual_agent_source || PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE,
+        manual_authority_version: manualEventContract.manual_authority_version || manualEventPayload.manual_authority_version || PATCH_32_REV_C_MANUAL_TARGET_SOURCE_OF_TRUTH_VERSION,
+        manual_sticky_state_version: manualEventContract.manual_sticky_state_version || manualEventPayload.manual_sticky_state_version || PATCH_32_REV_E_MANUAL_BUTTON_STICKY_STATE_VERSION,
+        manual_lock_persistence_version: PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE_VERSION,
+        manual_lock_staging_proof_version: PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION,
         manual_authority_source: manualEventContract.manual_authority_source || manualEventPayload.manual_authority_source || PATCH_32_MANUAL_AGENT_AUTHORITY_SOURCE,
         manual_authority_updated_at: manualEventContract.manual_authority_updated_at || manualEventPayload.manual_authority_updated_at || 0,
         manual_team_panel_required: Boolean(manualEventContract.manual_team_panel_required),
@@ -11262,7 +11609,7 @@ function scheduleRealtimeIdleFollowup() {
         team_panel_version: manualEventContract.team_panel_version || "",
         team_panel_mode: manualEventContract.team_panel_mode || "",
         team_panel_voice_moderator_slug: manualEventContract.team_panel_voice_moderator_slug || "",
-        meeting_state: meetingStateRef.current || null,
+        meeting_state: meetingStateEcho,
         client_echo_version: "PATCH_30_SERVER_SPEAKER_AUTHORITY_CLIENT_ECHO_QUARANTINE_V1",
         },
       });
@@ -13659,9 +14006,17 @@ async function stopRealtime(reason = 'client_stop') {
   };
   const visibleAgents = publicBetaOrkioOnly ? agents.filter(isOrkioAgent) : agents;
   const effectiveDestMode = publicBetaOrkioOnly ? "single" : destMode;
-  const meetingRoomActiveSpeaker = formatMeetingRoomSpeakerName(meetingState, "active") || activeRuntimeAgent || "";
-  const meetingRoomLastSpeaker = formatMeetingRoomSpeakerName(meetingState, "last");
-  const meetingRoomParticipants = extractMeetingRoomParticipants(meetingState);
+  const manualStickySlugForUi = normalizeManualAuthoritySlug(selectedManualAgentSlug || selectedManualAgentSlugRef.current || "", "");
+  const manualStickyLabelForUi = manualStickySlugForUi
+    ? (manualStickySlugForUi === "team"
+        ? "Team"
+        : canonicalizeSpeakerLabel(registryCanonicalAgentDisplayNameFromSlug(manualStickySlugForUi) || manualStickySlugForUi))
+    : "";
+  const meetingRoomActiveSpeaker = manualStickyLabelForUi || formatMeetingRoomSpeakerName(meetingState, "active") || activeRuntimeAgent || "";
+  const meetingRoomLastSpeaker = manualStickyLabelForUi ? "" : formatMeetingRoomSpeakerName(meetingState, "last");
+  const meetingRoomParticipants = manualStickySlugForUi === "team"
+    ? resolveManualTeamPanelNames(resolveManualTeamPanelSlugs())
+    : extractMeetingRoomParticipants(meetingState);
   const meetingRoomTurnIndex = Number.isFinite(Number(meetingState?.turn_index))
     ? Number(meetingState.turn_index)
     : null;
@@ -13965,7 +14320,7 @@ async function stopRealtime(reason = 'client_stop') {
             <div style={{ ...styles.health, display: isMobile ? "none" : undefined }}>
               {publicBetaOrkioOnly
                 ? "Destino: Orkio • beta público"
-                : `Destino manual: ${destMode === "team" ? "Team" : destMode === "single" ? "Agente" : "Multi"} • botões: Team / Orkio / Chris${canAccessAdmin ? " / Orion / Laura" : ""}`}
+                : `Destino manual fixo: ${manualStickyLabelForUi || (destMode === "team" ? "Team" : destMode === "single" ? "Agente" : "Multi")} • botões: Team / Orkio / Chris${canAccessAdmin ? " / Orion / Laura" : ""}`}
             </div>
             {isMobile ? (
               <div
@@ -14145,8 +14500,7 @@ async function stopRealtime(reason = 'client_stop') {
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                     {["Team", "Orkio", "Chris", "Orion", "Laura"].map((agentLabel) => {
                       const agentSlug = canonicalAgentSlug(agentLabel);
-                      const selectedAgent = findAgentByRuntimeIdentity(destSingle);
-                      const activeSlug = destMode === "team" ? "team" : canonicalAgentSlug(selectedAgent?.name || selectedAgent?.slug || selectedAgent?.id || "");
+                      const activeSlug = normalizeManualAuthoritySlug(selectedManualAgentSlug || selectedManualAgentSlugRef.current || "", "team");
                       const isActive = activeSlug === agentSlug;
                       return (
                         <button
@@ -14158,7 +14512,8 @@ async function stopRealtime(reason = 'client_stop') {
                               setDestMode("team");
                               setDestSingle("");
                               setDestMulti([]);
-                              persistDestinationState({ mode: "team", single: "", multi: [] });
+                              setActiveRuntimeAgent("Team");
+                              persistDestinationState({ mode: "team", single: "", multi: [], manual_target_slug: "team", manual_slug: "team" });
                               applyManualTeamSelectionToRealtime("quick_team_button");
                               try {
                                 setRuntimeHandoffLabel("Controle manual: Team.");
@@ -14236,6 +14591,20 @@ async function stopRealtime(reason = 'client_stop') {
                 {meetingRoomActiveSpeaker ? (
                   <span style={{ color: "rgba(255,255,255,0.78)" }}>
                     Speaker ativo: <strong style={{ color: "#fff" }}>{meetingRoomActiveSpeaker}</strong>
+                  </span>
+                ) : null}
+                {manualStickySlugForUi ? (
+                  <span
+                    title={PATCH_32_REV_H_MANUAL_LOCK_STAGING_PROOF_VERSION}
+                    style={{
+                      color: "rgba(187,247,208,0.92)",
+                      border: "1px solid rgba(34,197,94,0.26)",
+                      borderRadius: 999,
+                      padding: "3px 8px",
+                      fontWeight: 900,
+                    }}
+                  >
+                    Prova staging: botão {manualStickyLabelForUi || manualStickySlugForUi} fixo
                   </span>
                 ) : null}
                 {meetingRoomLastSpeaker && meetingRoomLastSpeaker !== meetingRoomActiveSpeaker ? (
