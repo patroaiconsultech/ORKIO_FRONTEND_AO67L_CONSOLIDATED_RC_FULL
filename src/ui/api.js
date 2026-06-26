@@ -1,3 +1,4 @@
+// PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER
 /* PATCH_32_REV_D_TEAM_PANEL_PRESTAGING */
 /* PATCH_32_REV_F_MANUAL_BUTTON_LOCK_PERSISTENCE */
 /* PATCH_32_REV_G_MANUAL_LOCK_CONTRACT_PROPAGATION */
@@ -9,6 +10,8 @@ import {
   getTenant as readTenant,
   getToken as readToken,
 } from "../lib/auth.js";
+
+const PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION = "PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_V1";
 
 function normalizeBaseUrl(v) {
   let s = String(v || "").trim();
@@ -511,6 +514,7 @@ export const chat = ({
   team_conversation_mode = null,
   team_conversation_orchestrator_version = null,
   team_conversation_staging_verification_version = null,
+  realtime_provider_payload_sanitizer_version = PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION,
   top_k,
   trace_id,
   client_message_id,
@@ -555,6 +559,7 @@ export const chat = ({
       team_conversation_mode,
       team_conversation_orchestrator_version,
       team_conversation_staging_verification_version,
+      realtime_provider_payload_sanitizer_version,
       top_k,
       trace_id,
       client_message_id,
@@ -596,6 +601,7 @@ export async function chatStream({
   team_conversation_mode = null,
   team_conversation_orchestrator_version = null,
   team_conversation_staging_verification_version = null,
+  realtime_provider_payload_sanitizer_version = PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION,
   top_k,
   trace_id,
   client_message_id,
@@ -868,6 +874,7 @@ export async function startRealtimeSession({
   team_conversation_mode = null,
   team_conversation_orchestrator_version = null,
   team_conversation_staging_verification_version = null,
+  realtime_provider_payload_sanitizer_version = PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION,
   preferred_address_names = null,
   profile_address_preference_version = null,
   client_controlled_response = null,
@@ -916,6 +923,7 @@ export async function startRealtimeSession({
       team_conversation_mode,
       team_conversation_orchestrator_version,
       team_conversation_staging_verification_version,
+      realtime_provider_payload_sanitizer_version,
       preferred_address_names,
       profile_address_preference_version,
       client_controlled_response,
@@ -965,6 +973,7 @@ export async function startSummitSession({
   team_conversation_mode = null,
   team_conversation_orchestrator_version = null,
   team_conversation_staging_verification_version = null,
+  realtime_provider_payload_sanitizer_version = PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION,
   preferred_address_names = null,
   profile_address_preference_version = null,
   client_controlled_response = null,
@@ -1012,6 +1021,7 @@ export async function startSummitSession({
       team_conversation_mode,
       team_conversation_orchestrator_version,
       team_conversation_staging_verification_version,
+      realtime_provider_payload_sanitizer_version,
       preferred_address_names,
       profile_address_preference_version,
       client_controlled_response,
@@ -1055,6 +1065,7 @@ export const postRealtimeEventsBatch = ({
   team_conversation_mode = null,
   team_conversation_orchestrator_version = null,
   team_conversation_staging_verification_version = null,
+  realtime_provider_payload_sanitizer_version = PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION,
   meeting_state = null,
 } = {}) =>
   apiFetch("/api/realtime/events:batch", {
@@ -1093,6 +1104,7 @@ export const postRealtimeEventsBatch = ({
       team_conversation_mode,
       team_conversation_orchestrator_version,
       team_conversation_staging_verification_version,
+      realtime_provider_payload_sanitizer_version,
       meeting_state,
     },
   });
