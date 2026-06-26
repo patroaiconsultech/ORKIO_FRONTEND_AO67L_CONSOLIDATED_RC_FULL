@@ -668,6 +668,7 @@ const PATCH_33_TEAM_CONVERSATION_SOURCE = "manual_team_conversation_orchestrator
 const PATCH_34_REVB_REALTIME_ROOM_ENGINE_VERSION = "PATCH_34_REVB_REALTIME_ROOM_ENGINE_FULL_INTEGRATION_V1";
 const PATCH_34_REVB_ROOM_MODE = "team";
 const PATCH_34_REVB_ROOM_RESPONSE_CONTROL = "room_agent_authority";
+const PATCH_35_REV_D_REALTIME_FORCE_MANUAL_SWITCH_VERSION = "PATCH_35_REV_D_REALTIME_FORCE_MANUAL_SWITCH_V1";
 const PATCH_32_MANUAL_LOCK_STAGING_PROOF_STORAGE_KEY = "orkio_manual_lock_staging_proof";
 
 
@@ -5752,17 +5753,20 @@ function formatAgentOptionLabel(agent) {
     return Boolean(sent);
   }
 
-  function sendRealtimeSessionUpdateWhenIdle(payload, reason = "session_update", meta = {}) {
+  function sendRealtimeSessionUpdateWhenIdle(payload, reason = "session_update", meta = {}, options = {}) {
     const dc = rtcDcRef.current;
     if (!dc || dc.readyState !== "open") return false;
+    const force = options?.force === true;
 
-    if (rtcResponseInFlightRef.current) {
+    if (rtcResponseInFlightRef.current && !force) {
       rtcPendingSessionUpdateRef.current = { payload, reason, meta };
+      let responseCancelSent = false;
+      let inputClearSent = false;
       try {
-        sendRealtimeClientEvent(dc, { type: "response.cancel" }, `${reason}:cancel_before_deferred_session_update`);
+        responseCancelSent = Boolean(sendRealtimeClientEvent(dc, { type: "response.cancel" }, `${reason}:cancel_before_deferred_session_update`));
       } catch {}
       try {
-        sendRealtimeClientEvent(dc, { type: "input_audio_buffer.clear" }, `${reason}:clear_input_before_deferred_session_update`);
+        inputClearSent = Boolean(sendRealtimeClientEvent(dc, { type: "input_audio_buffer.clear" }, `${reason}:clear_input_before_deferred_session_update`));
       } catch {}
       try {
         logRealtimeStep("patch35:session_update_deferred_until_idle", {
@@ -5771,17 +5775,83 @@ function formatAgentOptionLabel(agent) {
           room_mode: meta?.room_mode || null,
           response_in_flight: true,
           waiting_for: "response.done_or_provider_error",
+          response_cancel_sent: responseCancelSent,
+          input_audio_clear_sent: inputClearSent,
         });
         queueRealtimeTelemetry("patch35_session_update_deferred_until_idle", {
           reason,
           target_agent_slug: meta?.target_agent_slug || null,
           room_mode: meta?.room_mode || null,
+          response_cancel_sent: responseCancelSent,
+          input_audio_clear_sent: inputClearSent,
         });
       } catch {}
       return false;
     }
 
-    return sendRealtimeClientEvent(dc, payload, reason);
+    if (rtcResponseInFlightRef.current && force) {
+      let responseCancelSent = false;
+      let inputClearSent = false;
+      try {
+        responseCancelSent = Boolean(sendRealtimeClientEvent(dc, { type: "response.cancel" }, `${reason}:force_cancel_before_switch`));
+      } catch {}
+      try {
+        inputClearSent = Boolean(sendRealtimeClientEvent(dc, { type: "input_audio_buffer.clear" }, `${reason}:force_clear_before_switch`));
+      } catch {}
+      rtcResponseInFlightRef.current = false;
+      rtcPendingSessionUpdateRef.current = null;
+      try {
+        logRealtimeStep("patch35_reva:force_manual_switch_before_session_update", {
+          marker: PATCH_35_REV_D_REALTIME_FORCE_MANUAL_SWITCH_VERSION,
+          reason,
+          previous_speaker_slug: meta?.previous_speaker_slug || null,
+          next_speaker_slug: meta?.target_agent_slug || null,
+          target_agent_slug: meta?.target_agent_slug || null,
+          room_mode: meta?.room_mode || null,
+          manual_team_conversation_active: Boolean(meta?.manual_team_conversation_active),
+          response_cancel_sent: responseCancelSent,
+          input_audio_clear_sent: inputClearSent,
+        });
+        queueRealtimeTelemetry("patch35_reva_force_manual_switch_before_session_update", {
+          marker: PATCH_35_REV_D_REALTIME_FORCE_MANUAL_SWITCH_VERSION,
+          reason,
+          previous_speaker_slug: meta?.previous_speaker_slug || null,
+          next_speaker_slug: meta?.target_agent_slug || null,
+          target_agent_slug: meta?.target_agent_slug || null,
+          room_mode: meta?.room_mode || null,
+          manual_team_conversation_active: Boolean(meta?.manual_team_conversation_active),
+          response_cancel_sent: responseCancelSent,
+          input_audio_clear_sent: inputClearSent,
+        });
+      } catch {}
+    }
+
+    const sent = sendRealtimeClientEvent(dc, payload, reason);
+    try {
+      if (force) {
+        logRealtimeStep("patch35_reva:force_manual_switch_session_update_sent", {
+          marker: PATCH_35_REV_D_REALTIME_FORCE_MANUAL_SWITCH_VERSION,
+          reason,
+          previous_speaker_slug: meta?.previous_speaker_slug || null,
+          next_speaker_slug: meta?.target_agent_slug || null,
+          target_agent_slug: meta?.target_agent_slug || null,
+          session_update_sent: Boolean(sent),
+          manual_team_conversation_active: Boolean(meta?.manual_team_conversation_active),
+          room_mode: meta?.room_mode || null,
+        });
+        queueRealtimeTelemetry("patch35_reva_force_manual_switch_session_update_sent", {
+          marker: PATCH_35_REV_D_REALTIME_FORCE_MANUAL_SWITCH_VERSION,
+          reason,
+          previous_speaker_slug: meta?.previous_speaker_slug || null,
+          next_speaker_slug: meta?.target_agent_slug || null,
+          target_agent_slug: meta?.target_agent_slug || null,
+          session_update_sent: Boolean(sent),
+          manual_team_conversation_active: Boolean(meta?.manual_team_conversation_active),
+          room_mode: meta?.room_mode || null,
+        });
+      }
+    } catch {}
+    return sent;
   }
 
   function applyPatch33RevCLiveAgentSwitch({
@@ -5802,11 +5872,21 @@ function formatAgentOptionLabel(agent) {
       ORKIO_CANONICAL_VOICE_ID ||
       ORKIO_DEFAULT_VOICE_ID
     );
+    const previousSpeakerSlug = canonicalAgentSlug(
+      manualRealtimeRoomStateRef.current?.active_speaker_slug ||
+      meetingStateRef.current?.active_speaker_slug ||
+      rtcHostAgentNameRef.current ||
+      activeRuntimeAgent ||
+      selectedManualAgentSlugRef.current ||
+      ""
+    ) || "";
 
     const auditBase = {
       source,
       selected_agent_slug: safeSlug,
       target_agent_slug: safeSlug,
+      previous_speaker_slug: previousSpeakerSlug || null,
+      next_speaker_slug: safeSlug,
       target_agent_name: safeName,
       provider_voice: providerVoice || null,
       voice_source: voiceResolution?.voice_source || null,
@@ -5818,6 +5898,7 @@ function formatAgentOptionLabel(agent) {
       data_channel_ready_state: readyState,
       version: PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX_VERSION,
       sanitizer_version: PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION,
+      force_manual_switch_version: PATCH_35_REV_D_REALTIME_FORCE_MANUAL_SWITCH_VERSION,
     };
 
     try {
@@ -5862,9 +5943,11 @@ function formatAgentOptionLabel(agent) {
         type: "session.update",
         session: sessionPatch,
       }, "patch33_revc_live_agent_switch_session_update", {
+        previous_speaker_slug: previousSpeakerSlug || null,
         target_agent_slug: safeSlug,
         room_mode: teamMode || isPatch34TeamRoomActive() ? PATCH_34_REVB_ROOM_MODE : "",
-      });
+        manual_team_conversation_active: Boolean(teamMode || isPatch34TeamRoomActive()),
+      }, { force: true });
 
       const applied = Boolean(sent);
       const patch34AppliedRoomState = (teamMode || isPatch34TeamRoomActive())
