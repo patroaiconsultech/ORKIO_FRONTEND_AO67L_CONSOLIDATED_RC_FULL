@@ -677,6 +677,8 @@ const PATCH_37_REV_B_CONTEXT_ISOLATION_ALL_SENDS_VERSION =
   "PATCH_37_REV_B_PREMIUM_CONTEXT_ISOLATION_ALL_SENDS_V1";
 const PATCH_38_REALTIME_TEAM_ECHO_LOOP_GUARD_VERSION =
   "PATCH_38_REALTIME_TEAM_ECHO_LOOP_GUARD_V1";
+const PATCH_39_REALTIME_MANUAL_SWITCH_HARD_GATE_VERSION =
+  "PATCH39_REALTIME_MANUAL_SWITCH_HARD_GATE_V1";
 const PATCH_32_MANUAL_LOCK_STAGING_PROOF_STORAGE_KEY = "orkio_manual_lock_staging_proof";
 
 
@@ -3492,6 +3494,15 @@ const messagesEndRef = useRef(null);
   const rtcPcRef = useRef(null);
   const rtcDcRef = useRef(null);
   const rtcPendingSessionUpdateRef = useRef(null);
+  const rtcManualSwitchGateRef = useRef({
+    locked: false,
+    generation: 0,
+    generation_id: "",
+    target_agent_slug: "orkio",
+    phase: "READY",
+    session_update_sent: false,
+    started_at_ms: 0,
+  });
   const rtcAudioElRef = useRef(null);
   const rtcAudioProcessingRef = useRef(null);
   // ORKIO_AO60H_REALTIME_MOBILE_AUDIO_TRANSCRIPT_LIFECYCLE
@@ -5755,6 +5766,14 @@ function formatAgentOptionLabel(agent) {
 
     rtcPendingSessionUpdateRef.current = null;
     const sent = sendRealtimeClientEvent(dc, pending.payload, pending.reason);
+    if (sent && pending.meta?.switch_generation_id) {
+      rtcManualSwitchGateRef.current = {
+        ...(rtcManualSwitchGateRef.current || {}),
+        locked: true,
+        phase: "SESSION_UPDATE_SENT",
+        session_update_sent: true,
+      };
+    }
     try {
       logRealtimeStep("patch35:pending_session_update_flushed", {
         source,
@@ -5778,9 +5797,39 @@ function formatAgentOptionLabel(agent) {
     const dc = rtcDcRef.current;
     if (!dc || dc.readyState !== "open") return false;
     const force = options?.force === true;
+    const manualSwitch = options?.manualSwitch === true;
+    let switchMeta = meta;
+
+    if (manualSwitch) {
+      const generation = Number(rtcManualSwitchGateRef.current?.generation || 0) + 1;
+      const generationId = `rt_switch_${generation}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      switchMeta = {
+        ...(meta || {}),
+        switch_generation: generation,
+        switch_generation_id: generationId,
+      };
+      rtcManualSwitchGateRef.current = {
+        locked: true,
+        generation,
+        generation_id: generationId,
+        target_agent_slug: canonicalAgentSlug(meta?.target_agent_slug || "orkio") || "orkio",
+        phase: rtcResponseInFlightRef.current ? "CANCEL_PENDING" : "SESSION_UPDATE_PENDING",
+        session_update_sent: false,
+        started_at_ms: Date.now(),
+      };
+      try {
+        logRealtimeStep("patch39:manual_switch_gate_locked", {
+          marker: PATCH_39_REALTIME_MANUAL_SWITCH_HARD_GATE_VERSION,
+          generation,
+          switch_generation_id: generationId,
+          target_agent_slug: rtcManualSwitchGateRef.current.target_agent_slug,
+          phase: rtcManualSwitchGateRef.current.phase,
+        });
+      } catch {}
+    }
 
     if (rtcResponseInFlightRef.current && !force) {
-      rtcPendingSessionUpdateRef.current = { payload, reason, meta };
+      rtcPendingSessionUpdateRef.current = { payload, reason, meta: switchMeta };
       let responseCancelSent = false;
       let inputClearSent = false;
       try {
@@ -5811,7 +5860,7 @@ function formatAgentOptionLabel(agent) {
     }
 
     if (rtcResponseInFlightRef.current && force) {
-      rtcPendingSessionUpdateRef.current = { payload, reason, meta };
+      rtcPendingSessionUpdateRef.current = { payload, reason, meta: switchMeta };
       let responseCancelSent = false;
       let inputClearSent = false;
       try {
@@ -5855,6 +5904,14 @@ function formatAgentOptionLabel(agent) {
     }
 
     const sent = sendRealtimeClientEvent(dc, payload, reason);
+    if (sent && manualSwitch) {
+      rtcManualSwitchGateRef.current = {
+        ...(rtcManualSwitchGateRef.current || {}),
+        locked: true,
+        phase: "SESSION_UPDATE_SENT",
+        session_update_sent: true,
+      };
+    }
     try {
       if (force) {
         logRealtimeStep("patch35_reva:force_manual_switch_session_update_sent", {
@@ -5975,7 +6032,7 @@ function formatAgentOptionLabel(agent) {
         target_agent_slug: safeSlug,
         room_mode: teamMode || isPatch34TeamRoomActive() ? PATCH_34_REVB_ROOM_MODE : "",
         manual_team_conversation_active: Boolean(teamMode || isPatch34TeamRoomActive()),
-      }, { force: true });
+      }, { force: true, manualSwitch: true });
 
       const applied = Boolean(sent);
       const patch34AppliedRoomState = (teamMode || isPatch34TeamRoomActive())
@@ -9801,6 +9858,18 @@ function scheduleRealtimeIdleFollowup() {
   function hardResetRealtimeClientState(reason = "hard_reset") {
     logRealtimeStep("hf5:hard_reset_begin", { reason, sessionId: rtcSessionIdRef.current || null });
     try { invalidateRealtimeActiveSession(reason || "hard_reset"); } catch {}
+    try {
+      rtcManualSwitchGateRef.current = {
+        locked: false,
+        generation: 0,
+        generation_id: "",
+        target_agent_slug: "orkio",
+        phase: "READY",
+        session_update_sent: false,
+        started_at_ms: 0,
+      };
+      rtcPendingSessionUpdateRef.current = null;
+    } catch {}
 
     try { clearRealtimeResponseTimeout(); } catch {}
     try { clearRealtimeAutoResponseFallback(); } catch {}
@@ -10708,6 +10777,19 @@ function scheduleRealtimeIdleFollowup() {
     inputText = "",
     conversationItem = false,
   } = {}) {
+    const switchGate = rtcManualSwitchGateRef.current || {};
+    if (switchGate.locked) {
+      try {
+        logRealtimeStep("patch39:response_create_blocked_by_switch_gate", {
+          marker: PATCH_39_REALTIME_MANUAL_SWITCH_HARD_GATE_VERSION,
+          reason,
+          phase: switchGate.phase || null,
+          switch_generation_id: switchGate.generation_id || null,
+          target_agent_slug: switchGate.target_agent_slug || null,
+        });
+      } catch {}
+      return false;
+    }
     const cleanInstructions = String(instructions || "").trim();
     const cleanInput = String(inputText || "").trim();
     const teamConversationActive = isManualTeamConversationActive();
@@ -10882,6 +10964,11 @@ function scheduleRealtimeIdleFollowup() {
         },
         instructions: responseInstructions,
         metadata: buildRealtimeResponseMetadata({
+          switch_generation_id: switchGate.generation_id || "initial",
+          switch_generation: Number(switchGate.generation || 0),
+          target_agent_slug: targetAgentSlugForResponse,
+          speaker_slug: targetAgentSlugForResponse,
+          persona_slug: targetAgentSlugForResponse,
           source: "orkio_web",
           reason,
           persona_materialization_version: "PATCH_31_FINAL_PERSONA_MATERIALIZATION_AUDIT_V1",
@@ -10889,11 +10976,8 @@ function scheduleRealtimeIdleFollowup() {
           voice_precedence_version: voiceResolution.precedence_version,
           voice_contract_version: voiceResolution.voice_contract_version,
           voice_override_policy: voiceResolution.voice_override_policy,
-          target_agent_slug: targetAgentSlugForResponse,
           target_agent_slugs: teamConversationActive ? teamTurnQueueForResponse : [targetAgentSlugForResponse],
           resolved_agent: targetAgentSlugForResponse,
-          speaker_slug: targetAgentSlugForResponse,
-          persona_slug: targetAgentSlugForResponse,
           manual_target_slug: teamConversationActive ? "team" : manualTargetSlug,
           manual_team_conversation_active: teamConversationActive,
           manual_team_focus_slug: teamConversationActive ? targetAgentSlugForResponse : null,
@@ -11898,6 +11982,65 @@ function scheduleRealtimeIdleFollowup() {
           } catch {}
 
           try {
+            const providerEventType = String(ev?.type || "");
+            const providerResponseId = ev?.response?.id || ev?.response_id || null;
+            const correlation = providerResponseId
+              ? rtcPatch35RevGResponseCorrelationRef.current?.[String(providerResponseId)]
+              : null;
+            const responseGeneration = Number(correlation?.response_metadata?.switch_generation ?? -1);
+            const currentGeneration = Number(rtcManualSwitchGateRef.current?.generation || 0);
+            const staleGeneration = Boolean(
+              providerResponseId &&
+              Number.isFinite(responseGeneration) &&
+              responseGeneration >= 0 &&
+              responseGeneration < currentGeneration
+            );
+            const terminalEvent = providerEventType === "response.done" || providerEventType === "error";
+            if (staleGeneration && !terminalEvent) {
+              logRealtimeStep("patch39:stale_response_generation_discarded", {
+                marker: PATCH_39_REALTIME_MANUAL_SWITCH_HARD_GATE_VERSION,
+                event_type: providerEventType,
+                response_id: providerResponseId,
+                response_generation: responseGeneration,
+                current_generation: currentGeneration,
+                target_agent_slug: rtcManualSwitchGateRef.current?.target_agent_slug || null,
+              });
+              return;
+            }
+          } catch {}
+
+          if (String(ev?.type || "") === "session.updated") {
+            const gate = rtcManualSwitchGateRef.current || {};
+            if (gate.locked && gate.phase === "SESSION_UPDATE_SENT") {
+              const currentTarget = canonicalAgentSlug(getRealtimeAuthorityTargetSlug() || "orkio") || "orkio";
+              if (currentTarget === gate.target_agent_slug) {
+                rtcManualSwitchGateRef.current = {
+                  ...gate,
+                  locked: false,
+                  phase: "READY",
+                  confirmed_at_ms: Date.now(),
+                };
+                try {
+                  logRealtimeStep("patch39:manual_switch_gate_released", {
+                    marker: PATCH_39_REALTIME_MANUAL_SWITCH_HARD_GATE_VERSION,
+                    switch_generation: gate.generation,
+                    switch_generation_id: gate.generation_id,
+                    target_agent_slug: gate.target_agent_slug,
+                    provider_event: "session.updated",
+                  });
+                  queueRealtimeTelemetry("patch39_manual_switch_gate_released", {
+                    marker: PATCH_39_REALTIME_MANUAL_SWITCH_HARD_GATE_VERSION,
+                    switch_generation: gate.generation,
+                    switch_generation_id: gate.generation_id,
+                    target_agent_slug: gate.target_agent_slug,
+                  });
+                } catch {}
+                setRtcReadyToRespond(true);
+              }
+            }
+          }
+
+          try {
             const eventType = String(ev?.type || "");
             const assistantFinalEvent = (
               eventType === "response.output_text.done" ||
@@ -12432,6 +12575,17 @@ function scheduleRealtimeIdleFollowup() {
   
   function triggerRealtimeResponse(reason = "manual") {
     try {
+      if (rtcManualSwitchGateRef.current?.locked) {
+        logRealtimeStep("patch39:trigger_blocked_by_switch_gate", {
+          marker: PATCH_39_REALTIME_MANUAL_SWITCH_HARD_GATE_VERSION,
+          reason,
+          phase: rtcManualSwitchGateRef.current?.phase || null,
+          switch_generation_id: rtcManualSwitchGateRef.current?.generation_id || null,
+          target_agent_slug: rtcManualSwitchGateRef.current?.target_agent_slug || null,
+        });
+        setRtcReadyToRespond(false);
+        return;
+      }
       if (rtcTimeboxClosingRef.current) {
         setRtcReadyToRespond(false);
         logRealtimeStep("ao72c_hf1:response_blocked_during_timebox_closing", { reason });
@@ -12741,6 +12895,7 @@ function scheduleRealtimeIdleFollowup() {
             // action. Re-enqueueing it into events:batch creates a feedback loop
             // that repeatedly reasserts the previous Team speaker.
           } catch {}
+
         }
       }
 
