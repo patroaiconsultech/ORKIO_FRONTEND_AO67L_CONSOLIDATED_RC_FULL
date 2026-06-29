@@ -23,6 +23,13 @@ const DEST_MULTI_KEYS = [
   "orkio_pwa_dest_multi",
 ];
 
+const RESYNC_STORAGE_KEYS = new Set([
+  ...THREAD_KEYS,
+  ...DEST_MODE_KEYS,
+  ...DEST_SINGLE_KEYS,
+  ...DEST_MULTI_KEYS,
+]);
+
 function safeWindow() {
   try {
     return typeof window !== "undefined" ? window : null;
@@ -86,8 +93,12 @@ function writeStorageValue(keys = [], value = "") {
   for (const store of stores) {
     for (const key of keys) {
       try {
-        if (safeValue) store.setItem(key, safeValue);
-        else store.removeItem(key);
+        const currentValue = store.getItem(key);
+        if (safeValue) {
+          if (currentValue !== safeValue) store.setItem(key, safeValue);
+        } else if (currentValue !== null) {
+          store.removeItem(key);
+        }
       } catch {}
     }
   }
@@ -354,26 +365,71 @@ export function normalizeDestinationForAvailableAgents({
 }
 
 
-export function installPwaMobileResyncListeners(callback) {
+export function installPwaMobileResyncListeners(callback, options = {}) {
   if (typeof callback !== "function") return () => {};
   const w = safeWindow();
   const d = safeDocument();
   if (!w) return () => {};
 
-  const handler = () => {
-    try { callback(); } catch {}
+  const debounceMs = Math.max(250, Number(options?.debounceMs || 500));
+  let disposed = false;
+  let timer = null;
+  let inFlight = false;
+  let queuedSource = "";
+
+  const run = async (source = "pwa_resync") => {
+    if (disposed) return;
+    if (inFlight) {
+      queuedSource = queuedSource || source;
+      return;
+    }
+
+    inFlight = true;
+    try {
+      await Promise.resolve(callback({ source }));
+    } catch {
+      // Resume synchronization is fail-open and must never break AppConsole.
+    } finally {
+      inFlight = false;
+      if (!disposed && queuedSource) {
+        const nextSource = queuedSource;
+        queuedSource = "";
+        schedule(nextSource);
+      }
+    }
+  };
+
+  const schedule = (source = "pwa_resync") => {
+    if (disposed) return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      void run(source);
+    }, debounceMs);
+  };
+
+  const onPageShow = () => schedule("pageshow");
+  const onFocus = () => schedule("focus");
+  const onOnline = () => schedule("online");
+  const onStorage = (event) => {
+    const key = String(event?.key || "").trim();
+    if (key && !RESYNC_STORAGE_KEYS.has(key)) return;
+    schedule("storage");
+  };
+  const onVisibilityChange = () => {
+    try {
+      if (!d || d.visibilityState === "visible") schedule("visibilitychange");
+    } catch {
+      schedule("visibilitychange");
+    }
   };
 
   const listeners = [
-    [w, "pageshow", handler],
-    [w, "focus", handler],
-    [w, "online", handler],
-    [w, "storage", handler],
-    [d, "visibilitychange", () => {
-      try {
-        if (!d || d.visibilityState === "visible") handler();
-      } catch { handler(); }
-    }],
+    [w, "pageshow", onPageShow],
+    [w, "focus", onFocus],
+    [w, "online", onOnline],
+    [w, "storage", onStorage],
+    [d, "visibilitychange", onVisibilityChange],
   ].filter(([target]) => target && target.addEventListener);
 
   for (const [target, event, fn] of listeners) {
@@ -381,6 +437,10 @@ export function installPwaMobileResyncListeners(callback) {
   }
 
   return () => {
+    disposed = true;
+    queuedSource = "";
+    if (timer) clearTimeout(timer);
+    timer = null;
     for (const [target, event, fn] of listeners) {
       try { target.removeEventListener(event, fn); } catch {}
     }
