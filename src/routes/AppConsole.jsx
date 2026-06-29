@@ -4592,13 +4592,13 @@ useEffect(() => {
 
   useEffect(() => {
     if (!token || !onboardingChecked || onboardingOpen) return undefined;
-    return installPwaMobileResyncListeners(() => {
-      void loadThreads({
+    return installPwaMobileResyncListeners(() => Promise.allSettled([
+      loadThreads({
         preserveThreadId: readStoredThreadId(),
         keepMessages: true,
-      });
-      void loadAgents();
-    });
+      }),
+      loadAgents(),
+    ]), { debounceMs: 500 });
   }, [token, tenant, onboardingChecked, onboardingOpen, isMobile]);
 
   useEffect(() => {
