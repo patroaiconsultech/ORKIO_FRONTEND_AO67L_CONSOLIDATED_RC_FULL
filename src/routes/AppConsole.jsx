@@ -1031,65 +1031,173 @@ async function consumeChatStream(
   };
 
   const flushBlock = (block) => {
-    const lines = String(block || "").split(/\r?\n/).filter(Boolean);
-    if (!lines.length) return;
+    const rawBlock = String(block || "");
+    try {
+      console.info("[AO31] STREAM_FLUSH_BLOCK_ENTER", {
+        blockLength: rawBlock.length,
+        preview: rawBlock.slice(0, 240),
+      });
+    } catch {}
+
+    const lines = rawBlock.split(/\r?\n/).filter(Boolean);
+    try {
+      console.info("[AO31] STREAM_BLOCK_LINES", {
+        lineCount: lines.length,
+        firstLine: lines[0] || "",
+      });
+    } catch {}
+
+    if (!lines.length) {
+      try { console.warn("[AO31] STREAM_BLOCK_EMPTY"); } catch {}
+      return;
+    }
+
     let ev = "message";
     const dataLines = [];
     for (const line of lines) {
       if (line.startsWith("event:")) ev = line.slice(6).trim();
       else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
     }
+
+    try {
+      console.info("[AO31] STREAM_EVENT_HEADER_PARSED", {
+        event: ev,
+        dataLines: dataLines.length,
+        dataChars: dataLines.join("\n").length,
+      });
+    } catch {}
+
     let payload = {};
     if (dataLines.length) {
-      try { payload = JSON.parse(dataLines.join("\n")); } catch { payload = { raw: dataLines.join("\n") }; }
+      const rawData = dataLines.join("\n");
+      try {
+        payload = JSON.parse(rawData);
+        console.info("[AO31] STREAM_JSON_PARSE_OK", {
+          event: ev,
+          keys: Object.keys(payload || {}),
+          thread_id: payload?.thread_id || null,
+          trace_id: payload?.trace_id || null,
+          code: payload?.code || null,
+        });
+      } catch (jsonErr) {
+        payload = { raw: rawData };
+        console.error("[AO31] STREAM_JSON_PARSE_ERROR", {
+          event: ev,
+          message: jsonErr?.message || String(jsonErr),
+          rawPreview: rawData.slice(0, 400),
+        });
+      }
     }
+
     try {
       console.log("SSE_EVENT", ev, payload);
+      console.info("[AO31] STREAM_EVENT_READY_FOR_DISPATCH", {
+        event: ev,
+        eventCountBefore: eventCount,
+        hasThread: !!payload?.thread_id,
+        hasTrace: !!payload?.trace_id,
+        draftLength: draftText.length,
+      });
     } catch {}
-    if (signal?.aborted || isStale?.()) abortStream();
+
+    if (signal?.aborted || isStale?.()) {
+      try {
+        console.warn("[AO31] STREAM_ABORT_BEFORE_DISPATCH", {
+          event: ev,
+          signalAborted: !!signal?.aborted,
+          stale: !!isStale?.(),
+        });
+      } catch {}
+      abortStream();
+    }
+
     markStreamActivity();
     if (payload?.thread_id) lastThreadId = payload.thread_id;
     if (payload?.trace_id) lastTraceId = payload.trace_id;
     eventCount += 1;
+
     if (ev === "status") {
+      try { console.info("[AO31] STREAM_STATUS_DISPATCH", payload); } catch {}
       onStatus?.(payload);
       assertStreamActivityProgress();
     }
-    if (ev === "execution") onExecution?.(payload);
+    if (ev === "execution") {
+      try { console.info("[AO31] STREAM_EXECUTION_DISPATCH", payload); } catch {}
+      onExecution?.(payload);
+    }
     if (ev === "agent_started" || ev === "orchestrator_merge") {
+      try { console.info("[AO31] STREAM_AGENT_LIFECYCLE_DISPATCH", { event: ev, payload }); } catch {}
       onExecution?.({ ...(payload || {}), event: ev, step: ev });
     }
     if (ev === "agent_chunk") {
       const delta = String(payload?.delta ?? payload?.content ?? payload?.text ?? "");
+      try {
+        console.info("[AO31] STREAM_AGENT_CHUNK_DISPATCH", {
+          deltaLength: delta.length,
+          draftLengthBefore: draftText.length,
+          payloadKeys: Object.keys(payload || {}),
+        });
+      } catch {}
       if (delta) {
         draftText += delta;
         firstUsefulChunkAt = firstUsefulChunkAt || Date.now();
       }
       onChunk?.(payload, draftText);
       onExecution?.({ ...(payload || {}), event: ev, step: ev });
+      try {
+        console.info("[AO31] STREAM_AGENT_CHUNK_DISPATCH_DONE", {
+          draftLengthAfter: draftText.length,
+        });
+      } catch {}
     }
     if (ev === "chunk") {
       const delta = String(payload?.delta ?? payload?.content ?? "");
+      try {
+        console.info("[AO31] STREAM_CHUNK_DISPATCH", {
+          deltaLength: delta.length,
+          draftLengthBefore: draftText.length,
+          payloadKeys: Object.keys(payload || {}),
+        });
+      } catch {}
       if (delta) {
         draftText += delta;
         firstUsefulChunkAt = firstUsefulChunkAt || Date.now();
       }
       onChunk?.(payload, draftText);
+      try {
+        console.info("[AO31] STREAM_CHUNK_DISPATCH_DONE", {
+          draftLengthAfter: draftText.length,
+        });
+      } catch {}
     }
     if (ev === "agent_done") {
       const agentDoneText = extractAssistantVisibleTextFromPayload(payload);
+      try {
+        console.info("[AO31] STREAM_AGENT_DONE_DISPATCH", {
+          extractedLength: agentDoneText.length,
+          draftLengthBefore: draftText.length,
+          payloadKeys: Object.keys(payload || {}),
+        });
+      } catch {}
       if (agentDoneText && (!draftText || agentDoneText.length > draftText.length)) {
         draftText = agentDoneText;
         firstUsefulChunkAt = firstUsefulChunkAt || Date.now();
       }
       onAgentDone?.(payload, draftText);
       onExecution?.({ ...(payload || {}), event: ev, step: ev });
+      try {
+        console.info("[AO31] STREAM_AGENT_DONE_DISPATCH_DONE", {
+          draftLengthAfter: draftText.length,
+        });
+      } catch {}
     }
     if (ev === "keepalive") {
+      try { console.info("[AO31] STREAM_KEEPALIVE_DISPATCH", payload); } catch {}
       onKeepalive?.(payload);
       assertStreamActivityProgress();
     }
     if (ev === "error") {
+      try { console.warn("[AO31] STREAM_ERROR_EVENT_DISPATCH", payload); } catch {}
       onError?.(payload);
 
       // METATRON_CHAT_STREAM_TERMINAL_GUARD_CLIENT
@@ -1110,11 +1218,27 @@ async function consumeChatStream(
       const agentScopedRecoverableError = !!payload?.agent_id && payload?.code !== "SERVER_BUSY";
       const terminalRecoverableError = recoverableCodes.has(String(payload?.code || ""));
 
+      try {
+        console.warn("[AO31] STREAM_ERROR_RECOVERABILITY_DECISION", {
+          code: payload?.code || null,
+          agentScopedRecoverableError,
+          terminalRecoverableError,
+          willThrow: !agentScopedRecoverableError && !terminalRecoverableError,
+        });
+      } catch {}
+
       if (!agentScopedRecoverableError && !terminalRecoverableError) {
         throw new StreamSemanticError(payload);
       }
     }
     if (ev === "done") {
+      try {
+        console.info("[AO31] STREAM_DONE_DISPATCH", {
+          payloadKeys: Object.keys(payload || {}),
+          eventCount,
+          draftLength: draftText.length,
+        });
+      } catch {}
       donePayload = payload || {};
       onDone?.(payload);
       doneSeen = true;
@@ -1135,17 +1259,62 @@ async function consumeChatStream(
 
     if (signal?.aborted || isStale?.()) abortStream();
     if (done) break;
-    buf += decoder.decode(value, { stream: true });
+    const decodedChunk = decoder.decode(value, { stream: true });
+    try {
+      console.info("[AO31] STREAM_DECODED_CHUNK", {
+        decodedLength: decodedChunk.length,
+        bytes: value?.length || 0,
+        preview: decodedChunk.slice(0, 300),
+      });
+    } catch {}
+    buf += decodedChunk;
     const parts = buf.split(/\r?\n\r?\n/);
     buf = parts.pop() || "";
+    try {
+      console.info("[AO31] STREAM_SPLIT_RESULT", {
+        completedBlocks: parts.length,
+        remainderLength: buf.length,
+        eventCount,
+        doneSeen,
+      });
+    } catch {}
     for (const part of parts) {
+      try {
+        console.info("[AO31] STREAM_FLUSH_PART_ATTEMPT", {
+          partLength: String(part || "").length,
+          preview: String(part || "").slice(0, 180),
+        });
+      } catch {}
       flushBlock(part);
+      try {
+        console.info("[AO31] STREAM_FLUSH_PART_RETURNED", {
+          doneSeen,
+          eventCount,
+          draftLength: draftText.length,
+        });
+      } catch {}
       if (doneSeen) break;
     }
     if (doneSeen) break;
   }
-  if (!doneSeen && buf.trim()) flushBlock(buf);
+  if (!doneSeen && buf.trim()) {
+    try {
+      console.info("[AO31] STREAM_FINAL_BUFFER_FLUSH", {
+        remainderLength: buf.length,
+        preview: buf.slice(0, 240),
+      });
+    } catch {}
+    flushBlock(buf);
+  }
   if (!doneSeen) {
+    try {
+      console.error("[AO31] STREAM_ENDED_WITHOUT_DONE", {
+        eventCount,
+        draftLength: draftText.length,
+        lastThreadId,
+        lastTraceId,
+      });
+    } catch {}
     throw buildStreamTerminalError(
       "CHAT_STREAM_ENDED_WITHOUT_DONE",
       "CHAT_STREAM_ENDED_WITHOUT_DONE"
