@@ -1044,6 +1044,16 @@ async function consumeChatStream(
     let payload = {};
     if (dataLines.length) {
       const rawData = dataLines.join("\n");
+      try {
+        payload = JSON.parse(rawData);
+      } catch (jsonErr) {
+        payload = { raw: rawData };
+      }
+    }
+
+    try {
+      console.log("SSE_EVENT", ev, payload);
+    } catch {}
 
     if (signal?.aborted || isStale?.()) {
       abortStream();
@@ -4295,6 +4305,50 @@ useEffect(() => {
       let data = [];
       let lastErr = null;
       for (let attempt = 1; attempt <= THREAD_RESTORE_RETRY_ATTEMPTS; attempt += 1) {
+        try {
+          if (attempt > 1) setMessagesLoadState("retrying");
+          const response = await apiFetch(
+            `/api/messages?thread_id=${encodeURIComponent(targetId)}&include_welcome=0`,
+            fetchOpts
+          );
+          data = response?.data;
+          lastErr = null;
+          break;
+        } catch (err) {
+          lastErr = err;
+          if (err?.name === "AbortError" || err?.status === 401 || !isTemporaryLoadError(err) || attempt >= THREAD_RESTORE_RETRY_ATTEMPTS) {
+            throw err;
+          }
+          await sleep(THREAD_RESTORE_RETRY_DELAY_MS * attempt);
+        }
+      }
+      if (lastErr) throw lastErr;
+
+      const normalizedFromServer = orderChatMessages(
+        Array.isArray(data)
+          ? data.map((item) => normalizeVisibleAssistantMessage(normalizeMessageSpeaker(item)))
+          : []
+      );
+      const normalized = mergeRealtimeInlineCachedTurns(normalizedFromServer, targetId);
+      const sameRequest = requestSeq === messagesLoadRequestRef.current;
+      const sameRequestedThread = requestedThreadIdRef.current === targetId;
+      const sameActiveThread =
+        String(activeThreadIdRef.current || "") === targetId;
+      const sameEpoch = expectedEpoch === activeThreadEpochRef.current;
+      const wasAborted = !!controller?.signal?.aborted;
+      const finalizeTurn = !!opts?.finalizeTurn;
+      const canApply =
+        sameActiveThread &&
+        !wasAborted &&
+        (
+          finalizeTurn ||
+          (
+            sameRequestedThread &&
+            sameEpoch &&
+            (force ? sameActiveThread : sameRequest)
+          )
+        );
+
 
       if (canApply) {
         messagesThreadIdRef.current = targetId;
@@ -4533,6 +4587,19 @@ useEffect(() => {
     const tid = String(reconcileThreadId || "").trim();
     if (!tid) return;
     window.setTimeout(() => {
+      try {
+        if (String(activeThreadIdRef.current || "") !== tid) return;
+        void loadMessages(tid, {
+          force: true,
+          allowInactive: true,
+          finalizeTurn: true,
+          preserveExistingRequest: true,
+          expectedEpoch: activeThreadEpochRef.current,
+        }).then((fresh) => {
+          if (hasPersistedAssistantForTurn(fresh, turnStartedAt)) {
+            if (String(activeThreadIdRef.current || "") === tid) {
+              setMessages(() => {
+                const persisted = Array.isArray(fresh) ? fresh : [];
                 if (!persisted.length) return persisted;
                 return persisted.filter((m) => !String(m?.id || "").startsWith("tmp-ass-"));
               });
