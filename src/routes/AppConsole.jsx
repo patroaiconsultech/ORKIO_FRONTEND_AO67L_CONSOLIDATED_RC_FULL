@@ -969,6 +969,14 @@ async function consumeChatStream(
   } = {}
 ) {
   const reader = response?.body?.getReader?.();
+
+  console.info("[AO30] STREAM_RESPONSE_OK", {
+    ok: response?.ok,
+    status: response?.status,
+    hasBody: !!response?.body,
+  });
+  console.info("[AO30] STREAM_READER_CREATED", { hasReader: !!reader });
+
   if (!reader) return { thread_id: null, trace_id: null, event_count: 0, used_stream: false };
 
   const abortStream = () => {
@@ -1117,7 +1125,14 @@ async function consumeChatStream(
 
   while (true) {
     if (signal?.aborted || isStale?.()) abortStream();
-    const { value, done } = await reader.read();
+    console.info("[AO30] STREAM_FIRST_READ");
+      const { value, done } = await reader.read();
+
+      console.info("[AO30] STREAM_READ_RESULT", {
+        done,
+        bytes: value?.length || 0,
+      });
+
     if (signal?.aborted || isStale?.()) abortStream();
     if (done) break;
     buf += decoder.decode(value, { stream: true });
