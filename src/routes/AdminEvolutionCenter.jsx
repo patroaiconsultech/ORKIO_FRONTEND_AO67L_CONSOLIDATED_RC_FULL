@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../ui/api.js";
 import { runEvolutionDryRun } from "../lib/adminEvolutionDryRun.js";
+import EOSHealthPanel from "../evolution/EOSHealthPanel.jsx";
 import {
   getTenant,
   getToken,
@@ -710,6 +711,8 @@ export default function AdminEvolutionCenter() {
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(124,58,237,0.30),_transparent_30%),radial-gradient(circle_at_top_right,_rgba(14,165,233,0.18),_transparent_34%),#070711] px-4 py-6 text-white">
       <div className="mx-auto max-w-7xl space-y-5">
+        <EOSHealthPanel />
+
         <header className="flex flex-col gap-4 rounded-[2rem] border border-white/10 bg-black/25 p-5 shadow-2xl shadow-black/30 backdrop-blur md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-violet-200/70">PTE • Admin Controlled Evolution</p>
