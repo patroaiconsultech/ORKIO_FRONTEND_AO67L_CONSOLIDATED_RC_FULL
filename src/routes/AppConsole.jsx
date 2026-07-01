@@ -4582,6 +4582,83 @@ useEffect(() => {
       });
     } catch {}
 
+    const restoreLocalFinalDraft = (reason = "restore_local_final_draft") => {
+      if (!finalText && !safeFinalText) return;
+
+      setMessages((prev) => {
+        const list = Array.isArray(prev) ? [...prev] : [];
+        const draftId = String(draftAssistantId || "");
+        let matched = false;
+
+        const next = list.map((m) => {
+          if (String(m?.id || "") !== draftId) return m;
+          matched = true;
+          return {
+            ...m,
+            content: safeFinalText,
+            agent_name: resolveAssistantDisplayName(
+              { ...(m || {}), agent_name: m?.agent_name || finalAgentName || "Agent", content: safeFinalText },
+              finalAgentName || "Agent"
+            ),
+            agent_id: m.agent_id || finalAgentId || null,
+            voice_id: m.voice_id || finalVoiceId || null,
+            avatar_url: m.avatar_url || finalAvatarUrl || null,
+            finalized_locally: true,
+            stream_reconcile_pending: true,
+          };
+        });
+
+        if (matched) {
+          try {
+            console.info("[AO33] RESTORE_LOCAL_FINAL_DRAFT_UPDATED", {
+              reason,
+              draftAssistantId,
+              finalTextLength: String(safeFinalText || "").length,
+              prevLen: list.length,
+              nextLen: next.length,
+            });
+          } catch {}
+          return next;
+        }
+
+        const alreadyVisible = next.some((m) =>
+          m?.role === "assistant" &&
+          String(m?.content || "").trim() === String(safeFinalText || "").trim()
+        );
+
+        if (alreadyVisible) return next;
+
+        try {
+          console.info("[AO33] RESTORE_LOCAL_FINAL_DRAFT_APPENDED", {
+            reason,
+            draftAssistantId,
+            finalTextLength: String(safeFinalText || "").length,
+            prevLen: list.length,
+            nextLen: next.length + 1,
+          });
+        } catch {}
+
+        return [
+          ...next,
+          {
+            id: draftId || `stream-final-${Date.now()}`,
+            role: "assistant",
+            content: safeFinalText,
+            agent_name: resolveAssistantDisplayName(
+              { agent_name: finalAgentName || "Agent", content: safeFinalText },
+              finalAgentName || "Agent"
+            ),
+            agent_id: finalAgentId || null,
+            voice_id: finalVoiceId || null,
+            avatar_url: finalAvatarUrl || null,
+            finalized_locally: true,
+            stream_reconcile_pending: true,
+            created_at: Math.floor(Date.now() / 1000),
+          },
+        ];
+      });
+    };
+
     if (!tid) {
       setMessages((prev) => {
         const list = Array.isArray(prev) ? prev : [];
@@ -4634,6 +4711,16 @@ useEffect(() => {
 
     let fresh = [];
     const startedAt = Number(turnStartedAt || 0);
+
+    // AO33_RECONCILE_FIX:
+    // Keep the final streamed answer visible while /api/messages catches up.
+    // Previously finalizeTurn called loadMessages() first; if the backend list did
+    // not yet include the just-persisted assistant, setMessages(normalized) could
+    // briefly erase the local tmp-ass draft from the UI.
+    if (finalText) {
+      restoreLocalFinalDraft("before_reconcile_load");
+    }
+
     for (let attempt = 0; attempt < CHAT_TURN_RECONCILE_ATTEMPTS; attempt += 1) {
       fresh = await loadMessages(tid, {
         force: true,
@@ -4643,13 +4730,7 @@ useEffect(() => {
         expectedEpoch: activeThreadEpochRef.current,
       });
 
-      const hasFreshAssistant = Array.isArray(fresh) && fresh.some((m) => {
-        if (m?.role !== "assistant") return false;
-        if (String(m?.id || "").startsWith("tmp-ass-")) return false;
-        const createdAt = Number(m?.created_at || 0);
-        if (!Number.isFinite(createdAt) || !startedAt) return true;
-        return createdAt >= Math.max(0, startedAt - 2);
-      });
+      const hasFreshAssistant = hasPersistedAssistantForTurn(fresh, startedAt);
 
       try {
         console.info("[AO32] FINALIZE_TURN_RECONCILE_ATTEMPT", {
@@ -4666,6 +4747,10 @@ useEffect(() => {
       if (hasFreshAssistant) {
         try { console.info("[AO32] FINALIZE_TURN_RETURN_FRESH", { tid, attempt: attempt + 1 }); } catch {}
         return fresh;
+      }
+
+      if (finalText) {
+        restoreLocalFinalDraft(`after_reconcile_miss_${attempt + 1}`);
       }
 
       await new Promise((resolve) => setTimeout(resolve, 450 + attempt * 450));
@@ -7128,13 +7213,49 @@ function formatAgentOptionLabel(agent) {
       : []));
   }
 
+  function normalizeMessageCreatedAtSeconds(message = {}) {
+    const candidates = [
+      message?.created_at,
+      message?.createdAt,
+      message?.created_at_ts,
+      message?.createdAtTs,
+      message?.timestamp,
+      message?.ts,
+    ];
+
+    for (const raw of candidates) {
+      if (raw === null || raw === undefined || raw === "") continue;
+
+      if (typeof raw === "number" || /^\d+(\.\d+)?$/.test(String(raw).trim())) {
+        const n = Number(raw);
+        if (!Number.isFinite(n) || n <= 0) continue;
+        // Backend and local optimistic messages may disagree between seconds and ms.
+        // Normalize both to seconds before comparing with turnStartedAt.
+        if (n > 100000000000) return Math.floor(n / 1000);
+        if (n > 10000000000) return Math.floor(n / 1000);
+        return Math.floor(n);
+      }
+
+      const parsed = Date.parse(String(raw));
+      if (Number.isFinite(parsed) && parsed > 0) return Math.floor(parsed / 1000);
+    }
+
+    return 0;
+  }
+
   function hasPersistedAssistantForTurn(freshMessages, turnStartedAt) {
     const list = Array.isArray(freshMessages) ? freshMessages : [];
+    const startedAt = normalizeMessageCreatedAtSeconds({ created_at: turnStartedAt });
+    const threshold = Math.max(0, Number(startedAt || 0) - 2);
+
     return list.some((m) => {
       if (m?.role !== "assistant") return false;
       if (String(m?.id || "").startsWith("tmp-ass-")) return false;
-      const createdAt = Number(m?.created_at || 0);
-      return Number.isFinite(createdAt) && createdAt >= Math.max(0, Number(turnStartedAt || 0) - 2);
+
+      const createdAt = normalizeMessageCreatedAtSeconds(m);
+      if (!createdAt) return false;
+
+      return createdAt >= threshold;
     });
   }
 
