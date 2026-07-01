@@ -4504,8 +4504,34 @@ useEffect(() => {
           )
         );
 
+      try {
+        console.info("[AO32] LOAD_MESSAGES_RECONCILE_DECISION", {
+          targetId,
+          normalizedLen: normalized.length,
+          normalizedAssistantCount: normalized.filter((m) => m?.role === "assistant").length,
+          sameRequest,
+          sameRequestedThread,
+          sameActiveThread,
+          sameEpoch,
+          wasAborted,
+          finalizeTurn,
+          force,
+          canApply,
+          requestSeq,
+          currentRequestSeq: messagesLoadRequestRef.current,
+        });
+      } catch {}
+
       if (canApply) {
         messagesThreadIdRef.current = targetId;
+        try {
+          console.info("[AO32] LOAD_MESSAGES_SET_MESSAGES", {
+            targetId,
+            normalizedLen: normalized.length,
+            assistantIds: normalized.filter((m) => m?.role === "assistant").slice(-3).map((m) => m?.id || null),
+            assistantContentLengths: normalized.filter((m) => m?.role === "assistant").slice(-3).map((m) => String(m?.content || "").length),
+          });
+        } catch {}
         setMessages(normalized);
         setMessagesLoadState(normalized.length ? "ready" : "empty");
         if (String(cleanNewThreadIdRef.current || "") === targetId) {
@@ -4545,6 +4571,16 @@ useEffect(() => {
     const safeFinalText =
       finalText ||
       "Resposta concluída no backend. Atualizando histórico...";
+    try {
+      console.info("[AO32] FINALIZE_TURN_ENTER", {
+        tid,
+        draftAssistantId,
+        finalTextLength: finalText.length,
+        finalAgentName,
+        finalAgentId,
+        turnStartedAt,
+      });
+    } catch {}
 
     if (!tid) {
       setMessages((prev) => {
@@ -4615,7 +4651,20 @@ useEffect(() => {
         return createdAt >= Math.max(0, startedAt - 2);
       });
 
+      try {
+        console.info("[AO32] FINALIZE_TURN_RECONCILE_ATTEMPT", {
+          attempt: attempt + 1,
+          tid,
+          freshLen: Array.isArray(fresh) ? fresh.length : -1,
+          assistantCount: Array.isArray(fresh) ? fresh.filter((m) => m?.role === "assistant").length : -1,
+          hasFreshAssistant,
+          assistantIds: Array.isArray(fresh) ? fresh.filter((m) => m?.role === "assistant").slice(-3).map((m) => m?.id || null) : [],
+          assistantContentLengths: Array.isArray(fresh) ? fresh.filter((m) => m?.role === "assistant").slice(-3).map((m) => String(m?.content || "").length) : [],
+        });
+      } catch {}
+
       if (hasFreshAssistant) {
+        try { console.info("[AO32] FINALIZE_TURN_RETURN_FRESH", { tid, attempt: attempt + 1 }); } catch {}
         return fresh;
       }
 
@@ -4686,6 +4735,15 @@ useEffect(() => {
             if (String(activeThreadIdRef.current || "") === tid) {
               setMessages(() => {
                 const persisted = Array.isArray(fresh) ? fresh : [];
+                try {
+                  console.info("[AO32] SCHEDULE_RECONCILE_SET_MESSAGES", {
+                    tid,
+                    persistedLen: persisted.length,
+                    assistantCount: persisted.filter((m) => m?.role === "assistant").length,
+                    assistantIds: persisted.filter((m) => m?.role === "assistant").slice(-3).map((m) => m?.id || null),
+                    assistantContentLengths: persisted.filter((m) => m?.role === "assistant").slice(-3).map((m) => String(m?.content || "").length),
+                  });
+                } catch {}
                 if (!persisted.length) return persisted;
                 return persisted.filter((m) => !String(m?.id || "").startsWith("tmp-ass-"));
               });
@@ -7644,58 +7702,139 @@ async function sendMessage(presetMsg = null, opts = {}) {
               appendExecutionTrace(describeExecutionEvent(payload));
             },
             onChunk: (payload, draftText) => {
-              if (isStale()) return;
-              setMessages((prev) => prev.map((m) => (
-                m.id === draftAssistantId
-                  ? {
-                      ...m,
-                      content: sanitizePublicBetaAssistantText(draftText || "⌛ Preparando resposta..."),
-                      agent_name: resolveAssistantDisplayName(
-                        { ...(m || {}), ...(payload || {}), content: draftText || payload?.content || m?.content || "" },
-                        m?.agent_name || "Agent"
-                      ),
-                      agent_id: payload?.agent_id || m.agent_id || null,
-                      voice_id: payload?.voice_id || m.voice_id || null,
-                      avatar_url: payload?.avatar_url || m.avatar_url || null,
-                    }
-                  : m
-              )));
+              const staleNow = isStale();
+              try {
+                console.info("[AO32] STATE_ON_CHUNK_ENTER", {
+                  stale: staleNow,
+                  draftAssistantId,
+                  draftLength: String(draftText || "").length,
+                  payloadKeys: Object.keys(payload || {}),
+                  agent_id: payload?.agent_id || null,
+                  agent_name: payload?.agent_name || payload?.final_speaker || null,
+                });
+              } catch {}
+              if (staleNow) {
+                try { console.warn("[AO32] STATE_ON_CHUNK_SKIPPED_STALE", { draftAssistantId }); } catch {}
+                return;
+              }
+              setMessages((prev) => {
+                const list = Array.isArray(prev) ? prev : [];
+                let matched = false;
+                const next = list.map((m) => {
+                  if (m.id !== draftAssistantId) return m;
+                  matched = true;
+                  const nextContent = sanitizePublicBetaAssistantText(draftText || "⌛ Preparando resposta...");
+                  return {
+                    ...m,
+                    content: nextContent,
+                    agent_name: resolveAssistantDisplayName(
+                      { ...(m || {}), ...(payload || {}), content: draftText || payload?.content || m?.content || "" },
+                      m?.agent_name || "Agent"
+                    ),
+                    agent_id: payload?.agent_id || m.agent_id || null,
+                    voice_id: payload?.voice_id || m.voice_id || null,
+                    avatar_url: payload?.avatar_url || m.avatar_url || null,
+                  };
+                });
+                try {
+                  console.info("[AO32] STATE_ON_CHUNK_SET_MESSAGES", {
+                    prevLen: list.length,
+                    nextLen: next.length,
+                    matched,
+                    draftAssistantId,
+                    draftLength: String(draftText || "").length,
+                    visibleAssistantCount: next.filter((m) => m?.role === "assistant").length,
+                    draftContentLengthAfter: String((next.find((m) => m.id === draftAssistantId) || {})?.content || "").length,
+                  });
+                } catch {}
+                return next;
+              });
             },
             onAgentDone: (payload) => {
-              if (isStale()) return;
+              const staleNow = isStale();
+              try {
+                console.info("[AO32] STATE_ON_AGENT_DONE_ENTER", {
+                  stale: staleNow,
+                  draftAssistantId,
+                  payloadKeys: Object.keys(payload || {}),
+                  agent_id: payload?.agent_id || null,
+                  agent_name: payload?.agent_name || payload?.final_speaker || null,
+                });
+              } catch {}
+              if (staleNow) {
+                try { console.warn("[AO32] STATE_ON_AGENT_DONE_SKIPPED_STALE", { draftAssistantId }); } catch {}
+                return;
+              }
               if (payload?.agent_name || payload?.final_speaker || payload?.visible_agent) setActiveRuntimeAgent(resolveAssistantDisplayName(payload, activeRuntimeAgent || "Orkio"));
               const agentDoneVisibleText = sanitizePublicBetaAssistantText(
                 String(extractAssistantVisibleTextFromPayload(payload) || draftText || "").trim()
               );
+              try {
+                console.info("[AO32] STATE_ON_AGENT_DONE_TEXT", {
+                  extractedLength: agentDoneVisibleText.length,
+                  fallbackDraftLength: String(draftText || "").length,
+                });
+              } catch {}
               appendExecutionTrace({
                 kind: "agent",
                 label: `${resolveAssistantDisplayName(payload, payload?.agent_id || "Orkio")} concluiu uma etapa`,
                 detail: agentDoneVisibleText || sanitizePublicBetaAssistantText(payload?.message || payload?.status || "Resposta parcial pronta."),
                 agentName: resolveAssistantDisplayName(payload, "Orkio"),
               });
-              setMessages((prev) => prev.map((m) => (
-                m.id === draftAssistantId
-                  ? {
-                      ...m,
-                      content: sanitizePublicBetaAssistantText(
-                        agentDoneVisibleText ||
-                        (m.content || "").replace(/^⌛\s*/, "") ||
-                        "Resposta concluída."
-                      ),
-                      agent_name: resolveAssistantDisplayName(
-                        { ...(m || {}), ...(payload || {}), content: agentDoneVisibleText || m?.content || payload?.content || "" },
-                        m?.agent_name || "Agent"
-                      ),
-                      agent_id: payload?.agent_id || m.agent_id || null,
-                      voice_id: payload?.voice_id || m.voice_id || null,
-                      avatar_url: payload?.avatar_url || m.avatar_url || null,
-                    }
-                  : m
-              )));
+              setMessages((prev) => {
+                const list = Array.isArray(prev) ? prev : [];
+                let matched = false;
+                const next = list.map((m) => {
+                  if (m.id !== draftAssistantId) return m;
+                  matched = true;
+                  return {
+                    ...m,
+                    content: sanitizePublicBetaAssistantText(
+                      agentDoneVisibleText ||
+                      (m.content || "").replace(/^⌛\s*/, "") ||
+                      "Resposta concluída."
+                    ),
+                    agent_name: resolveAssistantDisplayName(
+                      { ...(m || {}), ...(payload || {}), content: agentDoneVisibleText || m?.content || payload?.content || "" },
+                      m?.agent_name || "Agent"
+                    ),
+                    agent_id: payload?.agent_id || m.agent_id || null,
+                    voice_id: payload?.voice_id || m.voice_id || null,
+                    avatar_url: payload?.avatar_url || m.avatar_url || null,
+                  };
+                });
+                try {
+                  console.info("[AO32] STATE_ON_AGENT_DONE_SET_MESSAGES", {
+                    prevLen: list.length,
+                    nextLen: next.length,
+                    matched,
+                    draftAssistantId,
+                    finalContentLengthAfter: String((next.find((m) => m.id === draftAssistantId) || {})?.content || "").length,
+                  });
+                } catch {}
+                return next;
+              });
             },
             onKeepalive: () => {},
             onDone: (payload) => {
-              if (isStale()) return;
+              const staleNow = isStale();
+              try {
+                console.info("[AO32] STATE_ON_DONE_ENTER", {
+                  stale: staleNow,
+                  draftAssistantId,
+                  payloadKeys: Object.keys(payload || {}),
+                  assistant_persisted: !!payload?.assistant_persisted,
+                  assistant_message_id: payload?.assistant_message_id || null,
+                  done: !!payload?.done,
+                  finalTextLength: String(resolveDoneFinalText(payload, "") || "").length,
+                  thread_id: payload?.thread_id || null,
+                  trace_id: payload?.trace_id || null,
+                });
+              } catch {}
+              if (staleNow) {
+                try { console.warn("[AO32] STATE_ON_DONE_SKIPPED_STALE", { draftAssistantId }); } catch {}
+                return;
+              }
               streamDonePayload = payload || null;
               appendExecutionTrace(describeExecutionDone(payload));
               if (payload?.thread_id) newThreadId = payload.thread_id;
@@ -7712,22 +7851,46 @@ async function sendMessage(presetMsg = null, opts = {}) {
 
               const doneFinalText = resolveDoneFinalText(payload, "");
               if (doneFinalText || payload?.assistant_persisted || payload?.done) {
-                setMessages((prev) => prev.map((m) => (
-                  m.id === draftAssistantId
-                    ? {
-                        ...m,
-                        content: sanitizePublicBetaAssistantText(doneFinalText || String(m?.content || "").replace(/^⌛\s*/, "") || "Resposta concluída."),
-                        agent_name: resolveAssistantDisplayName(
-                          { ...(m || {}), ...(payload || {}), content: doneFinalText || m?.content || "" },
-                          m?.agent_name || "Agent"
-                        ),
-                        agent_id: payload?.agent_id || m.agent_id || null,
-                        voice_id: payload?.voice_id || m.voice_id || null,
-                        avatar_url: payload?.avatar_url || m.avatar_url || null,
-                        assistant_message_id: payload?.assistant_message_id || m?.assistant_message_id || null,
-                      }
-                    : m
-                )));
+                try {
+                  console.info("[AO32] STATE_ON_DONE_PRE_SET_MESSAGES", {
+                    draftAssistantId,
+                    doneFinalTextLength: String(doneFinalText || "").length,
+                    assistant_persisted: !!payload?.assistant_persisted,
+                    assistant_message_id: payload?.assistant_message_id || null,
+                  });
+                } catch {}
+                setMessages((prev) => {
+                  const list = Array.isArray(prev) ? prev : [];
+                  let matched = false;
+                  const next = list.map((m) => {
+                    if (m.id !== draftAssistantId) return m;
+                    matched = true;
+                    return {
+                      ...m,
+                      content: sanitizePublicBetaAssistantText(doneFinalText || String(m?.content || "").replace(/^⌛\s*/, "") || "Resposta concluída."),
+                      agent_name: resolveAssistantDisplayName(
+                        { ...(m || {}), ...(payload || {}), content: doneFinalText || m?.content || "" },
+                        m?.agent_name || "Agent"
+                      ),
+                      agent_id: payload?.agent_id || m.agent_id || null,
+                      voice_id: payload?.voice_id || m.voice_id || null,
+                      avatar_url: payload?.avatar_url || m.avatar_url || null,
+                      assistant_message_id: payload?.assistant_message_id || m?.assistant_message_id || null,
+                    };
+                  });
+                  try {
+                    console.info("[AO32] STATE_ON_DONE_SET_MESSAGES", {
+                      prevLen: list.length,
+                      nextLen: next.length,
+                      matched,
+                      draftAssistantId,
+                      assistant_message_id: payload?.assistant_message_id || null,
+                      finalContentLengthAfter: String((next.find((m) => m.id === draftAssistantId) || {})?.content || "").length,
+                      assistantCountAfter: next.filter((m) => m?.role === "assistant").length,
+                    });
+                  } catch {}
+                  return next;
+                });
               }
 
               try { setUploadStatus(""); } catch {}
