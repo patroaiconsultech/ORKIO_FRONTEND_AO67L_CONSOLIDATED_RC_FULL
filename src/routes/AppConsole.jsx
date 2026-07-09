@@ -430,6 +430,67 @@ function isLikelyEnglishMessageContent(rawText = "") {
   return englishHits > portugueseHits;
 }
 
+function isExecutiveAdvisoryContent(rawText = "") {
+  const text = String(rawText || "").toLowerCase();
+  return [
+    "diagnostico breve",
+    "diagnóstico breve",
+    "visão estratégica",
+    "visao estrategica",
+    "risco de crescimento",
+    "sinal de alerta",
+    "sinais de alerta",
+    "ação recomendada",
+    "acao recomendada",
+    "proximo passo sugerido",
+    "próximo passo sugerido",
+    "framework de decisão",
+    "framework de decisao",
+    "plano de contingência",
+    "plano de contingencia",
+    "kpis recomendados",
+    "dashboard executivo",
+  ].some((marker) => text.includes(marker));
+}
+
+function hasExplicitHumanHelpIntent(rawText = "") {
+  const text = String(rawText || "").toLowerCase();
+  return [
+    "quero falar com",
+    "falar com a equipe",
+    "falar com alguem",
+    "falar com alguém",
+    "atendimento humano",
+    "suporte humano",
+    "qual e o whatsapp",
+    "qual é o whatsapp",
+    "me chama no whatsapp",
+    "chamar no whatsapp",
+    "mandar whatsapp",
+    "contratar",
+    "contratação",
+    "contratacao",
+    "preço",
+    "preco",
+    "custos de implantação",
+    "custo de implantação",
+    "custos de implementacao",
+    "custo de implementacao",
+    "como funciona a implantação",
+    "como funciona a implementacao",
+    "talk to the team",
+    "talk to a human",
+    "human support",
+    "pricing",
+    "implementation cost",
+  ].some((marker) => text.includes(marker));
+}
+
+function shouldRenderWhatsappCtaCard(rawText = "") {
+  if (isExecutiveAdvisoryContent(rawText)) return false;
+  return hasExplicitHumanHelpIntent(rawText);
+}
+
 function renderWhatsappCtaCard(href, key, options = {}) {
   const safeHref = href || "https://wa.me/5551989697605";
   const english = Boolean(options && options.english);
@@ -533,7 +594,7 @@ function renderMessageContentPremium(value) {
     const { href, displayUrl, trailing } = normalizeExternalHref(rawUrl);
     const isWhatsappHref = isWhatsappUrl(href);
 
-    if (isWhatsappHref) {
+    if (isWhatsappHref && shouldRenderWhatsappCtaCard(text)) {
       nodes.push(renderWhatsappCtaCard(href, `whatsapp-cta-${match.index}-${matchIndex}`, { english: whatsappCardEnglish }));
     } else {
       nodes.push(
