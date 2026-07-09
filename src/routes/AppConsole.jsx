@@ -780,6 +780,7 @@ const PATCH_37_REV_B_CONTEXT_ISOLATION_ALL_SENDS_VERSION =
   "PATCH_37_REV_B_PREMIUM_CONTEXT_ISOLATION_ALL_SENDS_V1";
 const PATCH_38_REALTIME_TEAM_ECHO_LOOP_GUARD_VERSION =
   "PATCH_38_REALTIME_TEAM_ECHO_LOOP_GUARD_V1";
+const AO69B_STRUCTURED_EXECUTIVE_RESPONSE_CONTROL = "structured_executive_direct_answer";
 const PATCH_39_REALTIME_MANUAL_SWITCH_HARD_GATE_VERSION =
   "PATCH39_REALTIME_MANUAL_SWITCH_HARD_GATE_V1";
 const PATCH_32_MANUAL_LOCK_STAGING_PROOF_STORAGE_KEY = "orkio_manual_lock_staging_proof";
@@ -6294,9 +6295,46 @@ function formatAgentOptionLabel(agent) {
     }
   }
 
+  function normalizeStructuredExecutiveText(value = "") {
+    return String(value || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9@:/.\-_\s]+/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function isStructuredExecutiveTaskPrompt(value = "") {
+    const text = normalizeStructuredExecutiveText(value);
+    if (!text) return false;
+
+    const metricMarkers = [
+      "mrr", "arr", "receita", "faturamento", "margem", "margem bruta",
+      "margem operacional", "despesas", "custos", "cac", "ltv", "churn",
+      "ticket", "runway", "caixa", "ebitda", "lucro", "burn", "payback",
+    ];
+    const deliverableMarkers = [
+      "calcule", "calculo", "calculos", "entregue", "avalie", "diagnostico",
+      "restricoes", "roadmap", "plano 30-60-90", "30-60-90", "kpis",
+      "riscos", "gatilhos", "dados faltantes", "inferencias",
+    ];
+
+    const metricHits = metricMarkers.filter((marker) => text.includes(marker)).length;
+    const deliverableHits = deliverableMarkers.filter((marker) => text.includes(marker)).length;
+    const hasFinancialNumbers =
+      /(r\s*\$|\d[\d.,]*\s*(%|mil|mi|milhao|milhoes|mes|meses|mensal|\/mes))/i.test(text);
+
+    return hasFinancialNumbers && metricHits >= 3 && deliverableHits >= 2;
+  }
+
   function buildDestinationContract(rawMessage = "", hostAgentId = null) {
     const manualContract = buildManualAgentAuthorityContract(rawMessage, hostAgentId, { realtime: false });
     if (manualContract) return manualContract;
+
+    const structuredExecutiveResponseControl = isStructuredExecutiveTaskPrompt(rawMessage)
+      ? AO69B_STRUCTURED_EXECUTIVE_RESPONSE_CONTROL
+      : null;
 
     const mode = ["team", "single", "multi"].includes(String(destMode || "").toLowerCase())
       ? String(destMode || "team").toLowerCase()
@@ -6356,7 +6394,7 @@ function formatAgentOptionLabel(agent) {
         visible_agent: visibleRouteName,
         requested_agent_names: requestedNames,
         multi_agent_turn: Boolean(turnRoute?.multi_agent_turn || routeSlugs.length > 1),
-        response_control: turnRoute?.response_control || (routeSlugs.length > 1 ? "sequenced_team_turns" : "single_turn"),
+        response_control: structuredExecutiveResponseControl || turnRoute?.response_control || (routeSlugs.length > 1 ? "sequenced_team_turns" : "single_turn"),
       };
     }
 
@@ -6369,7 +6407,7 @@ function formatAgentOptionLabel(agent) {
       visible_agent: mode === "single" ? String(singleAgent?.name || "") : "",
       requested_agent_names: mentionedNames,
       multi_agent_turn: false,
-      response_control: mode === "multi" ? "manual_multi" : "single_turn",
+      response_control: structuredExecutiveResponseControl || (mode === "multi" ? "manual_multi" : "single_turn"),
     };
   }
 
