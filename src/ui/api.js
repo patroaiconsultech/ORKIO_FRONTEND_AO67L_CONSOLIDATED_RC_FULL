@@ -11,6 +11,7 @@ import {
   getTenant as readTenant,
   getToken as readToken,
 } from "../lib/auth.js";
+import { resolveExecutiveResponseControl } from "../lib/executivePromptDetector.js";
 
 const PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION = "PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_V1";
 const PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX_VERSION = "PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX_V1";
@@ -549,7 +550,7 @@ export const chat = ({
       target_agent_slugs,
       requested_agent_names,
       multi_agent_turn,
-      response_control,
+      response_control: resolveExecutiveResponseControl(message, response_control),
       manual_agent_lock,
       manual_agent_source,
       manual_authority_version,
@@ -656,7 +657,7 @@ export async function chatStream({
         target_agent_slugs,
         requested_agent_names,
         multi_agent_turn,
-        response_control,
+        response_control: resolveExecutiveResponseControl(message, response_control),
         manual_agent_lock,
         manual_agent_source,
         manual_authority_version,
