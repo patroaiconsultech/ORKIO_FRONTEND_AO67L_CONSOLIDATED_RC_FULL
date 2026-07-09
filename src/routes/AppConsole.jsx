@@ -486,9 +486,51 @@ function hasExplicitHumanHelpIntent(rawText = "") {
   ].some((marker) => text.includes(marker));
 }
 
-function shouldRenderWhatsappCtaCard(rawText = "") {
+function hasCommercialCtaSignature(rawText = "") {
+  const text = String(rawText || "").toLowerCase();
+  return [
+    "pronto para transformar isso em projeto guiado",
+    "ready to turn this into a guided project",
+    "a equipe patroai/orkio pode mapear",
+    "the patroai/orkio team can map",
+    "desenhar os agentes certos",
+    "design the right agents",
+    "orientar o próximo passo",
+    "orientar o proximo passo",
+    "talk to the team on whatsapp",
+    "falar com a equipe no whatsapp",
+    "atendimento humano • orkio/patroai",
+    "human support • orkio/patroai",
+  ].some((marker) => text.includes(marker));
+}
+
+function readCommercialCtaAllowedFromRenderContext(context = {}) {
+  const message = context?.message || context?.sourceMessage || {};
+  const routing = (
+    message?.runtime_hints?.routing ||
+    message?.metadata?.routing ||
+    message?.done_payload?.runtime_hints?.routing ||
+    message?.done_payload?.metadata?.routing ||
+    {}
+  );
+
+  return Boolean(
+    context?.commercialCtaAllowed === true ||
+    message?.commercial_cta_allowed === true ||
+    message?.allow_commercial_cta === true ||
+    message?.metadata?.commercial_cta_allowed === true ||
+    routing?.commercial_cta_allowed === true ||
+    routing?.human_help_intent === true
+  );
+}
+
+function shouldRenderWhatsappCtaCard(rawText = "", context = {}) {
   if (isExecutiveAdvisoryContent(rawText)) return false;
-  return hasExplicitHumanHelpIntent(rawText);
+
+  const allowedByContext = readCommercialCtaAllowedFromRenderContext(context);
+  if (!allowedByContext && hasCommercialCtaSignature(rawText)) return false;
+
+  return Boolean(allowedByContext || hasExplicitHumanHelpIntent(rawText));
 }
 
 function renderWhatsappCtaCard(href, key, options = {}) {
@@ -575,7 +617,7 @@ function renderWhatsappCtaCard(href, key, options = {}) {
   );
 }
 
-function renderMessageContentPremium(value) {
+function renderMessageContentPremium(value, context = {}) {
   const text = String(value || "");
   if (!text) return "";
 
@@ -594,7 +636,7 @@ function renderMessageContentPremium(value) {
     const { href, displayUrl, trailing } = normalizeExternalHref(rawUrl);
     const isWhatsappHref = isWhatsappUrl(href);
 
-    if (isWhatsappHref && shouldRenderWhatsappCtaCard(text)) {
+    if (isWhatsappHref && shouldRenderWhatsappCtaCard(text, context)) {
       nodes.push(renderWhatsappCtaCard(href, `whatsapp-cta-${match.index}-${matchIndex}`, { english: whatsappCardEnglish }));
     } else {
       nodes.push(

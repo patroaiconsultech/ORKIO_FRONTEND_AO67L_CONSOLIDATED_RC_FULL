@@ -67,6 +67,62 @@ function isLikelyEnglishSmartActionContent(value) {
   return englishHits > portugueseHits;
 }
 
+function readRoutingHints(message) {
+  return (
+    message?.runtime_hints?.routing ||
+    message?.metadata?.routing ||
+    message?.done_payload?.runtime_hints?.routing ||
+    message?.done_payload?.metadata?.routing ||
+    {}
+  );
+}
+
+function commercialCtaAllowedForMessage(message) {
+  const routing = readRoutingHints(message);
+  return Boolean(
+    message?.commercial_cta_allowed === true ||
+    message?.allow_commercial_cta === true ||
+    message?.metadata?.commercial_cta_allowed === true ||
+    routing?.commercial_cta_allowed === true ||
+    routing?.human_help_intent === true
+  );
+}
+
+function hasCommercialCtaSignature(value) {
+  const lower = String(value || "").toLowerCase();
+  return [
+    "pronto para transformar isso em projeto guiado",
+    "ready to turn this into a guided project",
+    "a equipe patroai/orkio pode mapear",
+    "the patroai/orkio team can map",
+    "desenhar os agentes certos",
+    "design the right agents",
+    "orientar o próximo passo",
+    "orientar o proximo passo",
+    "talk to the team on whatsapp",
+    "falar com a equipe no whatsapp",
+    "atendimento humano • orkio/patroai",
+    "human support • orkio/patroai"
+  ].some((marker) => lower.includes(marker));
+}
+
+function stripUnrequestedCommercialCta(value, message) {
+  const text = String(value || "");
+  if (!text || commercialCtaAllowedForMessage(message)) return text;
+  if (!hasCommercialCtaSignature(text)) return text;
+
+  const lines = text.split(/\r?\n/);
+  const firstCtaLine = lines.findIndex((line) => hasCommercialCtaSignature(line));
+  if (firstCtaLine >= 0) {
+    return lines.slice(0, firstCtaLine).join("\n").replace(/\n{3,}$/g, "\n\n").trimEnd();
+  }
+
+  return text
+    .replace(/(?:^|\n)+.*pronto para transformar isso em projeto guiado[\s\S]*$/i, "")
+    .replace(/(?:^|\n)+.*ready to turn this into a guided project[\s\S]*$/i, "")
+    .trimEnd();
+}
+
 function shouldShowSmartNextActions(value) {
   const text = String(value || "").trim();
   if (!text || text.length < 80) return false;
@@ -74,14 +130,17 @@ function shouldShowSmartNextActions(value) {
 
   const executiveMarkers = [
     "diagnostico breve", "diagnóstico breve", "proximo passo sugerido",
-    "próximo passo sugerido", "sinal de alerta", "acao recomendada",
-    "ação recomendada", "trade-offs", "kpis recomendados"
+    "próximo passo sugerido", "sinal de alerta", "sinais de alerta",
+    "acao recomendada", "ação recomendada", "trade-offs", "kpis recomendados",
+    "dashboard executivo", "framework de decisão", "framework de decisao",
+    "plano de contingência", "plano de contingencia"
   ];
   if (executiveMarkers.some((marker) => lower.includes(marker))) return false;
+  if (hasCommercialCtaSignature(text)) return false;
 
   const safePublicMarkers = [
     "patroai", "orkio", "amcham", "whatsapp", "implantação", "implementation",
-    "guided project", "projeto guiado", "site institucional", "official patroai website"
+    "site institucional", "official patroai website"
   ];
   if (!safePublicMarkers.some((marker) => lower.includes(marker))) return false;
 
@@ -96,15 +155,20 @@ function shouldShowSmartNextActions(value) {
 }
 
 function suppressCommercialActionsForMessage(message, visibleText) {
-  const routing = message?.runtime_hints?.routing || message?.done_payload?.runtime_hints?.routing || {};
+  const routing = readRoutingHints(message);
+  if (commercialCtaAllowedForMessage(message)) return false;
   if (routing?.commercial_cta_suppressed === true) return true;
   if (String(routing?.execution_trace_priority || "") === "secondary_collapsed") return true;
 
   const text = String(visibleText || "").toLowerCase();
+  if (hasCommercialCtaSignature(text)) return true;
+
   return [
     "diagnostico breve", "diagnóstico breve", "proximo passo sugerido",
-    "próximo passo sugerido", "sinal de alerta", "acao recomendada",
-    "ação recomendada", "kpis recomendados"
+    "próximo passo sugerido", "sinal de alerta", "sinais de alerta",
+    "acao recomendada", "ação recomendada", "kpis recomendados",
+    "dashboard executivo", "framework de decisão", "framework de decisao",
+    "plano de contingência", "plano de contingencia"
   ].some((marker) => text.includes(marker));
 }
 
@@ -383,7 +447,11 @@ export default function MessageBubble({
             normalizeUserFacingRuntimeMessage?.(visibleSource)
           ) ?? String(visibleSource || "");
 
-          const visibleForActions = visible || visibleSource || "";
+          const visibleSanitized = !isUser && !isSystem
+            ? stripUnrequestedCommercialCta(visible, m)
+            : visible;
+
+          const visibleForActions = visibleSanitized || "";
 
           const name = isUser
             ? (m.user_name || meName)
@@ -417,7 +485,10 @@ export default function MessageBubble({
               ) : (
                 <>
                   <div style={styles?.messageContent || { whiteSpace: "pre-wrap", lineHeight: 1.45 }}>
-                    {renderMessageContentPremium?.(visibleForActions) ?? visibleForActions}
+                    {renderMessageContentPremium?.(visibleForActions, {
+                      message: m,
+                      commercialCtaAllowed: commercialCtaAllowedForMessage(m),
+                    }) ?? visibleForActions}
                   </div>
 
                   {!isUser && !isSystem && smartNextActionsActive && visibleForActions && !suppressCommercialActionsForMessage(m, visibleForActions) && (
