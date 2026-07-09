@@ -3147,6 +3147,17 @@ const [onboardingForm, setOnboardingForm] = useState(() => sanitizeOnboardingFor
   const [runtimeHints, setRuntimeHints] = useState(null);
   const showRuntimeHints = Boolean(user?.role === "admin" && typeof window !== "undefined" && window.localStorage?.getItem("orkio_show_runtime_hints") === "1");
   const showOrionSquad = Boolean(user?.role === "admin" && typeof window !== "undefined" && window.localStorage?.getItem("orkio_show_orion_squad") === "1");
+  const isExecutiveExperience = (() => {
+    const profileText = [
+      user?.role,
+      user?.title,
+      user?.profile,
+      user?.persona,
+      user?.job_title,
+      user?.account_type,
+    ].map((value) => String(value || "").toLowerCase()).join(" ");
+    return /\b(ceo|founder|fundador|admin|cliente|client|operator|operador)\b/.test(profileText);
+  })();
   const [lastTraceId, setLastTraceId] = useState(null);
   const [agentCapabilities, setAgentCapabilities] = useState(null);
   const [activeRuntimeAgent, setActiveRuntimeAgent] = useState("");
@@ -7485,8 +7496,12 @@ async function sendMessage(presetMsg = null, opts = {}) {
       setV2vPhase('chat');
       setV2vError(null);
       setWalletBlockedDetail(null);
-      setExecutionTraceExpanded(true);
-      try { window.localStorage?.setItem("orkio_execution_trace_open", "1"); } catch {}
+      if (!isExecutiveExperience) {
+        setExecutionTraceExpanded(true);
+        try { window.localStorage?.setItem("orkio_execution_trace_open", "1"); } catch {}
+      } else {
+        collapseExecutionTrace();
+      }
       setActiveRuntimeAgent(initialDraftAgentName || "Orkio");
       setRuntimeHandoffLabel("");
       resetExecutionTrace([

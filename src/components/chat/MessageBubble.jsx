@@ -72,6 +72,13 @@ function shouldShowSmartNextActions(value) {
   if (!text || text.length < 80) return false;
   const lower = text.toLowerCase();
 
+  const executiveMarkers = [
+    "diagnostico breve", "diagnóstico breve", "proximo passo sugerido",
+    "próximo passo sugerido", "sinal de alerta", "acao recomendada",
+    "ação recomendada", "trade-offs", "kpis recomendados"
+  ];
+  if (executiveMarkers.some((marker) => lower.includes(marker))) return false;
+
   const safePublicMarkers = [
     "patroai", "orkio", "amcham", "whatsapp", "implantação", "implementation",
     "guided project", "projeto guiado", "site institucional", "official patroai website"
@@ -86,6 +93,19 @@ function shouldShowSmartNextActions(value) {
   if (blockedMarkers.some((marker) => lower.includes(marker))) return false;
 
   return true;
+}
+
+function suppressCommercialActionsForMessage(message, visibleText) {
+  const routing = message?.runtime_hints?.routing || message?.done_payload?.runtime_hints?.routing || {};
+  if (routing?.commercial_cta_suppressed === true) return true;
+  if (String(routing?.execution_trace_priority || "") === "secondary_collapsed") return true;
+
+  const text = String(visibleText || "").toLowerCase();
+  return [
+    "diagnostico breve", "diagnóstico breve", "proximo passo sugerido",
+    "próximo passo sugerido", "sinal de alerta", "acao recomendada",
+    "ação recomendada", "kpis recomendados"
+  ].some((marker) => text.includes(marker));
 }
 
 function buildSmartNextActions(value) {
@@ -400,7 +420,7 @@ export default function MessageBubble({
                     {renderMessageContentPremium?.(visibleForActions) ?? visibleForActions}
                   </div>
 
-                  {!isUser && !isSystem && smartNextActionsActive && visibleForActions && (
+                  {!isUser && !isSystem && smartNextActionsActive && visibleForActions && !suppressCommercialActionsForMessage(m, visibleForActions) && (
                     <SmartNextActions
                       actions={buildSmartNextActions(visibleForActions)}
                       disabled={smartNextActionsDisabled}
