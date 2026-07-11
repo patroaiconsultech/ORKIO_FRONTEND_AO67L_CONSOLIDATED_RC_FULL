@@ -1,0 +1,332 @@
+--- a/main.py
++++ b/main.py
+@@ -51,6 +51,10 @@
+ from typing import Any, Dict, List, Optional
+ 
+ from app.runtime.agent_turn_context import resolve_agent_turn_context
++from app.runtime.orion_evolution_routing import (
++    ORION_EVOLUTION_ROUTING_VERSION,
++    resolve_orion_evolution_route,
++)
+ 
+ from app.self_heal.secret_broker import resolve_github_token
+ from app.self_heal.credential_scope import control_plane_github_context
+@@ -35042,6 +35046,31 @@
+     ao01_response_agent_id = ao01_agent_turn_context.agent_id
+     ao01_response_agent_name = ao01_agent_turn_context.agent_name
+ 
++    oec003_orion_evolution_route = resolve_orion_evolution_route(
++        message,
++        requested_agent=ao01_agent_turn_context.requested_agent,
++    )
++    oec003_bypass_legacy_ao20j = bool(
++        oec003_orion_evolution_route.bypass_legacy_ao20j
++        and ao01_agent_turn_context.ownership_locked
++    )
++
++    try:
++        logger.error(
++            "OEC003_ORION_EVOLUTION_ROUTE trace_id=%s requested_agent=%s "
++            "intent=%s route_family=%s bypass_legacy_ao20j=%s "
++            "ownership_locked=%s version=%s",
++            trace_id,
++            ao01_agent_turn_context.requested_agent,
++            oec003_orion_evolution_route.intent,
++            oec003_orion_evolution_route.route_family,
++            oec003_bypass_legacy_ao20j,
++            oec003_orion_evolution_route.ownership_locked,
++            ORION_EVOLUTION_ROUTING_VERSION,
++        )
++    except Exception:
++        pass
++
+     try:
+         logger.error(
+             "AO01_AGENT_TURN_OWNERSHIP trace_id=%s requested_agent=%s "
+@@ -45812,7 +45841,11 @@
+                     pass
+                 # Fail-open: existing routers may still answer safely.
+ 
+-        if (not _ao01_force_full_llm_runtime) and _is_governed_evolution_pipeline_request(message):
++        if (
++            (not _ao01_force_full_llm_runtime)
++            and (not oec003_bypass_legacy_ao20j)
++            and _is_governed_evolution_pipeline_request(message)
++        ):
+             try:
+                 payload = await asyncio.to_thread(_governed_evolution_pipeline_fastpath_in_isolated_session)
+                 async for ev in _emit_result_payload(payload, routing_source="stream_ao20j_governed_evolution_pipeline"):
+
+--- /dev/null
++++ b/runtime/orion_evolution_routing.py
+@@ -0,0 +1,204 @@
++from __future__ import annotations
++
++import re
++import unicodedata
++from dataclasses import dataclass
++from typing import Literal
++
++ORION_EVOLUTION_ROUTING_VERSION = "OEC003_ORION_EVOLUTION_ROUTING_V1"
++
++OrionEvolutionIntent = Literal[
++    "analysis",
++    "proposal_registration",
++    "governed_execution",
++    "not_orion_evolution",
++]
++
++
++def _normalize(text: str) -> str:
++    raw = unicodedata.normalize("NFKD", str(text or ""))
++    raw = "".join(ch for ch in raw if not unicodedata.combining(ch))
++    return re.sub(r"\s+", " ", raw.lower()).strip()
++
++
++def classify_orion_evolution_intent(
++    text: str,
++    *,
++    requested_agent: str | None,
++) -> OrionEvolutionIntent:
++    """
++    Separate Orion advisory analysis from proposal registration and execution.
++
++    Negative constraints such as "não execute" never count as execution intent.
++    """
++    if _normalize(requested_agent or "") != "orion":
++        return "not_orion_evolution"
++
++    raw = _normalize(text)
++    if not raw:
++        return "not_orion_evolution"
++
++    has_evolution_scope = any(
++        marker in raw
++        for marker in (
++            "evolucao",
++            "autoevolucao",
++            "master evolution plan",
++            "master plan",
++            "capability atlas",
++            "capabilities",
++            "capacidades",
++            "arquitetura",
++            "architecture",
++            "proposta",
++            "proposal",
++            "dry run",
++            "dry-run",
++            "patch",
++        )
++    )
++    if not has_evolution_scope:
++        return "not_orion_evolution"
++
++    has_proposal_id = bool(
++        re.search(r"\b(?:evo[-_][a-z0-9]{6,}|proposal[-_][a-z0-9]{6,})\b", raw)
++    )
++
++    negative_execution = any(
++        marker in raw
++        for marker in (
++            "nao execute",
++            "nao executar",
++            "sem executar",
++            "nao aplique",
++            "nao aplicar",
++            "nao crie branch",
++            "nao abra pr",
++            "nao fazer merge",
++            "nao faca merge",
++            "nao faça merge",
++            "nao fazer deploy",
++            "nao faca deploy",
++            "nao faça deploy",
++        )
++    )
++    positive_execution = any(
++        marker in raw
++        for marker in (
++            "execute o dry run",
++            "execute dry run",
++            "executar o dry run",
++            "executar dry run",
++            "aplique o patch",
++            "aplicar o patch",
++            "crie a branch",
++            "criar a branch",
++            "abra o pr",
++            "abrir o pr",
++            "open pr",
++            "faca o merge",
++            "faça o merge",
++            "fazer o merge",
++            "execute o deploy",
++            "executar o deploy",
++        )
++    )
++    if has_proposal_id and positive_execution and not negative_execution:
++        return "governed_execution"
++
++    explicit_registration = any(
++        marker in raw
++        for marker in (
++            "registre esta analise como proposta",
++            "registre essa analise como proposta",
++            "registre o plano como proposta",
++            "converta esta analise em proposta",
++            "crie a proposta a partir da analise",
++            "persistir esta proposta",
++            "registrar esta proposta",
++        )
++    )
++    has_analysis_reference = any(
++        marker in raw
++        for marker in (
++            "analysis_id",
++            "analysis id",
++            "patch_plan",
++            "patch plan",
++            "objective_id",
++            "objective id",
++            "capability_ids",
++            "capability ids",
++        )
++    )
++    if explicit_registration and (has_analysis_reference or has_proposal_id):
++        return "proposal_registration"
++
++    analysis_markers = any(
++        marker in raw
++        for marker in (
++            "faca uma leitura",
++            "analise",
++            "audite",
++            "identifique",
++            "relacione",
++            "capability atlas",
++            "master evolution plan",
++            "master plan",
++            "estado atual",
++            "recomende",
++            "gere apenas uma proposta governada",
++        )
++    )
++    if analysis_markers or negative_execution:
++        return "analysis"
++
++    return "analysis"
++
++
++@dataclass(frozen=True)
++class OrionEvolutionRouteDecision:
++    intent: OrionEvolutionIntent
++    bypass_legacy_ao20j: bool
++    route_family: str
++    ownership_locked: bool
++    version: str = ORION_EVOLUTION_ROUTING_VERSION
++
++
++def resolve_orion_evolution_route(
++    text: str,
++    *,
++    requested_agent: str | None,
++) -> OrionEvolutionRouteDecision:
++    intent = classify_orion_evolution_intent(
++        text,
++        requested_agent=requested_agent,
++    )
++
++    if intent == "analysis":
++        return OrionEvolutionRouteDecision(
++            intent=intent,
++            bypass_legacy_ao20j=True,
++            route_family="orion_evolution_analysis",
++            ownership_locked=True,
++        )
++    if intent == "proposal_registration":
++        return OrionEvolutionRouteDecision(
++            intent=intent,
++            bypass_legacy_ao20j=False,
++            route_family="evolution_proposal_registration",
++            ownership_locked=True,
++        )
++    if intent == "governed_execution":
++        return OrionEvolutionRouteDecision(
++            intent=intent,
++            bypass_legacy_ao20j=False,
++            route_family="governed_evolution_execution",
++            ownership_locked=True,
++        )
++    return OrionEvolutionRouteDecision(
++        intent=intent,
++        bypass_legacy_ao20j=False,
++        route_family="default",
++        ownership_locked=False,
++    )
+
+--- /dev/null
++++ b/tests/test_oec003_orion_evolution_routing.py
+@@ -0,0 +1,62 @@
++from __future__ import annotations
++
++try:
++    from app.runtime.orion_evolution_routing import (
++        ORION_EVOLUTION_ROUTING_VERSION,
++        classify_orion_evolution_intent,
++        resolve_orion_evolution_route,
++    )
++except ModuleNotFoundError:
++    from runtime.orion_evolution_routing import (
++        ORION_EVOLUTION_ROUTING_VERSION,
++        classify_orion_evolution_intent,
++        resolve_orion_evolution_route,
++    )
++
++
++ANALYSIS_PROMPT = """
++Orion, faça uma leitura do estado atual da evolução da ORKIO,
++identifique as capacidades envolvidas, relacione-as ao Master Evolution Plan
++e gere apenas uma proposta governada. Não execute escrita, branch, PR,
++merge ou deploy.
++"""
++
++
++def test_orion_analysis_bypasses_legacy_ao20j() -> None:
++    decision = resolve_orion_evolution_route(
++        ANALYSIS_PROMPT,
++        requested_agent="orion",
++    )
++    assert ORION_EVOLUTION_ROUTING_VERSION == "OEC003_ORION_EVOLUTION_ROUTING_V1"
++    assert decision.intent == "analysis"
++    assert decision.route_family == "orion_evolution_analysis"
++    assert decision.bypass_legacy_ao20j is True
++    assert decision.ownership_locked is True
++
++
++def test_explicit_registration_uses_proposal_registration() -> None:
++    prompt = (
++        "Orion, registre esta análise como proposta. "
++        "analysis_id=analysis_123456 patch_plan=plan_123456"
++    )
++    decision = resolve_orion_evolution_route(prompt, requested_agent="orion")
++    assert decision.intent == "proposal_registration"
++    assert decision.route_family == "evolution_proposal_registration"
++    assert decision.bypass_legacy_ao20j is False
++
++
++def test_execution_requires_proposal_reference() -> None:
++    prompt = "Orion, execute o dry run da proposta evo_70dd0e1c771c."
++    decision = resolve_orion_evolution_route(prompt, requested_agent="orion")
++    assert decision.intent == "governed_execution"
++    assert decision.route_family == "governed_evolution_execution"
++    assert decision.bypass_legacy_ao20j is False
++
++
++def test_non_orion_request_does_not_bypass_legacy_pipeline() -> None:
++    decision = resolve_orion_evolution_route(
++        ANALYSIS_PROMPT,
++        requested_agent="orkio",
++    )
++    assert decision.intent == "not_orion_evolution"
++    assert decision.bypass_legacy_ao20j is False
