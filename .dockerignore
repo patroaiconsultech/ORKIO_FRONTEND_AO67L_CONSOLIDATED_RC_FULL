@@ -1,0 +1,15 @@
+.git
+node_modules
+dist
+npm-debug.log
+.env
+.env.*
+main.py
+runtime
+tests
+docs
+*.diff
+README_SLIM_UPLOAD.md
+README_OEC003_ORION_EVOLUTION_ROUTING.txt
+AO67L_RELEASE_NOTES.md
+Procfile
