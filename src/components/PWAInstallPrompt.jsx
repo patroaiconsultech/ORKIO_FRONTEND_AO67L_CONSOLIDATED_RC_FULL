@@ -84,6 +84,10 @@ function hasKnownInstallSurface() {
   return isIosSafariLike() || isAndroidLike() || isChromiumDesktopLike();
 }
 
+function shouldShowManualInstallHint() {
+  return isIosSafariLike() || isAndroidLike() || isSamsungInternet();
+}
+
 function isOperationalSurface() {
   try {
     const pathname = String(window.location?.pathname || "").toLowerCase();
@@ -110,12 +114,12 @@ export default function PWAInstallPrompt() {
     if (isOperationalSurface()) return undefined;
     if (isStandalone() || wasRecentlyDismissed()) return undefined;
 
-    if (isIosSafariLike()) {
+    if (shouldShowManualInstallHint()) {
       setManualHintVisible(true);
     }
 
     const manualTimer = window.setTimeout(() => {
-      if (!isStandalone() && hasKnownInstallSurface()) {
+      if (!isStandalone() && shouldShowManualInstallHint() && hasKnownInstallSurface()) {
         setManualHintVisible(true);
       }
     }, 4000);
