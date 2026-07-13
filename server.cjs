@@ -27,6 +27,12 @@ app.use(canonicalWwwRedirect);
 
 const PORT = process.env.PORT || 8080;
 const API_BASE_URL = (process.env.API_BASE_URL || "").replace(/\/+$/, "");
+const PUBLIC_API_BASE_URL = (
+  process.env.VITE_API_BASE_URL ||
+  process.env.VITE_API_URL ||
+  process.env.API_BASE_URL ||
+  ""
+).replace(/\/+$/, "");
 
 if (!API_BASE_URL) {
   console.error("[ORKIO_WEB_PROXY] Missing required env API_BASE_URL");
@@ -78,6 +84,44 @@ function sendFileWithHeaders(res, absolutePath, contentType, setHeaders, fallbac
   }
 
   return res.status(404).send("Not found");
+}
+
+function runtimeEnvScript() {
+  const env = {
+    API_BASE_URL: PUBLIC_API_BASE_URL,
+    VITE_API_BASE_URL: PUBLIC_API_BASE_URL,
+    VITE_API_URL: PUBLIC_API_BASE_URL,
+    VITE_APP_ENV: process.env.VITE_APP_ENV || process.env.NODE_ENV || "production",
+    VITE_PUBLIC_APP_URL: process.env.VITE_PUBLIC_APP_URL || "https://www.patroai.com",
+    VITE_DEFAULT_TENANT: process.env.VITE_DEFAULT_TENANT || "public",
+    USE_API_PROXY: process.env.USE_API_PROXY || "false",
+  };
+
+  return `window.__ORKIO_ENV__ = Object.assign({}, window.__ORKIO_ENV__ || {}, ${JSON.stringify(env)});\n`;
+}
+
+function proxyRequestHeaders(req) {
+  const headers = { ...req.headers };
+  delete headers.host;
+  delete headers.connection;
+  delete headers["content-length"];
+  delete headers["accept-encoding"];
+  return headers;
+}
+
+function proxyResponseHeaders(upstream, res) {
+  upstream.headers.forEach((value, key) => {
+    const normalized = String(key || "").toLowerCase();
+    if (
+      normalized === "connection" ||
+      normalized === "content-encoding" ||
+      normalized === "content-length" ||
+      normalized === "transfer-encoding"
+    ) {
+      return;
+    }
+    res.setHeader(key, value);
+  });
 }
 
 const CONSERVATIVE_SW = `// EFATA777 V20 — installability network-only Service Worker
@@ -190,6 +234,12 @@ app.get("/healthz", (_req, res) => {
   res.status(200).json({ ok: true });
 });
 
+app.get("/env.js", (_req, res) => {
+  setHardNoStore(res);
+  res.type("application/javascript; charset=utf-8");
+  res.status(200).send(runtimeEnvScript());
+});
+
 // EFATA777 V20: /sw.js anti-cache forte com SW conservador network-only.
 // Importante: Service-Worker-Allowed permite scope "/" sem cache agressivo.
 app.get("/sw.js", (_req, res) => {
@@ -289,19 +339,23 @@ app.use("/api", async (req, res) => {
   try {
     const upstream = await fetch(target, {
       method: req.method,
-      headers: { ...req.headers },
+      headers: proxyRequestHeaders(req),
       body: ["GET", "HEAD"].includes(req.method) ? undefined : req,
       duplex: "half"
     });
 
     res.status(upstream.status);
-
-    upstream.headers.forEach((value, key) => {
-      res.setHeader(key, value);
-    });
+    proxyResponseHeaders(upstream, res);
 
     if (!upstream.body) {
       res.end();
+      return;
+    }
+
+    const contentType = upstream.headers.get("content-type") || "";
+    if (!/text\/event-stream/i.test(contentType)) {
+      const body = Buffer.from(await upstream.arrayBuffer());
+      res.end(body);
       return;
     }
 
