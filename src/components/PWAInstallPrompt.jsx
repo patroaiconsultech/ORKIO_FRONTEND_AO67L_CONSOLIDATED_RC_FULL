@@ -84,6 +84,20 @@ function hasKnownInstallSurface() {
   return isIosSafariLike() || isAndroidLike() || isChromiumDesktopLike();
 }
 
+function isOperationalSurface() {
+  try {
+    const pathname = String(window.location?.pathname || "").toLowerCase();
+    return (
+      pathname === "/app" ||
+      pathname.startsWith("/app/") ||
+      pathname === "/admin" ||
+      pathname.startsWith("/admin/")
+    );
+  } catch {
+    return false;
+  }
+}
+
 export default function PWAInstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [visible, setVisible] = useState(false);
@@ -93,6 +107,7 @@ export default function PWAInstallPrompt() {
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
+    if (isOperationalSurface()) return undefined;
     if (isStandalone() || wasRecentlyDismissed()) return undefined;
 
     if (isIosSafariLike()) {
@@ -131,6 +146,7 @@ export default function PWAInstallPrompt() {
     };
   }, []);
 
+  if (isOperationalSurface()) return null;
   if (isStandalone()) return null;
   if (!visible && !manualHintVisible) return null;
 
