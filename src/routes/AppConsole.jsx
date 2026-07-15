@@ -21,7 +21,7 @@
 // PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiFetch, uploadFile, chat, chatStream, transcribeAudio, requestFounderHandoff, getRealtimeClientSecret, startRealtimeSession, startSummitSession, postRealtimeEventsBatch, endRealtimeSession, getRealtimeSession, getSummitSessionScore, submitSummitSessionReview, downloadRealtimeAta as downloadRealtimeAtaFile, guardRealtimeTranscript, getOrionSquadHealth, getOrionSquadPreview, getAgentCapabilities } from "../ui/api.js";
+import { apiFetch, headers as apiHeaders, joinApi, uploadFile, chat, chatStream, transcribeAudio, requestFounderHandoff, getRealtimeClientSecret, startRealtimeSession, startSummitSession, postRealtimeEventsBatch, endRealtimeSession, getRealtimeSession, getSummitSessionScore, submitSummitSessionReview, downloadRealtimeAta as downloadRealtimeAtaFile, guardRealtimeTranscript, getOrionSquadHealth, getOrionSquadPreview, getAgentCapabilities } from "../ui/api.js";
 import { clearSession, clearTenant, getTenant, getToken, getUser, isAdmin, isApproved, setSession, setUser as storeUser, logout } from "../lib/auth.js";
 import { canonicalAgentSlug as registryCanonicalAgentSlug, canonicalAgentDisplayNameFromSlug as registryCanonicalAgentDisplayNameFromSlug, resolveDirectAgentAddressFromMessage as registryResolveDirectAgentAddressFromMessage, resolveAgentTurnRouteFromMessage as registryResolveAgentTurnRouteFromMessage, findAgentByCanonicalSlug as registryFindAgentByCanonicalSlug, canonicalAgentVoiceProfile as registryCanonicalAgentVoiceProfile, buildCanonicalRealtimeAgentInstructions as registryBuildCanonicalRealtimeAgentInstructions } from "../lib/agentRegistry.js";
 import { ORKIO_CANONICAL_VOICE_ID, ORKIO_DEFAULT_TTS_SPEED, ORKIO_DEFAULT_VOICE_ID, ORKIO_VOICES, coerceTtsSpeed, coerceVoiceId } from "../lib/voices.js";
@@ -7216,6 +7216,49 @@ function formatAgentOptionLabel(agent) {
   }
 
   function handlePremiumTertiaryAction() { fillPremiumPrompt("Orkio, organize um plano prático para eu testar a plataforma hoje com foco em impacto real e baixo risco."); }
+
+  async function downloadGeneratedArtifact(evt = {}) {
+    const rawUrl = String(evt?.download_url || evt?.url || "").trim();
+    const filename = String(evt?.filename || "orkio_document").trim() || "orkio_document";
+    if (!rawUrl) {
+      try { setUploadStatus("Link de download indisponivel para este arquivo."); } catch {}
+      return;
+    }
+    try {
+      setUploadStatus(`Baixando ${filename}...`);
+      const response = await fetch(joinApi(rawUrl), {
+        method: "GET",
+        headers: apiHeaders({ json: false }),
+        credentials: "same-origin",
+      });
+      if (!response.ok) {
+        throw new Error(`download_failed_${response.status}`);
+      }
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      anchor.rel = "noreferrer noopener";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      appendExecutionTrace({
+        kind: "system",
+        label: "Arquivo baixado",
+        detail: filename,
+      });
+      setUploadStatus("");
+    } catch (err) {
+      appendExecutionTrace({
+        kind: "error",
+        label: "Download do arquivo falhou",
+        detail: String(err?.message || err || "download_failed"),
+      });
+      setUploadStatus("Nao consegui baixar o arquivo agora. Tente novamente em instantes.");
+    }
+  }
 
   // AO69C-HF1: Smart Actions Interaction Governance.
   // Only one action can be consumed at a time. Conversational actions use the
@@ -17115,6 +17158,7 @@ async function stopRealtime(reason = 'client_stop') {
                 extractPatchApprovalMeta={extractPatchApprovalMeta}
                 executeApprovedPatchFromMessage={executeApprovedPatchFromMessage}
                 onSmartNextAction={handleSmartNextAction}
+                onDownloadGeneratedArtifact={downloadGeneratedArtifact}
                 smartNextActionsActive={
                   Boolean(latestSmartActionMessageId) &&
                   String(m.id || m.message_id || "") === latestSmartActionMessageId

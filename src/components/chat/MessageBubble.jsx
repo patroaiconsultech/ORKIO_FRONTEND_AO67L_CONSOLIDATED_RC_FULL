@@ -372,6 +372,7 @@ export default function MessageBubble({
   extractPatchApprovalMeta,
   executeApprovedPatchFromMessage,
   onSmartNextAction,
+  onDownloadGeneratedArtifact,
   smartNextActionsActive = false,
   smartNextActionsDisabled = false,
   smartNextActionState = null,
@@ -474,7 +475,37 @@ export default function MessageBubble({
                 ) : null}
               </div>
 
-              {evt && evt.type === "file_upload" ? (
+              {evt && (evt.type === "generated_file" || evt.kind === "document_artifact") ? (
+                <div style={styles?.messageContent || { whiteSpace: "pre-wrap" }}>
+                  <div style={{ fontWeight: 900, marginBottom: 4 }}>Arquivo gerado</div>
+                  <div>{evt.filename || "arquivo"}</div>
+                  <div style={{ opacity: 0.72, fontSize: 12, marginTop: 4 }}>
+                    {[
+                      evt.format ? String(evt.format).toUpperCase() : "",
+                      evt.size ? `${Math.ceil(Number(evt.size || 0) / 1024)} KB` : "",
+                      formatTs?.(evt.ts || evt.created_at) || "",
+                    ].filter(Boolean).join(" - ")}
+                  </div>
+                  {evt.download_url ? (
+                    <button
+                      type="button"
+                      onClick={() => onDownloadGeneratedArtifact?.(evt)}
+                      style={{
+                        marginTop: 10,
+                        border: "1px solid rgba(147,197,253,0.5)",
+                        borderRadius: 10,
+                        padding: "8px 11px",
+                        background: "rgba(59,130,246,0.16)",
+                        color: "#dbeafe",
+                        fontWeight: 900,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Baixar arquivo
+                    </button>
+                  ) : null}
+                </div>
+              ) : evt && evt.type === "file_upload" ? (
                 <div style={styles?.messageContent || { whiteSpace: "pre-wrap" }}>
                   <div style={{ fontWeight: 900, marginBottom: 4 }}>Upload registrado</div>
                   <div>{evt.filename || "arquivo"}</div>
