@@ -3047,7 +3047,12 @@ const ORKIO_HF6_4_BUILD_MARKER = "HF6.4_REALTIME_ZERO_TIMER_TAIL_GRACE";
 
   async function handleDownloadArtifact(artifact = {}) {
     try {
+      const token = getToken?.() || "";
+      const org = resolveAuthenticatedTenant(getUser?.(), getTenant?.());
       const result = await downloadDocumentArtifact({
+        token,
+        org,
+        tenant: org,
         fileId: artifact?.file_id,
         downloadUrl: artifact?.download_url,
         filename: artifact?.filename,
