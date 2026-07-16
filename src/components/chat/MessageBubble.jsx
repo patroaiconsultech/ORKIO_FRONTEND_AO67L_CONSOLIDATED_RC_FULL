@@ -1,4 +1,6 @@
 import React from "react";
+import { downloadDocumentArtifact } from "../../ui/api.js";
+import { getTenant, getToken, getUser } from "../../lib/auth.js";
 
 // AO69C-HF1_SMART_ACTIONS_INTERACTION_GOVERNANCE
 // AO69B-HF2_SMART_NEXT_ACTIONS_AMCHAM_EN_I18N
@@ -170,6 +172,72 @@ function suppressCommercialActionsForMessage(message, visibleText) {
     "dashboard executivo", "framework de decisão", "framework de decisao",
     "plano de contingência", "plano de contingencia"
   ].some((marker) => text.includes(marker));
+}
+
+function resolveArtifactDownloadOrg() {
+  try {
+    const user = getUser?.() || {};
+    return (
+      user?.org_slug ||
+      user?.org ||
+      user?.tenant ||
+      getTenant?.() ||
+      "public"
+    );
+  } catch {
+    return "public";
+  }
+}
+
+async function fallbackDownloadGeneratedArtifact(artifact = {}) {
+  let helperWindow = null;
+  try {
+    try {
+      helperWindow = window.open("", "_blank");
+      helperWindow?.document?.write?.(
+        "<!doctype html><title>Preparando download...</title><body style='font-family:system-ui;padding:24px'>Preparando download do arquivo...</body>"
+      );
+    } catch {
+      helperWindow = null;
+    }
+
+    const org = resolveArtifactDownloadOrg();
+    const result = await downloadDocumentArtifact({
+      token: getToken?.() || "",
+      org,
+      tenant: org,
+      fileId: artifact?.file_id,
+      downloadUrl: artifact?.download_url,
+      filename: artifact?.filename,
+    });
+
+    const objectUrl = URL.createObjectURL(result.blob);
+    if (helperWindow && !helperWindow.closed) {
+      helperWindow.location.href = objectUrl;
+      window.setTimeout(() => {
+        try { helperWindow.close(); } catch {}
+      }, 8000);
+    } else {
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = result.filename || artifact?.filename || "arquivo-orkio";
+      anchor.rel = "noopener";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+    }
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 15000);
+  } catch (error) {
+    try { helperWindow?.close?.(); } catch {}
+    console.error("DOCIO0014_ARTIFACT_DOWNLOAD_FALLBACK_FAILED", {
+      code: error?.code || null,
+      status: error?.status || null,
+    });
+    window.alert(
+      error?.message ||
+      "Não foi possível baixar o arquivo agora. Atualize a conversa e tente novamente."
+    );
+  }
 }
 
 function buildSmartNextActions(value) {
@@ -489,7 +557,7 @@ export default function MessageBubble({
                   {evt.download_url ? (
                     <button
                       type="button"
-                      onClick={() => onDownloadGeneratedArtifact?.(evt)}
+                      onClick={() => fallbackDownloadGeneratedArtifact(evt)}
                       style={{
                         marginTop: 10,
                         border: "1px solid rgba(147,197,253,0.5)",
