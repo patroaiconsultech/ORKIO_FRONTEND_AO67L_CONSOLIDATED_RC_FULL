@@ -3046,7 +3046,16 @@ const ORKIO_HF6_4_BUILD_MARKER = "HF6.4_REALTIME_ZERO_TIMER_TAIL_GRACE";
   const nav = useNavigate();
 
   async function handleDownloadArtifact(artifact = {}) {
+    let helperWindow = null;
     try {
+      try {
+        helperWindow = window.open("", "_blank");
+        helperWindow?.document?.write?.(
+          "<!doctype html><title>Preparando download...</title><body style='font-family:system-ui;padding:24px'>Preparando download do arquivo...</body>"
+        );
+      } catch {
+        helperWindow = null;
+      }
       const token = getToken?.() || "";
       const org = resolveAuthenticatedTenant(getUser?.(), getTenant?.());
       const result = await downloadDocumentArtifact({
@@ -3062,11 +3071,19 @@ const ORKIO_HF6_4_BUILD_MARKER = "HF6.4_REALTIME_ZERO_TIMER_TAIL_GRACE";
       anchor.href = objectUrl;
       anchor.download = result.filename || artifact?.filename || "arquivo-orkio";
       anchor.rel = "noopener";
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+      if (helperWindow && !helperWindow.closed) {
+        helperWindow.location.href = objectUrl;
+        window.setTimeout(() => {
+          try { helperWindow.close(); } catch {}
+        }, 8000);
+      } else {
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+      }
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 15000);
     } catch (error) {
+      try { helperWindow?.close?.(); } catch {}
       console.error("DOCIO0014_ARTIFACT_DOWNLOAD_FAILED", {
         code: error?.code || null,
         status: error?.status || null,
