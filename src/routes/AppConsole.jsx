@@ -21,7 +21,7 @@
 // PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiFetch, headers as apiHeaders, joinApi, uploadFile, chat, chatStream, transcribeAudio, requestFounderHandoff, getRealtimeClientSecret, startRealtimeSession, startSummitSession, postRealtimeEventsBatch, endRealtimeSession, getRealtimeSession, getSummitSessionScore, submitSummitSessionReview, downloadRealtimeAta as downloadRealtimeAtaFile, guardRealtimeTranscript, getOrionSquadHealth, getOrionSquadPreview, getAgentCapabilities } from "../ui/api.js";
+import { apiFetch, uploadFile, chat, chatStream, transcribeAudio, requestFounderHandoff, getRealtimeClientSecret, startRealtimeSession, startSummitSession, postRealtimeEventsBatch, endRealtimeSession, getRealtimeSession, getSummitSessionScore, submitSummitSessionReview, downloadRealtimeAta as downloadRealtimeAtaFile, downloadDocumentArtifact, guardRealtimeTranscript, getOrionSquadHealth, getOrionSquadPreview, getAgentCapabilities } from "../ui/api.js";
 import { clearSession, clearTenant, getTenant, getToken, getUser, isAdmin, isApproved, setSession, setUser as storeUser, logout } from "../lib/auth.js";
 import { canonicalAgentSlug as registryCanonicalAgentSlug, canonicalAgentDisplayNameFromSlug as registryCanonicalAgentDisplayNameFromSlug, resolveDirectAgentAddressFromMessage as registryResolveDirectAgentAddressFromMessage, resolveAgentTurnRouteFromMessage as registryResolveAgentTurnRouteFromMessage, findAgentByCanonicalSlug as registryFindAgentByCanonicalSlug, canonicalAgentVoiceProfile as registryCanonicalAgentVoiceProfile, buildCanonicalRealtimeAgentInstructions as registryBuildCanonicalRealtimeAgentInstructions } from "../lib/agentRegistry.js";
 import { ORKIO_CANONICAL_VOICE_ID, ORKIO_DEFAULT_TTS_SPEED, ORKIO_DEFAULT_VOICE_ID, ORKIO_VOICES, coerceTtsSpeed, coerceVoiceId } from "../lib/voices.js";
@@ -38,7 +38,7 @@ import { installPwaMobileResyncListeners, normalizeDestinationForAvailableAgents
 import { bridgeRealtimeDocumentContext } from "../lib/realtime/realtimeDocumentContextBridge.js";
 import { buildProfileAddressPreferenceInstruction, resolveProfileAddressNames, PROFILE_ADDRESS_PREFERENCE_VERSION } from "../lib/profilePreferences.js";
 
-// AO64D-HF6C_PUBLIC_BETA_GUARDRAILS_EFATAH777 — public beta copy, rewards narrative and internal-agent sanitation
+// AO64D-HF6C_PUBLIC_BETA_GUARDRAILS — public beta copy, rewards narrative and internal-agent sanitation
 // AO64D-HF6E_PUBLIC_BETA_SANITIZER_SAFE_AND_TECH_BLOCK — full file generated for AppConsole + MessageBubble
 // AO68A-HF6R10_NO_BACKEND_END_ON_WARMUP — suppress fake quota/cooldown on failed realtime warmup
 
@@ -1344,10 +1344,10 @@ function normalizeAgentVoiceId(raw, fallback = ORKIO_DEFAULT_VOICE_ID) {
 }
 
 
-// AO64D-HF6C_PUBLIC_BETA_GUARDRAILS_EFATAH777
+// AO64D-HF6C_PUBLIC_BETA_GUARDRAILS
 // Public beta rule:
 // - Orkio is the only visible public agent in the current beta.
-// - Internal agent names/roles must not be offered to AMCHAM / Efatah777 users.
+// - Internal agent names/roles must not be offered to partner-program users.
 // - Future capability unlocks may be described generically through usage, needs and rewards.
 const ORKIO_PUBLIC_BETA_AGENT_EVOLUTION_NOTICE =
   "Neste beta público, Orkio conduz a experiência principal com sobriedade, continuidade e cuidado. " +
@@ -3044,6 +3044,34 @@ const ORKIO_HF6_3_BUILD_MARKER = "HF6.3_REALTIME_POLITE_CLOSING_GRACE";
 const ORKIO_HF6_4_BUILD_MARKER = "HF6.4_REALTIME_ZERO_TIMER_TAIL_GRACE";
 
   const nav = useNavigate();
+
+  async function handleDownloadArtifact(artifact = {}) {
+    try {
+      const result = await downloadDocumentArtifact({
+        fileId: artifact?.file_id,
+        downloadUrl: artifact?.download_url,
+        filename: artifact?.filename,
+      });
+      const objectUrl = URL.createObjectURL(result.blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = result.filename || artifact?.filename || "arquivo-orkio";
+      anchor.rel = "noopener";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+    } catch (error) {
+      console.error("DOCIO0014_ARTIFACT_DOWNLOAD_FAILED", {
+        code: error?.code || null,
+        status: error?.status || null,
+      });
+      window.alert(
+        error?.message ||
+        "Não foi possível baixar o arquivo agora. Atualize a conversa e tente novamente."
+      );
+    }
+  }
 
   function resolveAuthenticatedTenant(userLike = null, fallbackTenant = "") {
     const candidateUser = userLike || getUser?.() || {};
@@ -7217,49 +7245,6 @@ function formatAgentOptionLabel(agent) {
 
   function handlePremiumTertiaryAction() { fillPremiumPrompt("Orkio, organize um plano prático para eu testar a plataforma hoje com foco em impacto real e baixo risco."); }
 
-  async function downloadGeneratedArtifact(evt = {}) {
-    const rawUrl = String(evt?.download_url || evt?.url || "").trim();
-    const filename = String(evt?.filename || "orkio_document").trim() || "orkio_document";
-    if (!rawUrl) {
-      try { setUploadStatus("Link de download indisponivel para este arquivo."); } catch {}
-      return;
-    }
-    try {
-      setUploadStatus(`Baixando ${filename}...`);
-      const response = await fetch(joinApi(rawUrl), {
-        method: "GET",
-        headers: apiHeaders({ json: false }),
-        credentials: "same-origin",
-      });
-      if (!response.ok) {
-        throw new Error(`download_failed_${response.status}`);
-      }
-      const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download = filename;
-      anchor.rel = "noreferrer noopener";
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-      appendExecutionTrace({
-        kind: "system",
-        label: "Arquivo baixado",
-        detail: filename,
-      });
-      setUploadStatus("");
-    } catch (err) {
-      appendExecutionTrace({
-        kind: "error",
-        label: "Download do arquivo falhou",
-        detail: String(err?.message || err || "download_failed"),
-      });
-      setUploadStatus("Nao consegui baixar o arquivo agora. Tente novamente em instantes.");
-    }
-  }
-
   // AO69C-HF1: Smart Actions Interaction Governance.
   // Only one action can be consumed at a time. Conversational actions use the
   // audited sendMessage rail; "test another use case" only focuses the composer.
@@ -8239,6 +8224,16 @@ async function sendMessage(presetMsg = null, opts = {}) {
         streamDonePayload?.avatar_url ||
         streamMeta?.done_payload?.avatar_url ||
         null;
+      const finalArtifact =
+        streamDonePayload?.artifact ||
+        streamDonePayload?.artifacts?.[0] ||
+        streamMeta?.done_payload?.artifact ||
+        streamMeta?.done_payload?.artifacts?.[0] ||
+        null;
+      const finalArtifacts =
+        streamDonePayload?.artifacts ||
+        streamMeta?.done_payload?.artifacts ||
+        (finalArtifact ? [finalArtifact] : []);
 
       if (effectiveTidForLoad) {
         consumeStoredThreadBootstrap(effectiveTidForLoad);
@@ -8319,6 +8314,9 @@ async function sendMessage(presetMsg = null, opts = {}) {
             agent_id: finalAgentId || null,
             voice_id: finalVoiceId || null,
             avatar_url: finalAvatarUrl || null,
+            artifact: finalArtifact,
+            artifacts: finalArtifacts,
+            done_payload: streamDonePayload || streamMeta?.done_payload || null,
             thread_id: effectiveTidForLoad || threadId || activeThreadIdRef.current || "",
             assistant_message_id: doneAssistantMessageId || null,
             created_at: Math.floor(Date.now() / 1000),
@@ -16266,7 +16264,7 @@ async function stopRealtime(reason = 'client_stop') {
   // ORKIO_AO57C_PUBLIC_BETA_ORKIO_ONLY_WEB_V3
   // UX layer only. Backend AO57B remains the authority for actual access control.
   // ORKIO_AO60F_HF4_NON_ADMIN_REALTIME_ORKIO_ONLY
-  // During public beta, every non-admin user, including EFATAH777 and AMCHAMRSORKIO,
+  // During public beta, every non-admin user, including partner-program users,
   // uses Orkio-only Realtime. Admin keeps full agent access for testing/release governance.
   const publicBetaOrkioOnly = !canAccessAdmin;
   const conversationRestoreState = threadsLoadState === "load_failed"
@@ -17158,7 +17156,7 @@ async function stopRealtime(reason = 'client_stop') {
                 extractPatchApprovalMeta={extractPatchApprovalMeta}
                 executeApprovedPatchFromMessage={executeApprovedPatchFromMessage}
                 onSmartNextAction={handleSmartNextAction}
-                onDownloadGeneratedArtifact={downloadGeneratedArtifact}
+                onDownloadArtifact={handleDownloadArtifact}
                 smartNextActionsActive={
                   Boolean(latestSmartActionMessageId) &&
                   String(m.id || m.message_id || "") === latestSmartActionMessageId

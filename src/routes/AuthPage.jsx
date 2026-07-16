@@ -218,29 +218,8 @@ function normalizeAccessCode(value) {
   return String(value || "").replace(/\s+/g, "").trim().toUpperCase();
 }
 
-function readStoredAccessCode() {
-  try {
-    const keys = [
-      "patroai_private_access_code",
-      "patroai_private_access_code_last",
-      "patroai_signup_access_code",
-      "orkio_signup_access_code",
-    ];
-
-    const stores = [window.sessionStorage, window.localStorage].filter(Boolean);
-    for (const store of stores) {
-      for (const key of keys) {
-        const value = normalizeAccessCode(store.getItem(key));
-        if (value) return value;
-      }
-    }
-  } catch {}
-  return "";
-}
-
-function isAmchamPartnerAccessCode(value) {
-  const code = normalizeAccessCode(value);
-  return code === "AMCHAMRS" || code === "AMCHAMRSORKIO";
+function hasInviteAccessCode(value) {
+  return Boolean(normalizeAccessCode(value));
 }
 
 function readPrechatContext() {
@@ -555,11 +534,11 @@ export default function AuthPage() { usePatroaiSeo();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
-  const [accessCode, setAccessCode] = useState(() => readStoredAccessCode());
+  const [accessCode, setAccessCode] = useState("");
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState("free_trial");
   const normalizedAccessCodeForUi = normalizeAccessCode(accessCode);
-  const isAmchamPartnerAccess = isAmchamPartnerAccessCode(normalizedAccessCodeForUi);
+  const hasServerValidatedInvite = hasInviteAccessCode(normalizedAccessCodeForUi);
 
   const [otpCode, setOtpCode] = useState("");
   const [pendingEmail, setPendingEmail] = useState("");
@@ -750,14 +729,14 @@ export default function AuthPage() { usePatroaiSeo();
       marketing_consent: false,
     };
 
-    const isAmchamRegistration = isAmchamPartnerAccessCode(accessCodeValue);
+    const hasInvite = hasInviteAccessCode(accessCodeValue);
 
     stagePrechatImport({
       email: emailValue,
       name: nameValue,
-      trial_days: isAmchamRegistration ? 0 : 7,
-      source: isAmchamRegistration ? "amcham_rs_partner_access" : "auth-register",
-      signup_code_label: isAmchamRegistration ? "amcham_rs_partner_access" : undefined,
+      trial_days: hasInvite ? 0 : 7,
+      source: hasInvite ? "server_validated_access_code" : "auth-register",
+      signup_code_label: undefined,
     });
 
     await apiFetch("/api/auth/register", {
@@ -873,7 +852,7 @@ export default function AuthPage() { usePatroaiSeo();
     setStatus("Criando sua conta e preparando a continuidade da jornada...");
 
     try {
-      if (!isAmchamPartnerAccess && selectedPlan && selectedPlan !== "free_trial") {
+      if (!hasServerValidatedInvite && selectedPlan && selectedPlan !== "free_trial") {
         await startPaidCheckout({
           nameValue: nameNormalized,
           emailValue: emailNormalized,
@@ -1293,16 +1272,16 @@ export default function AuthPage() { usePatroaiSeo();
             placeholder="Opcional"
             autoComplete="off"
           />
-          {isAmchamPartnerAccess ? (
+          {hasServerValidatedInvite ? (
             <div style={{ ...muted, marginTop: 8, color: palette.goldSoft, fontWeight: 800 }}>
-              Código reconhecido: acesso institucional AmCham RS.
+              O código será validado pelo backend ao criar a conta.
             </div>
           ) : null}
         </div>
 
         <div>
           <label style={label}>Tipo de acesso</label>
-          {isAmchamPartnerAccess ? (
+          {hasServerValidatedInvite ? (
             <div
               style={{
                 ...input,
@@ -1315,7 +1294,7 @@ export default function AuthPage() { usePatroaiSeo();
                 fontWeight: 800,
               }}
             >
-              Acesso institucional AmCham RS
+              Acesso por convite
             </div>
           ) : (
             <select

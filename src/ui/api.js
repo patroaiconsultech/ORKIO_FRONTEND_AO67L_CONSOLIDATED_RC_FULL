@@ -1258,6 +1258,41 @@ export async function downloadRealtimeAta({
   return await response.blob();
 }
 
+export async function downloadDocumentArtifact({
+  token,
+  org,
+  tenant,
+  fileId,
+  downloadUrl,
+  filename,
+} = {}) {
+  const targetPath = downloadUrl || `/api/files/${encodeURIComponent(fileId || "")}/download`;
+  const response = await fetch(joinApi(targetPath), {
+    method: "GET",
+    headers: headers({ token, org: org || tenant, json: false }),
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    const error = new Error(text || `HTTP ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  const disposition = response.headers.get("content-disposition") || "";
+  const match = disposition.match(/filename\*=UTF-8''([^;]+)|filename="?([^"]+)"?/i);
+  const resolvedFilename = match
+    ? decodeURIComponent(match[1] || match[2] || "")
+    : filename;
+
+  return {
+    blob: await response.blob(),
+    filename: resolvedFilename || filename || "arquivo-orkio",
+    response,
+  };
+}
+
 export const guardRealtimeTranscript = ({
   token,
   org,

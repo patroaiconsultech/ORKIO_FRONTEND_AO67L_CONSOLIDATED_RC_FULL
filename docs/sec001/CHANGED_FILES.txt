@@ -1,0 +1,10 @@
+docs/sec001/CHANGED_FILES.txt
+docs/sec001/PACKAGE_METADATA.json
+docs/sec001/README.md
+main.py
+package.json
+server.cjs
+src/routes/AppConsole.jsx
+src/routes/AuthPage.jsx
+src/routes/BetaAccessGate.jsx
+tests/sec001_access_gate_contract.test.mjs
