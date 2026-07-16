@@ -17161,7 +17161,7 @@ async function stopRealtime(reason = 'client_stop') {
                 extractPatchApprovalMeta={extractPatchApprovalMeta}
                 executeApprovedPatchFromMessage={executeApprovedPatchFromMessage}
                 onSmartNextAction={handleSmartNextAction}
-                onDownloadArtifact={handleDownloadArtifact}
+                onDownloadGeneratedArtifact={handleDownloadArtifact}
                 smartNextActionsActive={
                   Boolean(latestSmartActionMessageId) &&
                   String(m.id || m.message_id || "") === latestSmartActionMessageId
