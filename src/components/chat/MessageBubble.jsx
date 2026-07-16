@@ -190,16 +190,12 @@ function resolveArtifactDownloadOrg() {
 }
 
 async function fallbackDownloadGeneratedArtifact(artifact = {}) {
-  let helperWindow = null;
   try {
-    try {
-      helperWindow = window.open("", "_blank");
-      helperWindow?.document?.write?.(
-        "<!doctype html><title>Preparando download...</title><body style='font-family:system-ui;padding:24px'>Preparando download do arquivo...</body>"
-      );
-    } catch {
-      helperWindow = null;
-    }
+    console.info("DOCIO0014_ARTIFACT_DOWNLOAD_CLICKED", {
+      file_id: artifact?.file_id || null,
+      filename: artifact?.filename || null,
+      has_download_url: Boolean(artifact?.download_url),
+    });
 
     const org = resolveArtifactDownloadOrg();
     const result = await downloadDocumentArtifact({
@@ -212,23 +208,20 @@ async function fallbackDownloadGeneratedArtifact(artifact = {}) {
     });
 
     const objectUrl = URL.createObjectURL(result.blob);
-    if (helperWindow && !helperWindow.closed) {
-      helperWindow.location.href = objectUrl;
-      window.setTimeout(() => {
-        try { helperWindow.close(); } catch {}
-      }, 8000);
-    } else {
-      const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download = result.filename || artifact?.filename || "arquivo-orkio";
-      anchor.rel = "noopener";
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-    }
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = result.filename || artifact?.filename || "arquivo-orkio";
+    anchor.rel = "noopener";
+    anchor.style.display = "none";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    console.info("DOCIO0014_ARTIFACT_DOWNLOAD_TRIGGERED", {
+      filename: anchor.download,
+      size: result.blob?.size || null,
+    });
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 15000);
   } catch (error) {
-    try { helperWindow?.close?.(); } catch {}
     console.error("DOCIO0014_ARTIFACT_DOWNLOAD_FALLBACK_FAILED", {
       code: error?.code || null,
       status: error?.status || null,
