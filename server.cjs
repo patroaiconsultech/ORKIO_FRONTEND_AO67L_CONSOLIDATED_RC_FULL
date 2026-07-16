@@ -27,12 +27,16 @@ app.use(canonicalWwwRedirect);
 
 const PORT = process.env.PORT || 8080;
 const API_BASE_URL = (process.env.API_BASE_URL || "").replace(/\/+$/, "");
+const USE_API_PROXY = /^(1|true|yes|on)$/i.test(
+  String(process.env.USE_API_PROXY || "true").trim()
+);
 const PUBLIC_API_BASE_URL = (
   process.env.VITE_API_BASE_URL ||
   process.env.VITE_API_URL ||
   process.env.API_BASE_URL ||
   ""
 ).replace(/\/+$/, "");
+const BROWSER_API_BASE_URL = USE_API_PROXY ? "/api" : PUBLIC_API_BASE_URL;
 
 if (!API_BASE_URL) {
   console.error("[ORKIO_WEB_PROXY] Missing required env API_BASE_URL");
@@ -88,9 +92,9 @@ function sendFileWithHeaders(res, absolutePath, contentType, setHeaders, fallbac
 
 function runtimeEnvScript() {
   const env = {
-    API_BASE_URL: PUBLIC_API_BASE_URL,
-    VITE_API_BASE_URL: PUBLIC_API_BASE_URL,
-    VITE_API_URL: PUBLIC_API_BASE_URL,
+    API_BASE_URL: BROWSER_API_BASE_URL,
+    VITE_API_BASE_URL: BROWSER_API_BASE_URL,
+    VITE_API_URL: BROWSER_API_BASE_URL,
     VITE_APP_ENV: process.env.VITE_APP_ENV || process.env.NODE_ENV || "production",
     VITE_PUBLIC_APP_URL: process.env.VITE_PUBLIC_APP_URL || "https://www.patroai.com",
     VITE_DEFAULT_TENANT: process.env.VITE_DEFAULT_TENANT || "public",

@@ -1,103 +1,79 @@
-import usePatroaiSeo from "../lib/usePatroaiSeo.js"; import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import usePatroaiSeo from "../lib/usePatroaiSeo.js";
 
-const PUBLIC_CODES = ["EFATAH777", "AMCHAMRS", "AMCHAMRSORKIO"];
-const STORAGE_KEY = "patroai_private_gate_passed";
-const BETA_ACCESS_CODE_STORAGE_KEYS = [
-  "patroai_private_access_code",
-  "patroai_private_access_code_last",
-  "patroai_signup_access_code",
-  "orkio_signup_access_code",
-];
+const ORKIO_ENV =
+  typeof window !== "undefined" && window.__ORKIO_ENV__
+    ? window.__ORKIO_ENV__
+    : {};
+
+const DEFAULT_TENANT = String(
+  ORKIO_ENV.VITE_DEFAULT_TENANT ||
+    import.meta.env.VITE_DEFAULT_TENANT ||
+    "public"
+).trim() || "public";
 
 function normalize(value) {
-  return String(value || "").replace(/\s+/g, "").trim().toUpperCase();
+  return String(value || "").replace(/\s+/g, "").trim();
 }
 
-function getAllowedCodes() {
-  const raw = import.meta.env.VITE_PATROAI_PRIVATE_ACCESS_CODES || "";
-
-  return Array.from(
-    new Set([
-      ...PUBLIC_CODES,
-      ...String(raw || "")
-        .split(/[;,\n]/g)
-        .map(normalize)
-        .filter(Boolean),
-    ])
-  );
-}
-
-function readStoredBetaAccessCode() {
+async function parseError(response, fallback) {
   try {
-    const stores = [sessionStorage, localStorage].filter(Boolean);
-    for (const store of stores) {
-      for (const key of BETA_ACCESS_CODE_STORAGE_KEYS) {
-        const value = normalize(store.getItem(key));
-        if (value) return value;
-      }
-    }
-  } catch {}
-  return "";
-}
-
-function persistBetaAccessCode(value) {
-  const safe = normalize(value);
-  if (!safe) return;
-
-  try {
-    for (const key of BETA_ACCESS_CODE_STORAGE_KEYS) {
-      sessionStorage.setItem(key, safe);
-      localStorage.setItem(key, safe);
-    }
-  } catch {}
-}
-
-function isAllowed(value) {
-  const safe = normalize(value);
-  return !!safe && getAllowedCodes().includes(safe);
-}
-
-function apiUrl(path) {
-  const base =
-    import.meta.env.VITE_API_BASE_URL ||
-    import.meta.env.VITE_API_URL ||
-    "";
-
-  const cleanBase = String(base || "").replace(/\/+$/, "");
-  const cleanPath = String(path || "").startsWith("/") ? path : `/${path}`;
-
-  if (!cleanBase) return cleanPath;
-  if (cleanBase.endsWith("/api") && cleanPath.startsWith("/api/")) {
-    return `${cleanBase}${cleanPath.slice(4)}`;
+    const payload = await response.json();
+    return payload?.detail || payload?.message || fallback;
+  } catch {
+    return fallback;
   }
-
-  return `${cleanBase}${cleanPath}`;
 }
 
-export default function BetaAccessGate({ children = null }) { usePatroaiSeo();
-  const urlAllowsInternal = useMemo(() => {
-    try {
-      const params = new URLSearchParams(window.location.search || "");
-      return params.get("internal") === "1";
-    } catch {
-      return false;
-    }
-  }, []);
+async function getAccessGrantStatus() {
+  const response = await fetch("/api/access-grants/status", {
+    method: "GET",
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      "X-Org-Slug": DEFAULT_TENANT,
+    },
+  });
+  if (!response.ok) return { granted: false };
+  return response.json();
+}
 
-  const [internalPassed, setInternalPassed] = useState(() => {
-    try {
-      return localStorage.getItem(STORAGE_KEY) === "1" || urlAllowsInternal;
-    } catch {
-      return urlAllowsInternal;
-    }
+async function validateAccessCode(code) {
+  const response = await fetch("/api/access-grants/validate", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "X-Org-Slug": DEFAULT_TENANT,
+    },
+    body: JSON.stringify({
+      code,
+      purpose: "platform_beta",
+    }),
   });
 
-  const [code, setCode] = useState(() => readStoredBetaAccessCode());
-  const [waitlistOpen, setWaitlistOpen] = useState(false);
+  if (!response.ok) {
+    const message = await parseError(
+      response,
+      "Acesso antecipado restrito. Verifique seu código de convite."
+    );
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
+  }
+  return response.json();
+}
+
+export default function BetaAccessGate({ children = null }) {
+  usePatroaiSeo();
+
+  const [state, setState] = useState("checking");
+  const [code, setCode] = useState("");
   const [error, setError] = useState("");
+  const [waitlistOpen, setWaitlistOpen] = useState(false);
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
-
   const [form, setForm] = useState({
     name: "",
     company: "",
@@ -106,61 +82,76 @@ export default function BetaAccessGate({ children = null }) { usePatroaiSeo();
     consent: false,
   });
 
-  const internalCode = normalize(import.meta.env.VITE_PATROAI_INTERNAL_GATE_CODE);
+  useEffect(() => {
+    let active = true;
+    getAccessGrantStatus()
+      .then((payload) => {
+        if (!active) return;
+        setState(payload?.granted ? "granted" : "denied");
+      })
+      .catch(() => {
+        if (active) setState("denied");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
-  function unlockInternal() {
-    try {
-      localStorage.setItem(STORAGE_KEY, "1");
-    } catch {}
-    setInternalPassed(true);
-  }
-
-  function submitCode(e) {
-    e?.preventDefault?.();
-
+  async function submitCode(event) {
+    event?.preventDefault?.();
     const safe = normalize(code);
-
-    if (internalCode && safe === normalize(internalCode)) {
-      unlockInternal();
-      return;
-    }
-
-    if (!isAllowed(safe)) {
-      setError("Acesso antecipado restrito. Verifique seu código de convite.");
-      setWaitlistOpen(false);
-      return;
-    }
-
-    persistBetaAccessCode(safe);
-
-    setError("");
-    setWaitlistOpen(false);
-    unlockInternal();
-    return;
-  }
-
-  async function submitWaitlist(e) {
-    e?.preventDefault?.();
-
-    if (!form.name.trim() || !form.email.trim()) {
-      setError("Informe nome e e-mail para entrar na Lista Prioritária.");
-      return;
-    }
-
-    if (!form.consent) {
-      setError("Autorize o contato para que possamos avisar você sobre a próxima fase.");
+    if (!safe) {
+      setError("Informe o código de acesso.");
       return;
     }
 
     setBusy(true);
     setError("");
-
     try {
-      const res = await fetch(apiUrl("/api/beta/waitlist"), {
+      const payload = await validateAccessCode(safe);
+      if (!payload?.granted) {
+        throw new Error("Acesso não autorizado.");
+      }
+      setCode("");
+      setState("granted");
+    } catch (err) {
+      if (err?.status === 429) {
+        setError("Muitas tentativas. Aguarde alguns minutos e tente novamente.");
+      } else {
+        setError(
+          err?.message ||
+            "Acesso antecipado restrito. Verifique seu código de convite."
+        );
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitWaitlist(event) {
+    event?.preventDefault?.();
+
+    if (!form.name.trim() || !form.email.trim()) {
+      setError("Informe nome e e-mail para entrar na Lista Prioritária.");
+      return;
+    }
+    if (!form.consent) {
+      setError(
+        "Autorize o contato para que possamos avisar você sobre a próxima fase."
+      );
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/beta/waitlist", {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
+          "X-Org-Slug": DEFAULT_TENANT,
         },
         body: JSON.stringify({
           name: form.name,
@@ -168,29 +159,29 @@ export default function BetaAccessGate({ children = null }) { usePatroaiSeo();
           whatsapp: form.whatsapp,
           email: form.email,
           consent: form.consent,
-          access_code: normalize(code) || getAllowedCodes()[0] || "EFATAH777",
           source: "patroai_private_access_gate",
         }),
       });
 
-      if (!res.ok) {
-        let msg = "Não foi possível registrar seu interesse agora.";
-        try {
-          const data = await res.json();
-          msg = data?.detail || data?.message || msg;
-        } catch {}
-        throw new Error(msg);
+      if (!response.ok) {
+        throw new Error(
+          await parseError(
+            response,
+            "Não foi possível registrar seu interesse agora."
+          )
+        );
       }
-
       setSent(true);
     } catch (err) {
-      setError(err?.message || "Não foi possível registrar seu interesse agora.");
+      setError(
+        err?.message || "Não foi possível registrar seu interesse agora."
+      );
     } finally {
       setBusy(false);
     }
   }
 
-  if (internalPassed && children) return children;
+  if (state === "granted" && children) return children;
 
   const shell = {
     minHeight: "100vh",
@@ -208,7 +199,8 @@ export default function BetaAccessGate({ children = null }) { usePatroaiSeo();
     width: "min(780px, 100%)",
     borderRadius: 28,
     border: "1px solid rgba(255,255,255,0.14)",
-    background: "linear-gradient(180deg, rgba(15,23,42,0.90), rgba(2,6,23,0.96))",
+    background:
+      "linear-gradient(180deg, rgba(15,23,42,0.90), rgba(2,6,23,0.96))",
     boxShadow: "0 28px 90px rgba(0,0,0,0.42)",
     padding: "clamp(22px, 4vw, 42px)",
   };
@@ -261,7 +253,13 @@ export default function BetaAccessGate({ children = null }) { usePatroaiSeo();
           Programa de Evolução Controlada
         </h1>
 
-        {!waitlistOpen && !sent ? (
+        {state === "checking" ? (
+          <p style={{ color: "rgba(255,255,255,0.76)", lineHeight: 1.65 }}>
+            Validando sua autorização com segurança...
+          </p>
+        ) : null}
+
+        {state !== "checking" && !waitlistOpen && !sent ? (
           <>
             <p
               style={{
@@ -271,30 +269,63 @@ export default function BetaAccessGate({ children = null }) { usePatroaiSeo();
                 maxWidth: 640,
               }}
             >
-              Estamos realizando melhorias estruturais em nosso ambiente privado de inteligência aplicada.
-              Neste momento, o acesso antecipado está temporariamente restrito para
-              garantir a melhor experiência possível.
+              O código é validado exclusivamente pelo servidor. Nenhum código
+              privado é incorporado ao aplicativo público.
             </p>
 
-            <form onSubmit={submitCode} style={{ marginTop: 24, display: "grid", gap: 12 }}>
+            <form
+              onSubmit={submitCode}
+              style={{ marginTop: 24, display: "grid", gap: 12 }}
+            >
               <label style={{ display: "grid", gap: 8 }}>
-                <span style={{ color: "rgba(255,255,255,0.78)", fontWeight: 800 }}>
+                <span
+                  style={{
+                    color: "rgba(255,255,255,0.78)",
+                    fontWeight: 800,
+                  }}
+                >
                   Código de acesso
                 </span>
                 <input
                   value={code}
-                  onChange={(e) => setCode(e.target.value)}
+                  onChange={(event) => setCode(event.target.value)}
                   placeholder="Digite seu código"
                   autoFocus
+                  autoComplete="one-time-code"
                   style={field}
                 />
               </label>
 
-              {error ? <div style={{ color: "#fca5a5", fontWeight: 800 }}>{error}</div> : null}
+              {error ? (
+                <div style={{ color: "#fca5a5", fontWeight: 800 }}>
+                  {error}
+                </div>
+              ) : null}
 
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <button type="submit" style={button}>
-                  Continuar
+              <div
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError("");
+                    setWaitlistOpen(true);
+                  }}
+                  style={{
+                    ...button,
+                    background: "rgba(255,255,255,0.10)",
+                    color: "#fff",
+                  }}
+                >
+                  Lista Prioritária
+                </button>
+                <button type="submit" disabled={busy} style={button}>
+                  {busy ? "Validando..." : "Continuar"}
                 </button>
               </div>
             </form>
@@ -302,97 +333,128 @@ export default function BetaAccessGate({ children = null }) { usePatroaiSeo();
         ) : null}
 
         {waitlistOpen && !sent ? (
-          <>
-            <div
+          <form
+            onSubmit={submitWaitlist}
+            style={{ marginTop: 22, display: "grid", gap: 12 }}
+          >
+            <input
+              style={field}
+              value={form.name}
+              onChange={(event) =>
+                setForm((previous) => ({
+                  ...previous,
+                  name: event.target.value,
+                }))
+              }
+              placeholder="Nome"
+            />
+            <input
+              style={field}
+              value={form.company}
+              onChange={(event) =>
+                setForm((previous) => ({
+                  ...previous,
+                  company: event.target.value,
+                }))
+              }
+              placeholder="Empresa"
+            />
+            <input
+              style={field}
+              value={form.whatsapp}
+              onChange={(event) =>
+                setForm((previous) => ({
+                  ...previous,
+                  whatsapp: event.target.value,
+                }))
+              }
+              placeholder="WhatsApp"
+            />
+            <input
+              style={field}
+              value={form.email}
+              onChange={(event) =>
+                setForm((previous) => ({
+                  ...previous,
+                  email: event.target.value,
+                }))
+              }
+              placeholder="E-mail"
+              type="email"
+            />
+            <label
               style={{
-                marginTop: 22,
-                borderRadius: 20,
-                border: "1px solid rgba(250,204,21,0.26)",
-                background: "rgba(250,204,21,0.08)",
-                padding: 16,
-                color: "rgba(255,255,255,0.88)",
-                lineHeight: 1.6,
+                display: "flex",
+                gap: 10,
+                alignItems: "flex-start",
+                color: "rgba(255,255,255,0.76)",
+                lineHeight: 1.45,
               }}
             >
-              <strong style={{ display: "block", color: "#fde68a", marginBottom: 8 }}>
-                Acesso antecipado temporariamente restrito.
-              </strong>
-              Entre na Lista Prioritária pelo Programa de Evolução Controlada.
-              Avisaremos você por e-mail assim que o acesso estiver disponível.
-              <br />
-              <br />
-              Obrigado pela sua confiança. Estamos trabalhando para fazer algo realmente incrível.
-            </div>
-
-            <form onSubmit={submitWaitlist} style={{ marginTop: 22, display: "grid", gap: 12 }}>
               <input
-                style={field}
-                value={form.name}
-                onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-                placeholder="Nome"
+                type="checkbox"
+                checked={form.consent}
+                onChange={(event) =>
+                  setForm((previous) => ({
+                    ...previous,
+                    consent: event.target.checked,
+                  }))
+                }
+                style={{ marginTop: 3 }}
               />
+              <span>
+                Autorizo a equipe do Grupo Patroai a entrar em contato sobre
+                atualizações do ambiente privado.
+              </span>
+            </label>
 
-              <input
-                style={field}
-                value={form.company}
-                onChange={(e) => setForm((p) => ({ ...p, company: e.target.value }))}
-                placeholder="Empresa"
-              />
+            {error ? (
+              <div style={{ color: "#fca5a5", fontWeight: 800 }}>{error}</div>
+            ) : null}
 
-              <input
-                style={field}
-                value={form.whatsapp}
-                onChange={(e) => setForm((p) => ({ ...p, whatsapp: e.target.value }))}
-                placeholder="WhatsApp"
-              />
-
-              <input
-                style={field}
-                value={form.email}
-                onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
-                placeholder="E-mail"
-                type="email"
-              />
-
-              <label
+            <div
+              style={{
+                display: "flex",
+                gap: 12,
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setError("");
+                  setWaitlistOpen(false);
+                }}
                 style={{
-                  display: "flex",
-                  gap: 10,
-                  alignItems: "flex-start",
-                  color: "rgba(255,255,255,0.76)",
-                  lineHeight: 1.45,
+                  ...button,
+                  background: "rgba(255,255,255,0.10)",
+                  color: "#fff",
                 }}
               >
-                <input
-                  type="checkbox"
-                  checked={form.consent}
-                  onChange={(e) => setForm((p) => ({ ...p, consent: e.target.checked }))}
-                  style={{ marginTop: 3 }}
-                />
-                <span>
-                  Autorizo a equipe do Grupo Patroai a entrar em contato sobre atualizações do ambiente privado.
-                </span>
-              </label>
-
-              {error ? <div style={{ color: "#fca5a5", fontWeight: 800 }}>{error}</div> : null}
-
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <button type="submit" disabled={busy} style={button}>
-                  {busy ? "Registrando..." : "Entrar na Lista Prioritária"}
-                </button>
-              </div>
-            </form>
-          </>
+                Voltar
+              </button>
+              <button type="submit" disabled={busy} style={button}>
+                {busy ? "Registrando..." : "Entrar na Lista Prioritária"}
+              </button>
+            </div>
+          </form>
         ) : null}
 
         {sent ? (
           <div style={{ marginTop: 24, display: "grid", gap: 14 }}>
-            <h2 style={{ margin: 0, fontSize: 26 }}>Cadastro registrado com sucesso.</h2>
-            <p style={{ color: "rgba(255,255,255,0.78)", lineHeight: 1.65 }}>
-              Avisaremos você por e-mail assim que for possível acessar a próxima fase do ambiente privado.
-              Obrigado pela sua confiança. Estamos trabalhando para fazer algo realmente incrível.
+            <h2 style={{ margin: 0, fontSize: 26 }}>
+              Cadastro registrado com sucesso.
+            </h2>
+            <p
+              style={{
+                color: "rgba(255,255,255,0.78)",
+                lineHeight: 1.65,
+              }}
+            >
+              Avisaremos você por e-mail quando a próxima fase estiver
+              disponível.
             </p>
-            <div style={{ color: "#facc15", fontWeight: 900 }}>Equipe Grupo Patroai</div>
           </div>
         ) : null}
       </section>
