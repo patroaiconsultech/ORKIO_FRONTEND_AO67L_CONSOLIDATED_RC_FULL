@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../ui/api.js";
 import { runEvolutionDryRun } from "../lib/adminEvolutionDryRun.js";
+import EvolutionSignalGraph from "../components/admin/EvolutionSignalGraph.jsx";
+import { asArray, computeEvolutionSignals } from "../lib/evolutionSignals.mjs";
 import {
   getTenant,
   getToken,
@@ -16,8 +18,7 @@ const BTN = "rounded-2xl px-4 py-2 text-sm font-semibold transition disabled:cur
 const INPUT = "w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none placeholder:text-white/35";
 const TEXTAREA = "w-full min-h-[92px] rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none placeholder:text-white/35";
 
-const BUILD_SIGNATURE = "AO-17C-AO18A-apply-revert-restore-point";
-const EVOLUTION_SIGNAL_GRAPH_VERSION = "EVOLUTION_SIGNAL_GRAPH_V1";
+const BUILD_SIGNATURE = "AO-17C-AO18A-EVOLUTION-SIGNALS-V2";
 
 function nowLabel() {
   try {
@@ -97,276 +98,6 @@ function normalizeProposal(raw) {
   };
 }
 
-function asArray(value) {
-  if (Array.isArray(value)) return value;
-  if (Array.isArray(value?.items)) return value.items;
-  if (Array.isArray(value?.agents)) return value.agents;
-  if (Array.isArray(value?.data)) return value.data;
-  if (Array.isArray(value?.data?.items)) return value.data.items;
-  if (Array.isArray(value?.data?.agents)) return value.data.agents;
-  return [];
-}
-
-function clampScore(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.min(100, Math.round(n)));
-}
-
-function agentLabel(agent) {
-  return String(agent?.name || agent?.agent_name || agent?.display_name || agent?.slug || agent?.id || "Agente").trim();
-}
-
-function agentKnowledgeScore(agent) {
-  const fields = [
-    agent?.description,
-    agent?.system_prompt,
-    agent?.persona,
-    agent?.role,
-    agent?.model,
-    agent?.voice_id,
-    agent?.capabilities,
-    agent?.tools,
-  ];
-  let score = 18;
-  fields.forEach((value) => {
-    if (Array.isArray(value) && value.length) score += Math.min(18, value.length * 4);
-    else if (value && String(value).trim().length > 24) score += 12;
-    else if (value) score += 6;
-  });
-  return clampScore(score);
-}
-
-function computeEvolutionSignals({ items, executions, agents, health, capabilities, lastRefresh }) {
-  const proposals = Array.isArray(items) ? items : [];
-  const execs = Array.isArray(executions) ? executions : [];
-  const agentList = asArray(agents);
-  const sourceStatus = {
-    proposals: proposals.length > 0,
-    executions: execs.length > 0,
-    agents: agentList.length > 0,
-    health: Boolean(health),
-    capabilities: Boolean(capabilities),
-  };
-  const missingSources = Object.entries(sourceStatus).filter(([, ok]) => !ok).map(([key]) => key);
-  const sourceCount = Object.values(sourceStatus).filter(Boolean).length;
-  const confidence = Math.max(0.18, Math.min(0.88, sourceCount / Object.keys(sourceStatus).length));
-  const reliability = sourceCount === 0
-    ? "insufficient_evidence"
-    : missingSources.length
-    ? "partial_signals_estimated"
-    : "live_signals_estimated";
-  const capabilityPayload = capabilities?.data || capabilities || {};
-  const capabilityCount = Array.isArray(capabilityPayload)
-    ? capabilityPayload.length
-    : Object.keys(capabilityPayload || {}).length;
-  const executionEnabled = proposals.some((item) => item?.execution_enabled === true) || execs.some((item) => item?.execution_enabled === true);
-  const dryRunCount = execs.filter((item) => String(item?.status || "").toLowerCase().includes("dry_run")).length;
-  const completedCount = execs.filter((item) => /completed|success|dry_run_completed/i.test(String(item?.status || ""))).length;
-  const failedCount = execs.filter((item) => /failed|error/i.test(String(item?.status || ""))).length;
-  const approvedCount = proposals.filter((item) => String(item?.status || "").toLowerCase() === "approved").length;
-  const pendingCount = proposals.filter((item) => String(item?.status || "").toLowerCase().includes("pending")).length;
-  const rejectedCount = proposals.filter((item) => String(item?.status || "").toLowerCase() === "rejected").length;
-  const agentScores = agentList
-    .map((agent) => ({
-      id: String(agent?.slug || agent?.id || agentLabel(agent)).toLowerCase(),
-      label: agentLabel(agent),
-      score: agentKnowledgeScore(agent),
-    }))
-    .filter((item) => item.label)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 6);
-  const avgAgentScore = agentScores.length
-    ? agentScores.reduce((sum, item) => sum + item.score, 0) / agentScores.length
-    : 0;
-
-  const securityScore = clampScore(
-    42 +
-    (health ? 12 : 0) +
-    (executionEnabled ? -35 : 18) +
-    (rejectedCount >= 0 ? 8 : 0) +
-    (failedCount ? -Math.min(18, failedCount * 4) : 8)
-  );
-  const modulesScore = clampScore(
-    25 +
-    Math.min(25, proposalCountSafe(proposals) * 3) +
-    Math.min(20, execs.length * 4) +
-    Math.min(20, capabilityCount * 2)
-  );
-  const evolutionScore = clampScore(
-    25 +
-    Math.min(20, proposals.length * 4) +
-    Math.min(20, approvedCount * 7) +
-    Math.min(20, dryRunCount * 10) +
-    (executionEnabled ? -30 : 12)
-  );
-  const evidenceScore = clampScore(
-    22 +
-    (lastRefresh ? 12 : 0) +
-    (health ? 10 : 0) +
-    Math.min(24, execs.length * 5) +
-    Math.min(16, proposals.filter((item) => item?.rollback_plan || item?.validation_checklist?.length).length * 4)
-  );
-  const experienceScore = clampScore(
-    35 +
-    (capabilityCount ? 14 : 0) +
-    Math.min(20, agentScores.length * 4) +
-    (failedCount ? -8 : 8)
-  );
-  const operationalReliabilityScore = clampScore(
-    38 +
-    (health ? 18 : -10) +
-    (execs.length ? 8 : 0) +
-    (completedCount ? Math.min(18, completedCount * 4) : 0) -
-    Math.min(26, failedCount * 9)
-  );
-  const metric = (key, label, score, evidence, formulaVersion, sourceKeys, sampleCount) => ({
-    key,
-    label,
-    score: clampScore(score),
-    evidence,
-    confidence,
-    sample_count: sampleCount,
-    time_window: "current_admin_snapshot",
-    formula_version: formulaVersion,
-    source: sourceKeys.join(", "),
-    missing_sources: sourceKeys.filter((keyName) => !sourceStatus[keyName]),
-  });
-
-  const fronts = [
-    { key: "agent_knowledge", label: "Conhecimento dos agentes", score: clampScore(avgAgentScore), evidence: `${agentScores.length} agente(s) medidos` },
-    { key: "modules", label: "Módulos principais", score: modulesScore, evidence: `${capabilityCount || "sem"} capability signal` },
-    { key: "security", label: "Segurança e governança", score: securityScore, evidence: executionEnabled ? "execução real detectada" : "execução real bloqueada" },
-    { key: "self_evolution", label: "Autoevolução governada", score: evolutionScore, evidence: `${proposals.length} proposta(s), ${dryRunCount} dry-run(s)` },
-    { key: "evidence", label: "Evidência e observabilidade", score: evidenceScore, evidence: `${execs.length} execução(ões) observadas` },
-    { key: "experience", label: "Experiência premium", score: experienceScore, evidence: "derivado de agentes/capabilities" },
-  ];
-  const estimatedFronts = [
-    metric("security", "Seguranca e governanca", securityScore, executionEnabled ? "execucao real detectada" : "execucao real bloqueada", "security_current_estimate_v1", ["health", "proposals", "executions"], proposals.length + execs.length),
-    metric("operational_reliability", "Confiabilidade operacional", operationalReliabilityScore, `${completedCount} sucesso(s), ${failedCount} falha(s)`, "ops_reliability_current_estimate_v1", ["health", "executions"], execs.length),
-    metric("self_evolution", "Autoevolucao governada", evolutionScore, `${proposals.length} proposta(s), ${dryRunCount} dry-run(s)`, "self_evolution_current_estimate_v1", ["proposals", "executions"], proposals.length + execs.length),
-    metric("agent_knowledge", "Conhecimento dos agentes", avgAgentScore, `${agentScores.length} agente(s) com sinal`, "agent_knowledge_config_estimate_v1", ["agents", "capabilities"], agentScores.length),
-    metric("modules", "Modulos principais", modulesScore, `${capabilityCount || "sem"} capability signal`, "modules_current_estimate_v1", ["capabilities", "proposals"], capabilityCount + proposals.length),
-    metric("evidence", "Evidencia e observabilidade", evidenceScore, `${execs.length} execucao(oes) observadas`, "evidence_current_estimate_v1", ["executions", "health"], execs.length),
-    metric("experience", "Experiencia premium", experienceScore, "derivado de agentes/capabilities", "premium_experience_estimate_v1", ["agents", "capabilities"], agentScores.length + capabilityCount),
-  ];
-  const overall = clampScore(estimatedFronts.reduce((sum, item) => sum + item.score, 0) / Math.max(1, estimatedFronts.length));
-  return {
-    version: EVOLUTION_SIGNAL_GRAPH_VERSION,
-    overall,
-    fronts: estimatedFronts,
-    agentScores,
-    counts: { proposals: proposals.length, pending: pendingCount, approved: approvedCount, rejected: rejectedCount, executions: execs.length, failed: failedCount },
-    updatedAt: lastRefresh || nowLabel(),
-    reliability,
-    confidence,
-    sourceStatus,
-    missingSources,
-  };
-}
-
-function proposalCountSafe(proposals) {
-  return Array.isArray(proposals) ? proposals.length : 0;
-}
-
-function radarPoints(fronts, radius = 44, center = 50) {
-  const items = fronts || [];
-  if (!items.length) return "";
-  return items.map((item, index) => {
-    const angle = (-90 + (360 / items.length) * index) * (Math.PI / 180);
-    const r = radius * (clampScore(item.score) / 100);
-    const x = center + Math.cos(angle) * r;
-    const y = center + Math.sin(angle) * r;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(" ");
-}
-
-function EvolutionSignalGraph({ signal }) {
-  if (!signal) return null;
-  const points = radarPoints(signal.fronts);
-  return (
-    <section className={`${CARD} border-cyan-300/15 bg-cyan-300/5`}>
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-100/60">{signal.version}</p>
-          <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-100/70">
-            estimated current snapshot | not historical trend
-          </p>
-          <h2 className="mt-1 text-2xl font-black text-white">Mapa vivo da evolução</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-white/62">
-            Índice compacto calculado a partir de sinais reais do console: propostas, dry-runs, agentes, capacidades e health. Não libera execução e não escreve dados.
-          </p>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="text-right">
-            <div className="text-4xl font-black text-cyan-100">{signal.overall}</div>
-            <div className="text-[11px] uppercase tracking-[0.2em] text-white/40">overall</div>
-          </div>
-          <svg width="112" height="112" viewBox="0 0 100 100" className="shrink-0">
-            <polygon points="50,6 92,50 50,94 8,50" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.14)" />
-            <circle cx="50" cy="50" r="30" fill="none" stroke="rgba(255,255,255,0.10)" />
-            <circle cx="50" cy="50" r="44" fill="none" stroke="rgba(255,255,255,0.10)" />
-            <polygon points={points} fill="rgba(103,232,249,0.22)" stroke="rgba(103,232,249,0.90)" strokeWidth="2" />
-            <circle cx="50" cy="50" r="2.4" fill="rgba(255,255,255,0.65)" />
-          </svg>
-        </div>
-      </div>
-
-      <div className="mt-5 grid gap-3 lg:grid-cols-2">
-        {(signal.fronts || []).map((item) => (
-          <div
-            key={item.key}
-            className="rounded-2xl border border-white/10 bg-black/15 p-3"
-            title={`fonte=${item.source}; janela=${item.time_window}; confianca=${Math.round((item.confidence || 0) * 100)}%; amostra=${item.sample_count}; formula=${item.formula_version}; faltando=${item.missing_sources?.join(", ") || "nenhuma"}`}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="truncate text-sm font-bold text-white/88">{item.label}</div>
-                <div className="mt-1 text-[11px] text-white/42">{item.evidence}</div>
-                <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-white/30">
-                  confidence {Math.round((item.confidence || 0) * 100)}% | sample {item.sample_count}
-                </div>
-              </div>
-              <div className="font-mono text-sm font-black text-cyan-100">{item.score}</div>
-            </div>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
-              <div className="h-full rounded-full bg-cyan-300" style={{ width: `${clampScore(item.score)}%` }} />
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {signal.agentScores?.length ? (
-        <div className="mt-4 rounded-2xl border border-white/10 bg-black/15 p-3">
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/38">Conhecimento por agente</div>
-          <div className="grid gap-2 md:grid-cols-3">
-            {signal.agentScores.map((agent) => (
-              <div key={agent.id} className="flex items-center gap-2">
-                <div className="w-20 truncate text-xs text-white/70">{agent.label}</div>
-                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
-                  <div className="h-full rounded-full bg-violet-300" style={{ width: `${clampScore(agent.score)}%` }} />
-                </div>
-                <div className="w-8 text-right font-mono text-[11px] text-white/55">{agent.score}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Pill className={signal.reliability === "live_signals_estimated" ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-100" : signal.reliability === "insufficient_evidence" ? "border-rose-400/25 bg-rose-400/10 text-rose-100" : "border-amber-400/25 bg-amber-400/10 text-amber-100"}>
-          reliability={signal.reliability}
-        </Pill>
-        <Pill className="border-white/10 bg-white/5 text-white/60">confidence={Math.round((signal.confidence || 0) * 100)}%</Pill>
-        <Pill className="border-white/10 bg-white/5 text-white/60">updated={signal.updatedAt}</Pill>
-        <Pill className="border-white/10 bg-white/5 text-white/60">missing={signal.missingSources?.length ? signal.missingSources.join(",") : "none"}</Pill>
-        <Pill className="border-white/10 bg-white/5 text-white/60">proposals={signal.counts.proposals}</Pill>
-        <Pill className="border-white/10 bg-white/5 text-white/60">executions={signal.counts.executions}</Pill>
-      </div>
-    </section>
-  );
-}
-
 function statusTone(status) {
   const s = String(status || "").toLowerCase();
   if (["approved", "completed"].includes(s)) return "border-emerald-400/25 bg-emerald-400/10 text-emerald-100";
@@ -443,6 +174,7 @@ export default function AdminEvolutionCenter() {
   const [branchPatchResult, setBranchPatchResult] = useState(null);
   const [branchRevertResult, setBranchRevertResult] = useState(null);
   const [platformSignals, setPlatformSignals] = useState({ agents: [], health: null, capabilities: null, error: "" });
+  const [executionSignalError, setExecutionSignalError] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const selected = useMemo(() => {
@@ -463,11 +195,13 @@ export default function AdminEvolutionCenter() {
     if (!allowed) return;
     try {
       const data = await apiFetch("/api/admin/evolution/executions", { token, org: tenant });
+      setExecutionSignalError("");
       const payload = unwrapPayload(data);
       const arr = Array.isArray(payload) ? payload : Array.isArray(payload?.items) ? payload.items : Array.isArray(payload?.executions) ? payload.executions : [];
       setExecutions(arr);
     } catch (err) {
-      // Execuções podem ainda não existir; não derruba o console.
+      // Falha de fonte não derruba o console, mas precisa reduzir a confiabilidade.
+      setExecutionSignalError(`executions:${extractError(err)}`);
       setExecutions([]);
     }
   }, [allowed, tenant, token]);
@@ -811,8 +545,18 @@ export default function AdminEvolutionCenter() {
       health: platformSignals.health,
       capabilities: platformSignals.capabilities,
       lastRefresh,
+      sourceErrors: [platformSignals.error, executionSignalError].filter(Boolean).join(" "),
     }),
-    [executions, items, lastRefresh, platformSignals.agents, platformSignals.capabilities, platformSignals.health]
+    [
+      executionSignalError,
+      executions,
+      items,
+      lastRefresh,
+      platformSignals.agents,
+      platformSignals.capabilities,
+      platformSignals.error,
+      platformSignals.health,
+    ]
   );
   const planExecutionEnabled = plan?.execution_enabled === true || selected?.execution_enabled === true;
   const selectedStatus = String(selected?.status || selected?.proposal_status || "").trim().toLowerCase();

@@ -1,0 +1,22 @@
+ORKIO Evolution Signals V2 — arquivos do pacote
+
+UPDATED
+src/routes/AdminEvolutionCenter.jsx
+
+NEW
+src/lib/evolutionSignals.mjs
+src/components/admin/EvolutionSignalGraph.jsx
+tests/evolution_signals_contract.test.mjs
+docs/evolution-signals/GITHUB_UPLOAD_INSTRUCTIONS.md
+docs/evolution-signals/DEPLOYMENT_ORDER.md
+docs/evolution-signals/RISK_AND_ROLLBACK.md
+docs/evolution-signals/PREMIUM_FOUNDATION_PLAN.md
+docs/evolution-signals/EVOLUTION_SIGNAL_SNAPSHOT_V1.schema.json
+docs/evolution-signals/EXTERNAL_AUDIT_REQUEST.md
+
+REMOVED
+nenhum
+
+BACKEND_CHANGED=false
+MIGRATION_ADDED=false
+ENV_CHANGED=false
