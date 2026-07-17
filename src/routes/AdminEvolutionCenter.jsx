@@ -141,6 +141,21 @@ function computeEvolutionSignals({ items, executions, agents, health, capabiliti
   const proposals = Array.isArray(items) ? items : [];
   const execs = Array.isArray(executions) ? executions : [];
   const agentList = asArray(agents);
+  const sourceStatus = {
+    proposals: proposals.length > 0,
+    executions: execs.length > 0,
+    agents: agentList.length > 0,
+    health: Boolean(health),
+    capabilities: Boolean(capabilities),
+  };
+  const missingSources = Object.entries(sourceStatus).filter(([, ok]) => !ok).map(([key]) => key);
+  const sourceCount = Object.values(sourceStatus).filter(Boolean).length;
+  const confidence = Math.max(0.18, Math.min(0.88, sourceCount / Object.keys(sourceStatus).length));
+  const reliability = sourceCount === 0
+    ? "insufficient_evidence"
+    : missingSources.length
+    ? "partial_signals_estimated"
+    : "live_signals_estimated";
   const capabilityPayload = capabilities?.data || capabilities || {};
   const capabilityCount = Array.isArray(capabilityPayload)
     ? capabilityPayload.length
@@ -198,6 +213,25 @@ function computeEvolutionSignals({ items, executions, agents, health, capabiliti
     Math.min(20, agentScores.length * 4) +
     (failedCount ? -8 : 8)
   );
+  const operationalReliabilityScore = clampScore(
+    38 +
+    (health ? 18 : -10) +
+    (execs.length ? 8 : 0) +
+    (completedCount ? Math.min(18, completedCount * 4) : 0) -
+    Math.min(26, failedCount * 9)
+  );
+  const metric = (key, label, score, evidence, formulaVersion, sourceKeys, sampleCount) => ({
+    key,
+    label,
+    score: clampScore(score),
+    evidence,
+    confidence,
+    sample_count: sampleCount,
+    time_window: "current_admin_snapshot",
+    formula_version: formulaVersion,
+    source: sourceKeys.join(", "),
+    missing_sources: sourceKeys.filter((keyName) => !sourceStatus[keyName]),
+  });
 
   const fronts = [
     { key: "agent_knowledge", label: "Conhecimento dos agentes", score: clampScore(avgAgentScore), evidence: `${agentScores.length} agente(s) medidos` },
@@ -207,15 +241,27 @@ function computeEvolutionSignals({ items, executions, agents, health, capabiliti
     { key: "evidence", label: "Evidência e observabilidade", score: evidenceScore, evidence: `${execs.length} execução(ões) observadas` },
     { key: "experience", label: "Experiência premium", score: experienceScore, evidence: "derivado de agentes/capabilities" },
   ];
-  const overall = clampScore(fronts.reduce((sum, item) => sum + item.score, 0) / Math.max(1, fronts.length));
+  const estimatedFronts = [
+    metric("security", "Seguranca e governanca", securityScore, executionEnabled ? "execucao real detectada" : "execucao real bloqueada", "security_current_estimate_v1", ["health", "proposals", "executions"], proposals.length + execs.length),
+    metric("operational_reliability", "Confiabilidade operacional", operationalReliabilityScore, `${completedCount} sucesso(s), ${failedCount} falha(s)`, "ops_reliability_current_estimate_v1", ["health", "executions"], execs.length),
+    metric("self_evolution", "Autoevolucao governada", evolutionScore, `${proposals.length} proposta(s), ${dryRunCount} dry-run(s)`, "self_evolution_current_estimate_v1", ["proposals", "executions"], proposals.length + execs.length),
+    metric("agent_knowledge", "Conhecimento dos agentes", avgAgentScore, `${agentScores.length} agente(s) com sinal`, "agent_knowledge_config_estimate_v1", ["agents", "capabilities"], agentScores.length),
+    metric("modules", "Modulos principais", modulesScore, `${capabilityCount || "sem"} capability signal`, "modules_current_estimate_v1", ["capabilities", "proposals"], capabilityCount + proposals.length),
+    metric("evidence", "Evidencia e observabilidade", evidenceScore, `${execs.length} execucao(oes) observadas`, "evidence_current_estimate_v1", ["executions", "health"], execs.length),
+    metric("experience", "Experiencia premium", experienceScore, "derivado de agentes/capabilities", "premium_experience_estimate_v1", ["agents", "capabilities"], agentScores.length + capabilityCount),
+  ];
+  const overall = clampScore(estimatedFronts.reduce((sum, item) => sum + item.score, 0) / Math.max(1, estimatedFronts.length));
   return {
     version: EVOLUTION_SIGNAL_GRAPH_VERSION,
     overall,
-    fronts,
+    fronts: estimatedFronts,
     agentScores,
     counts: { proposals: proposals.length, pending: pendingCount, approved: approvedCount, rejected: rejectedCount, executions: execs.length, failed: failedCount },
     updatedAt: lastRefresh || nowLabel(),
-    reliability: health && agentScores.length ? "live_signals" : "partial_signals",
+    reliability,
+    confidence,
+    sourceStatus,
+    missingSources,
   };
 }
 
@@ -243,6 +289,9 @@ function EvolutionSignalGraph({ signal }) {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-100/60">{signal.version}</p>
+          <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-100/70">
+            estimated current snapshot | not historical trend
+          </p>
           <h2 className="mt-1 text-2xl font-black text-white">Mapa vivo da evolução</h2>
           <p className="mt-2 max-w-3xl text-sm leading-relaxed text-white/62">
             Índice compacto calculado a partir de sinais reais do console: propostas, dry-runs, agentes, capacidades e health. Não libera execução e não escreve dados.
@@ -265,11 +314,18 @@ function EvolutionSignalGraph({ signal }) {
 
       <div className="mt-5 grid gap-3 lg:grid-cols-2">
         {(signal.fronts || []).map((item) => (
-          <div key={item.key} className="rounded-2xl border border-white/10 bg-black/15 p-3">
+          <div
+            key={item.key}
+            className="rounded-2xl border border-white/10 bg-black/15 p-3"
+            title={`fonte=${item.source}; janela=${item.time_window}; confianca=${Math.round((item.confidence || 0) * 100)}%; amostra=${item.sample_count}; formula=${item.formula_version}; faltando=${item.missing_sources?.join(", ") || "nenhuma"}`}
+          >
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="truncate text-sm font-bold text-white/88">{item.label}</div>
                 <div className="mt-1 text-[11px] text-white/42">{item.evidence}</div>
+                <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-white/30">
+                  confidence {Math.round((item.confidence || 0) * 100)}% | sample {item.sample_count}
+                </div>
               </div>
               <div className="font-mono text-sm font-black text-cyan-100">{item.score}</div>
             </div>
@@ -298,10 +354,12 @@ function EvolutionSignalGraph({ signal }) {
       ) : null}
 
       <div className="mt-3 flex flex-wrap gap-2">
-        <Pill className={signal.reliability === "live_signals" ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-100" : "border-amber-400/25 bg-amber-400/10 text-amber-100"}>
+        <Pill className={signal.reliability === "live_signals_estimated" ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-100" : signal.reliability === "insufficient_evidence" ? "border-rose-400/25 bg-rose-400/10 text-rose-100" : "border-amber-400/25 bg-amber-400/10 text-amber-100"}>
           reliability={signal.reliability}
         </Pill>
+        <Pill className="border-white/10 bg-white/5 text-white/60">confidence={Math.round((signal.confidence || 0) * 100)}%</Pill>
         <Pill className="border-white/10 bg-white/5 text-white/60">updated={signal.updatedAt}</Pill>
+        <Pill className="border-white/10 bg-white/5 text-white/60">missing={signal.missingSources?.length ? signal.missingSources.join(",") : "none"}</Pill>
         <Pill className="border-white/10 bg-white/5 text-white/60">proposals={signal.counts.proposals}</Pill>
         <Pill className="border-white/10 bg-white/5 text-white/60">executions={signal.counts.executions}</Pill>
       </div>
@@ -385,6 +443,7 @@ export default function AdminEvolutionCenter() {
   const [branchPatchResult, setBranchPatchResult] = useState(null);
   const [branchRevertResult, setBranchRevertResult] = useState(null);
   const [platformSignals, setPlatformSignals] = useState({ agents: [], health: null, capabilities: null, error: "" });
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const selected = useMemo(() => {
     const found = items.find(x => String(x.proposal_id) === String(selectedId));
@@ -979,6 +1038,12 @@ export default function AdminEvolutionCenter() {
             <button onClick={() => nav("/admin")} className={`${BTN} border border-white/10 bg-white/5 text-white/80 hover:bg-white/10`}>
               Admin
             </button>
+            <button
+              onClick={() => setShowAdvanced(value => !value)}
+              className={`${BTN} border border-white/10 ${showAdvanced ? "bg-amber-300 text-black hover:bg-amber-200" : "bg-white/5 text-white/80 hover:bg-white/10"}`}
+            >
+              {showAdvanced ? "Visao executiva" : "Modo tecnico"}
+            </button>
             <Pill className="border-emerald-400/25 bg-emerald-400/10 text-emerald-100">{BUILD_SIGNATURE}</Pill>
             <button onClick={refreshAll} disabled={busy} className={`${BTN} bg-violet-400 text-black hover:bg-violet-300`}>
               {busy ? "Atualizando..." : "Atualizar"}
@@ -986,28 +1051,28 @@ export default function AdminEvolutionCenter() {
           </div>
         </header>
 
-        <section className="grid gap-3 md:grid-cols-4">
-          <div className={CARD}>
-            <div className="text-3xl font-black">{proposalCount}</div>
+        <section className="grid gap-2 md:grid-cols-4">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+            <div className="text-2xl font-black">{proposalCount}</div>
             <div className="mt-1 text-xs uppercase tracking-[0.18em] text-white/40">propostas</div>
           </div>
-          <div className={CARD}>
-            <div className="text-3xl font-black text-sky-100">{pendingCount}</div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+            <div className="text-2xl font-black text-sky-100">{pendingCount}</div>
             <div className="mt-1 text-xs uppercase tracking-[0.18em] text-white/40">pendentes</div>
           </div>
-          <div className={CARD}>
-            <div className="text-3xl font-black text-emerald-100">{approvedCount}</div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+            <div className="text-2xl font-black text-emerald-100">{approvedCount}</div>
             <div className="mt-1 text-xs uppercase tracking-[0.18em] text-white/40">aprovadas</div>
           </div>
-          <div className={CARD}>
-            <div className="text-3xl font-black text-rose-100">{rejectedCount}</div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+            <div className="text-2xl font-black text-rose-100">{rejectedCount}</div>
             <div className="mt-1 text-xs uppercase tracking-[0.18em] text-white/40">rejeitadas</div>
           </div>
         </section>
 
         <EvolutionSignalGraph signal={evolutionSignal} />
 
-        <section className={`${CARD} border-amber-400/20 bg-amber-400/5`}>
+        <section className={`${CARD} border-amber-400/20 bg-amber-400/5 ${showAdvanced ? "" : "hidden"}`}>
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <p className="text-sm font-bold text-amber-100">Guarda operacional ativa</p>
@@ -1179,7 +1244,21 @@ export default function AdminEvolutionCenter() {
               )}
             </div>
 
-            <div className={CARD}>
+            {!showAdvanced ? (
+              <div className={`${CARD} border-white/10 bg-white/5`}>
+                <SectionTitle eyebrow="Camada tecnica recolhida" title="Governanca disponivel sob demanda">
+                  Planos JSON, receipts, AO-17/AO-23 e historico de execucao ficam ocultos para manter o Evolution Center mais limpo.
+                </SectionTitle>
+                <button
+                  onClick={() => setShowAdvanced(true)}
+                  className={`${BTN} border border-amber-300/25 bg-amber-300/10 text-amber-50 hover:bg-amber-300/15`}
+                >
+                  Abrir modo tecnico
+                </button>
+              </div>
+            ) : null}
+
+            <div className={`${CARD} ${showAdvanced ? "" : "hidden"}`}>
               {/* AO-23_DRYRUN_SECTION_TITLE_DYNAMIC */}
               <SectionTitle eyebrow="Plano de execução" title={dryRunPlanTitle}>
                 {dryRunPlanDescription}
@@ -1235,7 +1314,7 @@ export default function AdminEvolutionCenter() {
               ) : null}
             </div>
 
-            <div className={`${CARD} border-indigo-300/20 bg-indigo-300/5`}>
+            <div className={`${CARD} border-indigo-300/20 bg-indigo-300/5 ${showAdvanced ? "" : "hidden"}`}>
               <SectionTitle eyebrow="Próxima etapa" title={branchPrPlanCardTitle}>
                 {branchPrPlanCardDescription}
               </SectionTitle>
@@ -1365,7 +1444,7 @@ export default function AdminEvolutionCenter() {
               ) : null}
             </div>
 
-            <div className={CARD}>
+            <div className={`${CARD} ${showAdvanced ? "" : "hidden"}`}>
               <SectionTitle eyebrow="Execuções" title="Dry-runs governados">
                 Lista execuções simuladas criadas pelo Admin. Execução real permanece bloqueada.
               </SectionTitle>
