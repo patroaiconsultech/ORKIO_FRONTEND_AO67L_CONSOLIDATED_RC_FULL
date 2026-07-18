@@ -120,3 +120,39 @@ test("display helpers use honest labels", () => {
   assert.equal(scoreLabel(88), "88");
   assert.equal(signalStatusLabel("insufficient_evidence"), "Evidência insuficiente");
 });
+
+test("coverage discloses measured fronts and unsampled fronts", () => {
+  const signal = computeEvolutionSignals({
+    items: [{ id: "p1", status: "pending_approval", execution_enabled: false }],
+    executions: [],
+    agents: [],
+    health: healthy,
+    capabilities: { audit: true },
+    lastRefresh: "now",
+  });
+
+  assert.equal(signal.coverage.total, 7);
+  assert.equal(signal.coverage.measured, 4);
+  assert.equal(signal.coverage.ratio, 0.57);
+  assert.deepEqual(
+    [...signal.unsampledFronts].sort(),
+    ["agent_knowledge", "evidence", "operational_reliability"].sort(),
+  );
+});
+
+test("zero execution copy does not claim zero failures as reliability proof", () => {
+  const signal = computeEvolutionSignals({
+    items: [],
+    executions: [],
+    agents: [],
+    health: healthy,
+    capabilities: {},
+    lastRefresh: "now",
+  });
+
+  const reliability = signal.fronts.find((item) => item.key === "operational_reliability");
+  const evidence = signal.fronts.find((item) => item.key === "evidence");
+
+  assert.equal(reliability.evidence, "Sem amostra operacional");
+  assert.equal(evidence.evidence, "Sem execuções observadas");
+});

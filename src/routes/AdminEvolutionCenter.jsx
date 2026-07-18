@@ -18,7 +18,7 @@ const BTN = "rounded-2xl px-4 py-2 text-sm font-semibold transition disabled:cur
 const INPUT = "w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none placeholder:text-white/35";
 const TEXTAREA = "w-full min-h-[92px] rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none placeholder:text-white/35";
 
-const BUILD_SIGNATURE = "AO-17C-AO18A-EVOLUTION-SIGNALS-V2";
+const BUILD_SIGNATURE = "AO-17C-AO18A-EVOLUTION-SIGNALS-V2_1";
 
 function nowLabel() {
   try {
@@ -173,7 +173,8 @@ export default function AdminEvolutionCenter() {
   const [branchCreateResult, setBranchCreateResult] = useState(null);
   const [branchPatchResult, setBranchPatchResult] = useState(null);
   const [branchRevertResult, setBranchRevertResult] = useState(null);
-  const [platformSignals, setPlatformSignals] = useState({ agents: [], health: null, capabilities: null, error: "" });
+  const [platformSignals, setPlatformSignals] = useState({ agents: [], health: null, capabilities: null });
+  const [platformSignalErrors, setPlatformSignalErrors] = useState({ health: "", agents: "", capabilities: "" });
   const [executionSignalError, setExecutionSignalError] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -187,9 +188,11 @@ export default function AdminEvolutionCenter() {
     const data = await apiFetch("/api/admin/evolution/proposals", { token, org: tenant });
     const next = normalizeList(data);
     setItems(next);
-    if (!selectedId && next[0]?.proposal_id) setSelectedId(next[0].proposal_id);
+    if (next[0]?.proposal_id) {
+      setSelectedId((current) => current || next[0].proposal_id);
+    }
     return next;
-  }, [allowed, selectedId, tenant, token]);
+  }, [allowed, tenant, token]);
 
   const loadExecutions = useCallback(async () => {
     if (!allowed) return;
@@ -206,27 +209,54 @@ export default function AdminEvolutionCenter() {
     }
   }, [allowed, tenant, token]);
 
-  const loadPlatformSignals = useCallback(async () => {
+  const loadHealthSignal = useCallback(async () => {
     if (!allowed) return null;
-    const next = { agents: [], health: null, capabilities: null, error: "" };
+    try {
+      const health = await apiFetch("/api/health", { token, org: tenant });
+      setPlatformSignals((current) => ({ ...current, health }));
+      setPlatformSignalErrors((current) => ({ ...current, health: "" }));
+      return health;
+    } catch (err) {
+      setPlatformSignals((current) => ({ ...current, health: null }));
+      setPlatformSignalErrors((current) => ({
+        ...current,
+        health: `health:${extractError(err)}`,
+      }));
+      return null;
+    }
+  }, [allowed, tenant, token]);
+
+  const loadAgentCapabilitySignals = useCallback(async () => {
+    if (!allowed) return null;
+
     const safe = async (label, path) => {
       try {
-        return await apiFetch(path, { token, org: tenant });
+        return { value: await apiFetch(path, { token, org: tenant }), error: "" };
       } catch (err) {
-        next.error = next.error || `${label}:${extractError(err)}`;
-        return null;
+        return { value: null, error: `${label}:${extractError(err)}` };
       }
     };
-    const [health, agents, capabilities] = await Promise.all([
-      safe("health", "/api/health"),
+
+    const [agentsResult, capabilitiesResult] = await Promise.all([
       safe("agents", "/api/agents"),
       safe("capabilities", "/api/agents/capabilities"),
     ]);
-    next.health = health;
-    next.agents = asArray(agents);
-    next.capabilities = capabilities;
-    setPlatformSignals(next);
-    return next;
+
+    setPlatformSignals((current) => ({
+      ...current,
+      agents: asArray(agentsResult.value),
+      capabilities: capabilitiesResult.value,
+    }));
+    setPlatformSignalErrors((current) => ({
+      ...current,
+      agents: agentsResult.error,
+      capabilities: capabilitiesResult.error,
+    }));
+
+    return {
+      agents: agentsResult.value,
+      capabilities: capabilitiesResult.value,
+    };
   }, [allowed, tenant, token]);
 
   const loadDetail = useCallback(async (id) => {
@@ -256,44 +286,85 @@ export default function AdminEvolutionCenter() {
     return planPayload;
   }, [allowed, tenant, token]);
 
-  const refreshAll = useCallback(async () => {
+  const refreshSummary = useCallback(async ({ includeStatic = false, silent = false } = {}) => {
     if (!allowed) return;
-    setBusy(true);
-    setError("");
-    setNotice("");
-    setDryRunResult(null);
-    setBranchPrPlan(null);
-    setBranchCreateResult(null);
+    if (!silent) {
+      setBusy(true);
+      setError("");
+      setNotice("");
+      setDryRunResult(null);
+      setBranchPrPlan(null);
+      setBranchCreateResult(null);
       setBranchPatchResult(null);
       setBranchRevertResult(null);
+    }
+
     try {
-      const next = await loadList();
-      const id = selectedId || next?.[0]?.proposal_id;
-      if (id) {
-        await loadDetail(id);
-        await loadPlan(id);
+      const tasks = [
+        loadList(),
+        loadExecutions(),
+        loadHealthSignal(),
+      ];
+      if (includeStatic) {
+        tasks.push(loadAgentCapabilitySignals());
       }
-      await loadExecutions();
-      await loadPlatformSignals();
+      await Promise.all(tasks);
       setLastRefresh(nowLabel());
     } catch (err) {
       setError(extractError(err));
     } finally {
-      setBusy(false);
+      if (!silent) setBusy(false);
     }
-  }, [allowed, loadDetail, loadExecutions, loadList, loadPlan, loadPlatformSignals, selectedId]);
+  }, [
+    allowed,
+    loadAgentCapabilitySignals,
+    loadExecutions,
+    loadHealthSignal,
+    loadList,
+  ]);
+
+  const refreshAll = useCallback(async () => {
+    await refreshSummary({ includeStatic: true, silent: false });
+    if (selectedId) {
+      await Promise.all([
+        loadDetail(selectedId),
+        loadPlan(selectedId),
+      ]);
+    }
+  }, [loadDetail, loadPlan, refreshSummary, selectedId]);
 
   useEffect(() => {
-    refreshAll();
-  }, []);
+    refreshSummary({ includeStatic: true, silent: false });
+  }, [refreshSummary]);
 
   useEffect(() => {
     if (!allowed) return undefined;
     const timer = window.setInterval(() => {
-      refreshAll();
+      if (document.hidden) return;
+      refreshSummary({ includeStatic: false, silent: true });
     }, 60_000);
     return () => window.clearInterval(timer);
-  }, [allowed, refreshAll]);
+  }, [allowed, refreshSummary]);
+
+  useEffect(() => {
+    if (!allowed) return undefined;
+    const timer = window.setInterval(() => {
+      if (document.hidden) return;
+      loadAgentCapabilitySignals();
+    }, 300_000);
+    return () => window.clearInterval(timer);
+  }, [allowed, loadAgentCapabilitySignals]);
+
+  useEffect(() => {
+    if (!allowed) return undefined;
+    const onVisibilityChange = () => {
+      if (!document.hidden) {
+        refreshSummary({ includeStatic: false, silent: true });
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [allowed, refreshSummary]);
 
   useEffect(() => {
     if (!selectedId || !allowed) return;
@@ -545,7 +616,10 @@ export default function AdminEvolutionCenter() {
       health: platformSignals.health,
       capabilities: platformSignals.capabilities,
       lastRefresh,
-      sourceErrors: [platformSignals.error, executionSignalError].filter(Boolean).join(" "),
+      sourceErrors: [
+        ...Object.values(platformSignalErrors),
+        executionSignalError,
+      ].filter(Boolean).join(" "),
     }),
     [
       executionSignalError,
@@ -554,7 +628,7 @@ export default function AdminEvolutionCenter() {
       lastRefresh,
       platformSignals.agents,
       platformSignals.capabilities,
-      platformSignals.error,
+      platformSignalErrors,
       platformSignals.health,
     ]
   );

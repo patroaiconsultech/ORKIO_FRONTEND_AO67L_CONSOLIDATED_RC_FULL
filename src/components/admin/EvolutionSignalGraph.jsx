@@ -30,9 +30,52 @@ function scoreWidth(score) {
     : "0%";
 }
 
+function percent(value) {
+  return `${Math.round((Number(value) || 0) * 100)}%`;
+}
+
+function MetricInfoPopover({ metric }) {
+  const unavailable = metric.missing_sources?.length
+    ? metric.missing_sources.join(", ")
+    : "nenhuma";
+
+  return (
+    <details className="relative shrink-0">
+      <summary
+        className="flex h-6 w-6 cursor-pointer list-none items-center justify-center rounded-full border border-white/10 bg-white/5 text-[11px] font-bold text-white/55 transition hover:border-cyan-300/30 hover:text-cyan-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 [&::-webkit-details-marker]:hidden"
+        aria-label={`Detalhes técnicos de ${metric.label}`}
+      >
+        i
+      </summary>
+      <div className="absolute right-0 z-30 mt-2 w-72 max-w-[80vw] rounded-2xl border border-cyan-300/20 bg-[#0b111d] p-3 text-left shadow-2xl shadow-black/60">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-[11px] leading-relaxed">
+          <dt className="text-white/40">Status</dt>
+          <dd className="text-white/75">{signalStatusLabel(metric.signal_status)}</dd>
+          <dt className="text-white/40">Fonte</dt>
+          <dd className="break-words text-white/75">{metric.source}</dd>
+          <dt className="text-white/40">Janela</dt>
+          <dd className="break-words text-white/75">{metric.time_window}</dd>
+          <dt className="text-white/40">Confiança</dt>
+          <dd className="text-white/75">{percent(metric.confidence)}</dd>
+          <dt className="text-white/40">Amostra</dt>
+          <dd className="text-white/75">{metric.sample_count}</dd>
+          <dt className="text-white/40">Fórmula</dt>
+          <dd className="break-all font-mono text-[10px] text-white/65">{metric.formula_version}</dd>
+          <dt className="text-white/40">Fontes indisponíveis</dt>
+          <dd className="break-words text-white/75">{unavailable}</dd>
+        </dl>
+      </div>
+    </details>
+  );
+}
+
 export default function EvolutionSignalGraph({ signal }) {
   if (!signal) return null;
+
   const points = radarPoints(signal.fronts);
+  const coverage = signal.coverage || { measured: 0, total: 0, ratio: 0 };
+  const unavailableCount = signal.missingSources?.length || 0;
+  const unsampledCount = signal.unsampledFronts?.length || 0;
 
   return (
     <section className="rounded-3xl border border-cyan-300/20 bg-cyan-300/5 p-5 shadow-2xl shadow-black/20">
@@ -57,7 +100,10 @@ export default function EvolutionSignalGraph({ signal }) {
               {scoreLabel(signal.overall)}
             </div>
             <div className="text-[10px] uppercase tracking-[0.22em] text-white/35">
-              overall medido
+              overall estimado
+            </div>
+            <div className="mt-1 text-[10px] text-white/45">
+              {coverage.measured}/{coverage.total} frentes • cobertura {percent(coverage.ratio)}
             </div>
           </div>
           <svg viewBox="0 0 100 100" className="h-24 w-24" role="img" aria-label="Radar dos sinais atuais">
@@ -82,19 +128,21 @@ export default function EvolutionSignalGraph({ signal }) {
           <div
             key={item.key}
             className="rounded-2xl border border-white/10 bg-black/15 p-3"
-            title={`status=${item.signal_status}; fonte=${item.source}; janela=${item.time_window}; confiança=${Math.round((item.confidence || 0) * 100)}%; amostra=${item.sample_count}; fórmula=${item.formula_version}; faltando=${item.missing_sources?.join(", ") || "nenhuma"}`}
           >
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-bold text-white/88">{item.label}</div>
                 <div className="mt-1 text-[11px] text-white/42">{item.evidence}</div>
                 <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-white/30">
                   {signalStatusLabel(item.signal_status)} • confiança{" "}
-                  {Math.round((item.confidence || 0) * 100)}% • amostra {item.sample_count}
+                  {percent(item.confidence)} • amostra {item.sample_count}
                 </div>
               </div>
-              <div className="font-mono text-sm font-black text-cyan-100">
-                {scoreLabel(item.score)}
+              <div className="flex items-center gap-2">
+                <div className="font-mono text-sm font-black text-cyan-100">
+                  {scoreLabel(item.score)}
+                </div>
+                <MetricInfoPopover metric={item} />
               </div>
             </div>
             <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
@@ -121,7 +169,7 @@ export default function EvolutionSignalGraph({ signal }) {
                 ) : (
                   <span
                     className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-white/45"
-                    title={`baseline de configuração=${agent.configuration_baseline}; não exibido como conhecimento medido`}
+                    aria-label={`Configuração detectada; baseline ${agent.configuration_baseline}; conhecimento ainda não medido`}
                   >
                     configuração detectada
                   </span>
@@ -137,13 +185,19 @@ export default function EvolutionSignalGraph({ signal }) {
           {signalStatusLabel(signal.reliability)}
         </SignalPill>
         <SignalPill className="border-white/10 bg-white/5 text-white/60">
-          confiança={Math.round((signal.confidence || 0) * 100)}%
+          confiança={percent(signal.confidence)}
+        </SignalPill>
+        <SignalPill className="border-white/10 bg-white/5 text-white/60">
+          cobertura={coverage.measured}/{coverage.total}
         </SignalPill>
         <SignalPill className="border-white/10 bg-white/5 text-white/60">
           atualizado={signal.updatedAt}
         </SignalPill>
         <SignalPill className="border-white/10 bg-white/5 text-white/60">
-          faltando={signal.missingSources?.length ? signal.missingSources.join(",") : "nenhum"}
+          fontes indisponíveis={unavailableCount}
+        </SignalPill>
+        <SignalPill className="border-white/10 bg-white/5 text-white/60">
+          frentes sem amostra={unsampledCount}
         </SignalPill>
         <SignalPill className="border-white/10 bg-white/5 text-white/60">
           proposals={signal.counts.proposals}

@@ -1,4 +1,4 @@
-export const EVOLUTION_SIGNAL_GRAPH_VERSION = "EVOLUTION_SIGNAL_GRAPH_V2";
+export const EVOLUTION_SIGNAL_GRAPH_VERSION = "EVOLUTION_SIGNAL_GRAPH_V2_1";
 
 export function asArray(value) {
   if (Array.isArray(value)) return value;
@@ -334,7 +334,9 @@ export function computeEvolutionSignals({
       key: "operational_reliability",
       label: "Confiabilidade operacional",
       score: operationalReliabilityScore,
-      evidence: `${completedCount} sucesso(s), ${failedCount} falha(s)`,
+      evidence: executionList.length
+        ? `${completedCount} sucesso(s), ${failedCount} falha(s)`
+        : "Sem amostra operacional",
       formulaVersion: "ops_reliability_current_estimate_v2",
       sourceKeys: ["health", "executions"],
       sampleCount: executionList.length,
@@ -376,7 +378,9 @@ export function computeEvolutionSignals({
       key: "evidence",
       label: "Evidência e observabilidade",
       score: evidenceScore,
-      evidence: `${executionList.length} execução(ões) observadas`,
+      evidence: executionList.length
+        ? `${executionList.length} execução(ões) observadas`
+        : "Sem execuções observadas",
       formulaVersion: "evidence_current_estimate_v2",
       sourceKeys: ["executions", "health"],
       sampleCount: executionList.length,
@@ -394,7 +398,20 @@ export function computeEvolutionSignals({
     }),
   ];
 
-  const scoredFronts = fronts.filter((item) => item.score !== null && item.score !== undefined && Number.isFinite(Number(item.score)));
+  const scoredFronts = fronts.filter(
+    (item) =>
+      item.score !== null &&
+      item.score !== undefined &&
+      Number.isFinite(Number(item.score)),
+  );
+  const totalFrontCount = fronts.length;
+  const measuredFrontCount = scoredFronts.length;
+  const unsampledFronts = fronts
+    .filter((item) => item.sample_count <= 0)
+    .map((item) => item.key);
+  const coverageRatio = totalFrontCount
+    ? Number((measuredFrontCount / totalFrontCount).toFixed(2))
+    : 0;
   const overall = scoredFronts.length
     ? clampScore(
         scoredFronts.reduce((sum, item) => sum + Number(item.score), 0) /
@@ -441,5 +458,11 @@ export function computeEvolutionSignals({
     confidence,
     sourceStatus,
     missingSources,
+    coverage: {
+      measured: measuredFrontCount,
+      total: totalFrontCount,
+      ratio: coverageRatio,
+    },
+    unsampledFronts,
   };
 }
