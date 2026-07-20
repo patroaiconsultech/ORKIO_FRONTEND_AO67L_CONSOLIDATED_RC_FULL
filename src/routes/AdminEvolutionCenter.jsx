@@ -137,6 +137,10 @@ function agentKnowledgeScore(agent) {
   return clampScore(score);
 }
 
+function ratioPercent(value) {
+  return Math.round(Math.max(0, Math.min(1, Number(value || 0))) * 100);
+}
+
 function computeEvolutionSignals({ items, executions, agents, health, capabilities, lastRefresh }) {
   const proposals = Array.isArray(items) ? items : [];
   const execs = Array.isArray(executions) ? executions : [];
@@ -220,18 +224,37 @@ function computeEvolutionSignals({ items, executions, agents, health, capabiliti
     (completedCount ? Math.min(18, completedCount * 4) : 0) -
     Math.min(26, failedCount * 9)
   );
-  const metric = (key, label, score, evidence, formulaVersion, sourceKeys, sampleCount) => ({
-    key,
-    label,
-    score: clampScore(score),
-    evidence,
-    confidence,
-    sample_count: sampleCount,
-    time_window: "current_admin_snapshot",
-    formula_version: formulaVersion,
-    source: sourceKeys.join(", "),
-    missing_sources: sourceKeys.filter((keyName) => !sourceStatus[keyName]),
-  });
+  const metric = (key, label, score, evidence, formulaVersion, sourceKeys, sampleCount, notes = []) => {
+    const availableSources = sourceKeys.filter((keyName) => sourceStatus[keyName]);
+    const missing = sourceKeys.filter((keyName) => !sourceStatus[keyName]);
+    const coverage = sourceKeys.length ? availableSources.length / sourceKeys.length : 0;
+    const hasSample = Number(sampleCount || 0) > 0;
+    const metricConfidence = Math.max(0, Math.min(0.95, coverage * (hasSample ? 0.92 : 0.35)));
+    const insufficient = !hasSample || coverage < 0.5;
+    const evidenceLevel = insufficient
+      ? "insufficient_evidence"
+      : coverage < 1
+      ? "partial_estimate"
+      : "current_estimate";
+    const rawScore = clampScore(score);
+    return {
+      key,
+      label,
+      score: rawScore,
+      trusted_score: insufficient ? null : clampScore(rawScore * metricConfidence),
+      evidence,
+      confidence: metricConfidence,
+      coverage,
+      sample_count: Number(sampleCount || 0),
+      time_window: "current_admin_snapshot",
+      formula_version: formulaVersion,
+      source: sourceKeys.join(", "),
+      available_sources: availableSources,
+      missing_sources: missing,
+      evidence_level: evidenceLevel,
+      notes,
+    };
+  };
 
   const fronts = [
     { key: "agent_knowledge", label: "Conhecimento dos agentes", score: clampScore(avgAgentScore), evidence: `${agentScores.length} agente(s) medidos` },
@@ -242,24 +265,33 @@ function computeEvolutionSignals({ items, executions, agents, health, capabiliti
     { key: "experience", label: "Experiência premium", score: experienceScore, evidence: "derivado de agentes/capabilities" },
   ];
   const estimatedFronts = [
-    metric("security", "Seguranca e governanca", securityScore, executionEnabled ? "execucao real detectada" : "execucao real bloqueada", "security_current_estimate_v1", ["health", "proposals", "executions"], proposals.length + execs.length),
-    metric("operational_reliability", "Confiabilidade operacional", operationalReliabilityScore, `${completedCount} sucesso(s), ${failedCount} falha(s)`, "ops_reliability_current_estimate_v1", ["health", "executions"], execs.length),
-    metric("self_evolution", "Autoevolucao governada", evolutionScore, `${proposals.length} proposta(s), ${dryRunCount} dry-run(s)`, "self_evolution_current_estimate_v1", ["proposals", "executions"], proposals.length + execs.length),
-    metric("agent_knowledge", "Conhecimento dos agentes", avgAgentScore, `${agentScores.length} agente(s) com sinal`, "agent_knowledge_config_estimate_v1", ["agents", "capabilities"], agentScores.length),
-    metric("modules", "Modulos principais", modulesScore, `${capabilityCount || "sem"} capability signal`, "modules_current_estimate_v1", ["capabilities", "proposals"], capabilityCount + proposals.length),
-    metric("evidence", "Evidencia e observabilidade", evidenceScore, `${execs.length} execucao(oes) observadas`, "evidence_current_estimate_v1", ["executions", "health"], execs.length),
-    metric("experience", "Experiencia premium", experienceScore, "derivado de agentes/capabilities", "premium_experience_estimate_v1", ["agents", "capabilities"], agentScores.length + capabilityCount),
+    metric("security", "Seguranca e governanca", securityScore, executionEnabled ? "execucao real detectada" : "execucao real bloqueada", "security_current_estimate_v2", ["health", "proposals", "executions"], proposals.length + execs.length, ["Bloqueio de execucao real pesa positivamente.", "Falhas recentes reduzem o indice."]),
+    metric("operational_reliability", "Confiabilidade operacional", operationalReliabilityScore, `${completedCount} sucesso(s), ${failedCount} falha(s)`, "ops_reliability_current_estimate_v2", ["health", "executions"], execs.length, ["Sem amostra operacional, nao ha KPI confiavel."]),
+    metric("self_evolution", "Autoevolucao governada", evolutionScore, `${proposals.length} proposta(s), ${dryRunCount} dry-run(s)`, "self_evolution_current_estimate_v2", ["proposals", "executions"], proposals.length + execs.length, ["Mede propostas e dry-runs, nao progresso historico."]),
+    metric("agent_knowledge", "Conhecimento dos agentes", avgAgentScore, `${agentScores.length} agente(s) com sinal`, "agent_knowledge_config_estimate_v2", ["agents", "capabilities"], agentScores.length, ["Ainda e sinal de configuracao, nao golden evaluation."]),
+    metric("modules", "Modulos principais", modulesScore, `${capabilityCount || "sem"} capability signal`, "modules_current_estimate_v2", ["capabilities", "proposals"], capabilityCount + proposals.length, ["Capability registry sustenta a leitura de cobertura modular."]),
+    metric("evidence", "Evidencia e observabilidade", evidenceScore, `${execs.length} execucao(oes) observadas`, "evidence_current_estimate_v2", ["executions", "health"], execs.length, ["Sem execution samples, a evidencia fica insuficiente."]),
+    metric("experience", "Experiencia premium", experienceScore, "derivado de agentes/capabilities", "premium_experience_estimate_v2", ["agents", "capabilities"], agentScores.length + capabilityCount, ["Proxy visual/operacional ate existir medicao UX real."]),
   ];
-  const overall = clampScore(estimatedFronts.reduce((sum, item) => sum + item.score, 0) / Math.max(1, estimatedFronts.length));
+  const trustedFronts = estimatedFronts.filter((item) => item.trusted_score !== null);
+  const trustedConfidence = trustedFronts.length
+    ? trustedFronts.reduce((sum, item) => sum + item.confidence, 0) / trustedFronts.length
+    : 0;
+  const overall = trustedFronts.length
+    ? clampScore(trustedFronts.reduce((sum, item) => sum + item.trusted_score, 0) / trustedFronts.length)
+    : 0;
   return {
     version: EVOLUTION_SIGNAL_GRAPH_VERSION,
     overall,
+    validFrontCount: trustedFronts.length,
+    totalFrontCount: estimatedFronts.length,
     fronts: estimatedFronts,
     agentScores,
     counts: { proposals: proposals.length, pending: pendingCount, approved: approvedCount, rejected: rejectedCount, executions: execs.length, failed: failedCount },
     updatedAt: lastRefresh || nowLabel(),
     reliability,
-    confidence,
+    confidence: trustedConfidence,
+    rawConfidence: confidence,
     sourceStatus,
     missingSources,
   };
@@ -274,7 +306,7 @@ function radarPoints(fronts, radius = 44, center = 50) {
   if (!items.length) return "";
   return items.map((item, index) => {
     const angle = (-90 + (360 / items.length) * index) * (Math.PI / 180);
-    const r = radius * (clampScore(item.score) / 100);
+    const r = radius * (clampScore(item.trusted_score ?? 0) / 100);
     const x = center + Math.cos(angle) * r;
     const y = center + Math.sin(angle) * r;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
@@ -358,6 +390,149 @@ function EvolutionSignalGraph({ signal }) {
           reliability={signal.reliability}
         </Pill>
         <Pill className="border-white/10 bg-white/5 text-white/60">confidence={Math.round((signal.confidence || 0) * 100)}%</Pill>
+        <Pill className="border-white/10 bg-white/5 text-white/60">updated={signal.updatedAt}</Pill>
+        <Pill className="border-white/10 bg-white/5 text-white/60">missing={signal.missingSources?.length ? signal.missingSources.join(",") : "none"}</Pill>
+        <Pill className="border-white/10 bg-white/5 text-white/60">proposals={signal.counts.proposals}</Pill>
+        <Pill className="border-white/10 bg-white/5 text-white/60">executions={signal.counts.executions}</Pill>
+      </div>
+    </section>
+  );
+}
+
+function EvolutionSignalGraphV2({ signal }) {
+  if (!signal) return null;
+  const fronts = signal.fronts || [];
+  const points = radarPoints(fronts);
+  const reliableFronts = signal.validFrontCount ?? fronts.filter((item) => item.trusted_score !== null).length;
+  const totalFronts = signal.totalFrontCount ?? fronts.length;
+  const missingCount = signal.missingSources?.length || 0;
+  const cardTone = (item) => {
+    if (item.evidence_level === "current_estimate") return "border-emerald-300/18 bg-emerald-300/5";
+    if (item.evidence_level === "partial_estimate") return "border-amber-300/18 bg-amber-300/5";
+    return "border-rose-300/18 bg-rose-300/5";
+  };
+  const barTone = (item) => {
+    if (item.evidence_level === "current_estimate") return "bg-emerald-300";
+    if (item.evidence_level === "partial_estimate") return "bg-amber-300";
+    return "bg-white/25";
+  };
+
+  return (
+    <section className={`${CARD} border-cyan-300/15 bg-cyan-300/5`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-100/60">{signal.version}</p>
+          <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-100/70">
+            auditable current snapshot | weak evidence becomes N/A
+          </p>
+          <h2 className="mt-1 text-2xl font-black text-white">Mapa vivo da evolucao</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-white/62">
+            KPIs calculados a partir de sinais reais do console. O indice confiavel so usa frentes com amostra e cobertura minima; as demais ficam marcadas como evidencia insuficiente.
+          </p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-4">
+            <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">frentes confiaveis</div>
+              <div className="mt-1 font-mono text-lg font-black text-white">{reliableFronts}/{totalFronts}</div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">confianca media</div>
+              <div className="mt-1 font-mono text-lg font-black text-white">{ratioPercent(signal.confidence)}%</div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">fontes faltantes</div>
+              <div className="mt-1 font-mono text-lg font-black text-white">{missingCount}</div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/20 p-2">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">modo</div>
+              <div className="mt-1 truncate text-xs font-bold text-emerald-100">admin readonly</div>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <div className="text-4xl font-black text-cyan-100">{signal.overall}</div>
+            <div className="text-[11px] uppercase tracking-[0.2em] text-white/40">indice confiavel</div>
+          </div>
+          <svg width="112" height="112" viewBox="0 0 100 100" className="shrink-0">
+            <polygon points="50,6 92,50 50,94 8,50" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.14)" />
+            <circle cx="50" cy="50" r="30" fill="none" stroke="rgba(255,255,255,0.10)" />
+            <circle cx="50" cy="50" r="44" fill="none" stroke="rgba(255,255,255,0.10)" />
+            <polygon points={points} fill="rgba(103,232,249,0.22)" stroke="rgba(103,232,249,0.90)" strokeWidth="2" />
+            <circle cx="50" cy="50" r="2.4" fill="rgba(255,255,255,0.65)" />
+          </svg>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-2">
+        {fronts.map((item) => {
+          const hasTrustedScore = item.trusted_score !== null;
+          const displayScore = hasTrustedScore ? item.trusted_score : "N/A";
+          return (
+            <div
+              key={item.key}
+              className={`rounded-2xl border p-3 ${cardTone(item)}`}
+              title={`fontes=${item.source}; janela=${item.time_window}; confianca=${ratioPercent(item.confidence)}%; cobertura=${ratioPercent(item.coverage)}%; amostra=${item.sample_count}; formula=${item.formula_version}; faltando=${item.missing_sources?.join(", ") || "nenhuma"}`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-bold text-white/88">{item.label}</div>
+                  <div className="mt-1 text-[11px] text-white/42">{item.evidence}</div>
+                  <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-white/30">
+                    {item.evidence_level} | confianca {ratioPercent(item.confidence)}% | cobertura {ratioPercent(item.coverage)}% | amostra {item.sample_count}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className={`font-mono text-sm font-black ${hasTrustedScore ? "text-cyan-100" : "text-rose-100"}`}>{displayScore}</div>
+                  <div className="mt-0.5 font-mono text-[10px] text-white/35">bruto {item.score}</div>
+                </div>
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+                <div className={`h-full rounded-full ${barTone(item)}`} style={{ width: `${clampScore(item.trusted_score ?? 0)}%` }} />
+              </div>
+              <div className="mt-3 grid gap-2 text-[10px] text-white/42 sm:grid-cols-2">
+                <div className="rounded-lg border border-white/10 bg-black/15 p-2">
+                  <span className="text-white/28">fontes ok:</span> {item.available_sources?.join(", ") || "-"}
+                </div>
+                <div className="rounded-lg border border-white/10 bg-black/15 p-2">
+                  <span className="text-white/28">faltando:</span> {item.missing_sources?.join(", ") || "none"}
+                </div>
+                <div className="rounded-lg border border-white/10 bg-black/15 p-2 sm:col-span-2">
+                  <span className="text-white/28">formula:</span> {item.formula_version}
+                </div>
+              </div>
+              {item.notes?.length ? (
+                <div className="mt-2 space-y-1 text-[10px] text-white/38">
+                  {item.notes.map((note) => <div key={note}>- {note}</div>)}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+
+      {signal.agentScores?.length ? (
+        <div className="mt-4 rounded-2xl border border-white/10 bg-black/15 p-3">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/38">Conhecimento por agente</div>
+          <div className="grid gap-2 md:grid-cols-3">
+            {signal.agentScores.map((agent) => (
+              <div key={agent.id} className="grid grid-cols-[120px_1fr_44px] items-center gap-2">
+                <div className="truncate text-xs text-white/70">{agent.label}</div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                  <div className="h-full rounded-full bg-violet-300" style={{ width: `${clampScore(agent.score)}%` }} />
+                </div>
+                <div className="text-right font-mono text-[11px] text-white/55">{agent.score}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Pill className={signal.reliability === "live_signals_estimated" ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-100" : signal.reliability === "insufficient_evidence" ? "border-rose-400/25 bg-rose-400/10 text-rose-100" : "border-amber-400/25 bg-amber-400/10 text-amber-100"}>
+          reliability={signal.reliability}
+        </Pill>
+        <Pill className="border-white/10 bg-white/5 text-white/60">trusted_confidence={ratioPercent(signal.confidence)}%</Pill>
+        <Pill className="border-white/10 bg-white/5 text-white/60">raw_source_confidence={ratioPercent(signal.rawConfidence)}%</Pill>
         <Pill className="border-white/10 bg-white/5 text-white/60">updated={signal.updatedAt}</Pill>
         <Pill className="border-white/10 bg-white/5 text-white/60">missing={signal.missingSources?.length ? signal.missingSources.join(",") : "none"}</Pill>
         <Pill className="border-white/10 bg-white/5 text-white/60">proposals={signal.counts.proposals}</Pill>
@@ -1070,7 +1245,7 @@ export default function AdminEvolutionCenter() {
           </div>
         </section>
 
-        <EvolutionSignalGraph signal={evolutionSignal} />
+        <EvolutionSignalGraphV2 signal={evolutionSignal} />
 
         <section className={`${CARD} border-amber-400/20 bg-amber-400/5 ${showAdvanced ? "" : "hidden"}`}>
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
