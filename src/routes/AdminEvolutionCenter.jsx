@@ -173,6 +173,7 @@ export default function AdminEvolutionCenter() {
   const [branchCreateResult, setBranchCreateResult] = useState(null);
   const [branchPatchResult, setBranchPatchResult] = useState(null);
   const [branchRevertResult, setBranchRevertResult] = useState(null);
+  const [marcoZeroResult, setMarcoZeroResult] = useState(null);
   const [platformSignals, setPlatformSignals] = useState({ agents: [], health: null, capabilities: null });
   const [platformSignalErrors, setPlatformSignalErrors] = useState({ health: "", agents: "", capabilities: "" });
   const [executionSignalError, setExecutionSignalError] = useState("");
@@ -587,6 +588,35 @@ export default function AdminEvolutionCenter() {
     }
   }
 
+  async function runMarcoZeroArchive({ dryRun = true } = {}) {
+    if (!dryRun) {
+      const ok = window.confirm("Arquivar todas as propostas atuais e iniciar marco zero? Historico sera preservado, mas a lista padrao ficara limpa.");
+      if (!ok) return;
+    }
+    setActionBusy(dryRun ? "marco-zero-preview" : "marco-zero-archive");
+    setError("");
+    setNotice("");
+    try {
+      const data = await apiFetch(`/api/admin/evolution/proposals/archive-baseline?confirm=EFATA777_MARCO_ZERO&dry_run=${dryRun ? "true" : "false"}`, {
+        method: "POST",
+        token,
+        org: tenant,
+      });
+      const payload = unwrapPayload(data);
+      setMarcoZeroResult(payload);
+      if (dryRun) {
+        setNotice(`Preview marco zero: ${payload?.candidate_count || 0} proposta(s) seriam arquivadas. Nenhuma escrita executada.`);
+      } else {
+        setNotice(`Marco zero aplicado: ${payload?.archived_count || 0} proposta(s) arquivadas. Historico preservado em status=archived.`);
+        await refreshAll();
+      }
+    } catch (err) {
+      setError(extractError(err));
+    } finally {
+      setActionBusy("");
+    }
+  }
+
   if (!allowed) {
     return (
       <main className="min-h-screen bg-[#070711] px-4 py-10 text-white">
@@ -903,6 +933,39 @@ export default function AdminEvolutionCenter() {
               <Pill className="border-violet-400/25 bg-violet-400/10 text-violet-100">proposal_only</Pill>
               <Pill className="border-white/10 bg-white/5 text-white/70">última atualização: {lastRefresh || "-"}</Pill>
             </div>
+          </div>
+          <div className="mt-4 rounded-2xl border border-amber-300/20 bg-black/20 p-3">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="text-sm font-bold text-amber-100">Marco zero de propostas</div>
+                <div className="mt-1 text-xs leading-relaxed text-amber-50/65">
+                  Arquiva propostas antigas sem deletar histórico. A lista padrão fica limpa; auditoria permanece em status=archived.
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => runMarcoZeroArchive({ dryRun: true })}
+                  disabled={Boolean(actionBusy)}
+                  className={`${BTN} border border-white/10 bg-white/5 text-white/80 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50`}
+                >
+                  {actionBusy === "marco-zero-preview" ? "Simulando..." : "Preview marco zero"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => runMarcoZeroArchive({ dryRun: false })}
+                  disabled={Boolean(actionBusy)}
+                  className={`${BTN} border border-amber-300/30 bg-amber-300 text-black hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50`}
+                >
+                  {actionBusy === "marco-zero-archive" ? "Arquivando..." : "Aplicar marco zero"}
+                </button>
+              </div>
+            </div>
+            {marcoZeroResult ? (
+              <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-xl bg-black/25 p-3 text-xs text-amber-50/80">
+                {JSON.stringify(marcoZeroResult, null, 2)}
+              </pre>
+            ) : null}
           </div>
         </section>
 
