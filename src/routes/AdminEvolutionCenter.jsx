@@ -597,7 +597,7 @@ export default function AdminEvolutionCenter() {
     setError("");
     setNotice("");
     try {
-      const data = await apiFetch(`/api/admin/evolution/proposals/archive-baseline?confirm=EFATA777_MARCO_ZERO&dry_run=${dryRun ? "true" : "false"}`, {
+      const data = await apiFetch(`/api/admin/evolution/archive-baseline?confirm=EFATA777_MARCO_ZERO&dry_run=${dryRun ? "true" : "false"}`, {
         method: "POST",
         token,
         org: tenant,
