@@ -1,0 +1,89 @@
+--- src/routes/AdminEvolutionCenter.jsx.production_26
++++ src/routes/AdminEvolutionCenter.jsx.MZ-001-R1
+@@ -588,34 +588,29 @@
+     }
+   }
+ 
+-  async function runMarcoZeroArchive({ dryRun = true } = {}) {
+-    if (!dryRun) {
+-      const ok = window.confirm("Arquivar todas as propostas atuais e iniciar marco zero? Historico sera preservado, mas a lista padrao ficara limpa.");
+-      if (!ok) return;
+-    }
+-    setActionBusy(dryRun ? "marco-zero-preview" : "marco-zero-archive");
++  async function runMarcoZeroPreview() {
++    setActionBusy("marco-zero-preview");
+     setError("");
+     setNotice("");
+     try {
+-      const data = await apiFetch(`/api/admin/evolution/archive-baseline?confirm=EFATA777_MARCO_ZERO&dry_run=${dryRun ? "true" : "false"}`, {
++      const data = await apiFetch("/api/admin/evolution/archive-baseline?dry_run=true", {
+         method: "POST",
+         token,
+         org: tenant,
+       });
+       const payload = unwrapPayload(data);
+       setMarcoZeroResult(payload);
+-      if (dryRun) {
+-        setNotice(`Preview marco zero: ${payload?.candidate_count || 0} proposta(s) seriam arquivadas. Nenhuma escrita executada.`);
+-      } else {
+-        setNotice(`Marco zero aplicado: ${payload?.archived_count || 0} proposta(s) arquivadas. Historico preservado em status=archived.`);
+-        await refreshAll();
+-      }
++      const count = Number(payload?.candidate_count || 0);
++      const truncated = payload?.preview_truncated ? " • preview limitado aos primeiros IDs" : "";
++      const cutoff = payload?.cutoff_at ? ` • cutoff=${payload.cutoff_at}` : "";
++      setNotice(`Preview marco zero: ${count} proposta(s) candidatas${truncated}${cutoff}. Nenhuma escrita executada.`);
+     } catch (err) {
+       setError(extractError(err));
+     } finally {
+       setActionBusy("");
+     }
+   }
++
+ 
+   if (!allowed) {
+     return (
+@@ -939,26 +934,32 @@
+               <div>
+                 <div className="text-sm font-bold text-amber-100">Marco zero de propostas</div>
+                 <div className="mt-1 text-xs leading-relaxed text-amber-50/65">
+-                  Arquiva propostas antigas sem deletar histórico. A lista padrão fica limpa; auditoria permanece em status=archived.
++                  Fase MZ-001-R1: preview somente leitura, vinculado ao tenant da sessão e baseado no PostgreSQL. Nenhuma proposta é alterada nesta fase.
+                 </div>
+               </div>
+-              <div className="flex flex-wrap gap-2">
++              <div className="flex flex-wrap items-center gap-2">
+                 <button
+                   type="button"
+-                  onClick={() => runMarcoZeroArchive({ dryRun: true })}
++                  onClick={runMarcoZeroPreview}
+                   disabled={Boolean(actionBusy)}
+                   className={`${BTN} border border-white/10 bg-white/5 text-white/80 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50`}
+                 >
+                   {actionBusy === "marco-zero-preview" ? "Simulando..." : "Preview marco zero"}
+                 </button>
+-                <button
+-                  type="button"
+-                  onClick={() => runMarcoZeroArchive({ dryRun: false })}
+-                  disabled={Boolean(actionBusy)}
+-                  className={`${BTN} border border-amber-300/30 bg-amber-300 text-black hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50`}
+-                >
+-                  {actionBusy === "marco-zero-archive" ? "Arquivando..." : "Aplicar marco zero"}
+-                </button>
++                <Pill className="border-rose-400/25 bg-rose-400/10 text-rose-100">
++                  aplicação real bloqueada
++                </Pill>
++              </div>
++            </div>
++            <div className="mt-3 grid gap-2 text-xs md:grid-cols-3">
++              <div className="rounded-xl border border-white/10 bg-white/5 p-2 text-white/65">
++                <span className="font-bold text-white/85">Fonte:</span> PostgreSQL
++              </div>
++              <div className="rounded-xl border border-white/10 bg-white/5 p-2 text-white/65">
++                <span className="font-bold text-white/85">Escrita:</span> false
++              </div>
++              <div className="rounded-xl border border-white/10 bg-white/5 p-2 text-white/65">
++                <span className="font-bold text-white/85">Próxima fase:</span> inventário + rollback
+               </div>
+             </div>
+             {marcoZeroResult ? (

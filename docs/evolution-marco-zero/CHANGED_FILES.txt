@@ -1,0 +1,17 @@
+UPDATED
+src/routes/AdminEvolutionCenter.jsx
+package.json
+
+NEW
+tests/evolution_marco_zero_preview_contract.test.mjs
+docs/evolution-marco-zero/00_README_FIRST.md
+docs/evolution-marco-zero/01_UPLOAD_AND_PR.md
+docs/evolution-marco-zero/02_USER_ACCEPTANCE.md
+docs/evolution-marco-zero/03_CODEX_USER_TEST_ONLY.md
+docs/evolution-marco-zero/ADMIN_EVOLUTION_CENTER_DIFF.diff
+docs/evolution-marco-zero/VALIDATION_REPORT.json
+docs/evolution-marco-zero/CHANGED_FILES.txt
+docs/evolution-marco-zero/SHA256SUMS.txt
+
+REMOVED
+none
