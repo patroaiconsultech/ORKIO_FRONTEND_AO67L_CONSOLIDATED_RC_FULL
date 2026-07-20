@@ -1,0 +1,12 @@
+{
+  "package": "ORKIO_EVOLUTION_SIGNALS_V2_GITHUB_READY",
+  "artifact_source": "AdminEvolutionCenter (3).jsx",
+  "artifact_source_sha256": "ecb7623153a4eec469e980bea1fd4c9bd9df3f4c51f343070be3c9293ad1de85",
+  "frontend_only": true,
+  "backend_changed": false,
+  "migration_added": false,
+  "runtime_write_added": false,
+  "historical_snapshots_implemented": false,
+  "premium_frontend_foundation_included": true,
+  "human_approval_required": true
+}

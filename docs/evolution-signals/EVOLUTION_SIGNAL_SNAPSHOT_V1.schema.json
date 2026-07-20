@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "orkio://schemas/evolution-signal-snapshot-v1",
+  "title": "EvolutionSignalSnapshotV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "snapshot_kind",
+    "historical_trend",
+    "overall",
+    "fronts",
+    "agent_signals",
+    "reliability",
+    "confidence",
+    "source_status",
+    "missing_sources",
+    "updated_at"
+  ],
+  "properties": {
+    "version": {
+      "const": "EVOLUTION_SIGNAL_GRAPH_V2"
+    },
+    "snapshot_kind": {
+      "enum": [
+        "estimated_current_snapshot",
+        "persisted_historical_snapshot"
+      ]
+    },
+    "historical_trend": {
+      "type": "boolean"
+    },
+    "overall": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 100
+    },
+    "reliability": {
+      "enum": [
+        "insufficient_evidence",
+        "partial_signals_estimated",
+        "live_signals_estimated"
+      ]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "updated_at": {
+      "type": "string"
+    },
+    "missing_sources": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "source_status": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    },
+    "fronts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key",
+          "label",
+          "score",
+          "confidence",
+          "sample_count",
+          "signal_status",
+          "time_window",
+          "formula_version",
+          "source",
+          "missing_sources"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "score": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "sample_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "signal_status": {
+            "enum": [
+              "insufficient_evidence",
+              "partial_signals_estimated",
+              "live_signals_estimated"
+            ]
+          },
+          "time_window": {
+            "type": "string"
+          },
+          "formula_version": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "missing_sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "agent_signals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "score",
+          "sample_count",
+          "signal_status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "score": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100
+          },
+          "sample_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "signal_status": {
+            "enum": [
+              "configuration_only",
+              "live_signals_estimated",
+              "partial_signals_estimated"
+            ]
+          },
+          "configuration_baseline": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          }
+        }
+      }
+    }
+  }
+}

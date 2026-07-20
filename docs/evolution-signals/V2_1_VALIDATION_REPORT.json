@@ -1,0 +1,26 @@
+{
+  "package": "ORKIO_EVOLUTION_SIGNALS_V2_1_GITHUB_READY",
+  "repository": "patroaiconsultech/ORKIO_FRONTEND_AO67L_CONSOLIDATED_RC_FULL",
+  "baseline_artifact": "ORKIO_EVOLUTION_SIGNALS_V2_GITHUB_READY.zip",
+  "deployed_frontend_commit": "NOT_PROVEN",
+  "contract_tests": {
+    "status": "PASS",
+    "passed": 8
+  },
+  "polling_contract_tests": {
+    "status": "PASS",
+    "passed": 4
+  },
+  "syntax_check": "PASS",
+  "secret_scan": "PASS",
+  "secret_findings": [],
+  "vite_build": "REQUIRED_IN_GITHUB_BRANCH",
+  "backend_changed": false,
+  "migration_added": false,
+  "environment_changed": false,
+  "write_to_github_executed": false,
+  "commit_executed": false,
+  "merge_executed": false,
+  "deploy_executed": false,
+  "human_approval_required": true
+}
