@@ -87,6 +87,8 @@ export default function EvolutionSignalGraph({ signal }) {
   const coverage = signal.coverage || { measured: 0, total: 0, ratio: 0 };
   const unavailableCount = signal.missingSources?.length || 0;
   const unsampledCount = signal.unsampledFronts?.length || 0;
+  const reliableScore = signal.trusted_overall ?? signal.overall;
+  const rawScore = signal.overall;
 
   return (
     <section className="rounded-3xl border border-cyan-300/20 bg-cyan-300/5 p-5 shadow-2xl shadow-black/20">
@@ -108,13 +110,16 @@ export default function EvolutionSignalGraph({ signal }) {
         <div className="flex items-center gap-4">
           <div className="text-right">
             <div className="font-mono text-4xl font-black text-cyan-100">
-              {scoreLabel(signal.trusted_overall ?? signal.overall)}
+              {scoreLabel(reliableScore)}
             </div>
             <div className="text-[10px] uppercase tracking-[0.22em] text-white/35">
               indice confiavel
             </div>
             <div className="mt-1 text-[10px] text-white/45">
               {coverage.measured}/{coverage.total} frentes • cobertura {percent(coverage.ratio)}
+            </div>
+            <div className="mt-1 text-[10px] text-amber-100/70">
+              potencial bruto {scoreLabel(rawScore)} | {unsampledCount} aguardando medicao
             </div>
           </div>
           <svg viewBox="0 0 100 100" className="h-24 w-24" role="img" aria-label="Radar dos sinais atuais">
@@ -135,10 +140,14 @@ export default function EvolutionSignalGraph({ signal }) {
       </div>
 
       <div className="mt-5 grid gap-3 lg:grid-cols-2">
-        {(signal.fronts || []).map((item) => (
+        {(signal.fronts || []).map((item) => {
+          const hasMeasuredScore = item.score !== null && item.score !== undefined;
+          const displayScore = item.trusted_score ?? item.score;
+          const displayLabel = hasMeasuredScore ? scoreLabel(displayScore) : "Aguardando medicao";
+          return (
           <div
             key={item.key}
-            className="rounded-2xl border border-white/10 bg-black/15 p-3"
+            className={`rounded-2xl border p-3 ${hasMeasuredScore ? "border-white/10 bg-black/15" : "border-amber-300/20 bg-amber-300/5"}`}
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
@@ -151,8 +160,8 @@ export default function EvolutionSignalGraph({ signal }) {
               </div>
               <div className="flex items-center gap-2">
                 <div className="text-right">
-                  <div className="font-mono text-sm font-black text-cyan-100">
-                    {scoreLabel(item.trusted_score ?? item.score)}
+                  <div className={`font-mono text-sm font-black ${hasMeasuredScore ? "text-cyan-100" : "text-amber-100"}`}>
+                    {displayLabel}
                   </div>
                   <div className="font-mono text-[10px] text-white/35">
                     bruto {scoreLabel(item.raw_score ?? item.score)}
@@ -163,12 +172,17 @@ export default function EvolutionSignalGraph({ signal }) {
             </div>
             <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
               <div
-                className="h-full rounded-full bg-cyan-300"
-                style={{ width: scoreWidth(item.trusted_score ?? item.score) }}
+                className="h-full rounded-full bg-white/15"
+                style={{ width: scoreWidth(item.raw_score ?? item.score) }}
+              />
+              <div
+                className="-mt-1.5 h-full rounded-full bg-cyan-300"
+                style={{ width: scoreWidth(displayScore) }}
               />
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {signal.agentSignals?.length ? (
