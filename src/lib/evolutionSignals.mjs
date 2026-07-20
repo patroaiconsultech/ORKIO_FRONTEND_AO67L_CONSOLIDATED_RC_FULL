@@ -108,12 +108,18 @@ function buildMetric({
   const normalizedSample = normalizeSampleCount(sampleCount);
   const missingSources = sourceKeys.filter((sourceKey) => sourceStatus[sourceKey] !== true);
   const availableSources = sourceKeys.length - missingSources.length;
+  const sourceCoverage = sourceKeys.length
+    ? Number((availableSources / sourceKeys.length).toFixed(2))
+    : 0;
+  const rawScore = clampScore(score);
 
   if (!normalizedSample) {
     return {
       key,
       label,
       score: null,
+      raw_score: rawScore,
+      trusted_score: null,
       evidence,
       confidence: 0,
       sample_count: 0,
@@ -121,7 +127,9 @@ function buildMetric({
       time_window: "current_admin_snapshot",
       formula_version: formulaVersion,
       source: sourceKeys.join(", "),
+      available_sources: sourceKeys.filter((sourceKey) => sourceStatus[sourceKey] === true),
       missing_sources: missingSources,
+      source_coverage: sourceCoverage,
     };
   }
 
@@ -130,11 +138,14 @@ function buildMetric({
     availableSources,
     requestedSources: sourceKeys.length,
   });
+  const trustedScore = clampScore(rawScore * confidence);
 
   return {
     key,
     label,
-    score: clampScore(score),
+    score: rawScore,
+    raw_score: rawScore,
+    trusted_score: trustedScore,
     evidence,
     confidence,
     sample_count: normalizedSample,
@@ -144,7 +155,9 @@ function buildMetric({
     time_window: "current_admin_snapshot",
     formula_version: formulaVersion,
     source: sourceKeys.join(", "),
+    available_sources: sourceKeys.filter((sourceKey) => sourceStatus[sourceKey] === true),
     missing_sources: missingSources,
+    source_coverage: sourceCoverage,
   };
 }
 
@@ -170,7 +183,8 @@ export function radarPoints(fronts, radius = 44, center = 50) {
   return items
     .map((item, index) => {
       const angle = (-90 + (360 / items.length) * index) * (Math.PI / 180);
-      const normalized = item?.score !== null && item?.score !== undefined && Number.isFinite(Number(item.score)) ? clampScore(item.score) : 0;
+      const displayScore = item?.trusted_score ?? item?.score;
+      const normalized = displayScore !== null && displayScore !== undefined && Number.isFinite(Number(displayScore)) ? clampScore(displayScore) : 0;
       const currentRadius = radius * (normalized / 100);
       const x = center + Math.cos(angle) * currentRadius;
       const y = center + Math.sin(angle) * currentRadius;
@@ -418,6 +432,12 @@ export function computeEvolutionSignals({
           scoredFronts.length,
       )
     : null;
+  const trustedOverall = scoredFronts.length
+    ? clampScore(
+        scoredFronts.reduce((sum, item) => sum + Number(item.trusted_score ?? 0), 0) /
+          scoredFronts.length,
+      )
+    : null;
   const totalSamples = fronts.reduce((sum, item) => sum + item.sample_count, 0);
   const confidence = totalSamples
     ? Number(
@@ -443,6 +463,7 @@ export function computeEvolutionSignals({
     snapshot_kind: "estimated_current_snapshot",
     historical_trend: false,
     overall,
+    trusted_overall: trustedOverall,
     fronts,
     agentSignals,
     counts: {

@@ -38,6 +38,9 @@ function MetricInfoPopover({ metric }) {
   const unavailable = metric.missing_sources?.length
     ? metric.missing_sources.join(", ")
     : "nenhuma";
+  const available = metric.available_sources?.length
+    ? metric.available_sources.join(", ")
+    : "nenhuma";
 
   return (
     <details className="relative shrink-0">
@@ -53,12 +56,20 @@ function MetricInfoPopover({ metric }) {
           <dd className="text-white/75">{signalStatusLabel(metric.signal_status)}</dd>
           <dt className="text-white/40">Fonte</dt>
           <dd className="break-words text-white/75">{metric.source}</dd>
+          <dt className="text-white/40">Fontes OK</dt>
+          <dd className="break-words text-white/75">{available}</dd>
+          <dt className="text-white/40">Cobertura</dt>
+          <dd className="text-white/75">{percent(metric.source_coverage)}</dd>
           <dt className="text-white/40">Janela</dt>
           <dd className="break-words text-white/75">{metric.time_window}</dd>
           <dt className="text-white/40">Confiança</dt>
           <dd className="text-white/75">{percent(metric.confidence)}</dd>
           <dt className="text-white/40">Amostra</dt>
           <dd className="text-white/75">{metric.sample_count}</dd>
+          <dt className="text-white/40">Score bruto</dt>
+          <dd className="text-white/75">{scoreLabel(metric.raw_score)}</dd>
+          <dt className="text-white/40">Score confiavel</dt>
+          <dd className="text-white/75">{scoreLabel(metric.trusted_score)}</dd>
           <dt className="text-white/40">Fórmula</dt>
           <dd className="break-all font-mono text-[10px] text-white/65">{metric.formula_version}</dd>
           <dt className="text-white/40">Fontes indisponíveis</dt>
@@ -97,10 +108,10 @@ export default function EvolutionSignalGraph({ signal }) {
         <div className="flex items-center gap-4">
           <div className="text-right">
             <div className="font-mono text-4xl font-black text-cyan-100">
-              {scoreLabel(signal.overall)}
+              {scoreLabel(signal.trusted_overall ?? signal.overall)}
             </div>
             <div className="text-[10px] uppercase tracking-[0.22em] text-white/35">
-              overall estimado
+              indice confiavel
             </div>
             <div className="mt-1 text-[10px] text-white/45">
               {coverage.measured}/{coverage.total} frentes • cobertura {percent(coverage.ratio)}
@@ -139,8 +150,13 @@ export default function EvolutionSignalGraph({ signal }) {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <div className="font-mono text-sm font-black text-cyan-100">
-                  {scoreLabel(item.score)}
+                <div className="text-right">
+                  <div className="font-mono text-sm font-black text-cyan-100">
+                    {scoreLabel(item.trusted_score ?? item.score)}
+                  </div>
+                  <div className="font-mono text-[10px] text-white/35">
+                    bruto {scoreLabel(item.raw_score ?? item.score)}
+                  </div>
                 </div>
                 <MetricInfoPopover metric={item} />
               </div>
@@ -148,7 +164,7 @@ export default function EvolutionSignalGraph({ signal }) {
             <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
               <div
                 className="h-full rounded-full bg-cyan-300"
-                style={{ width: scoreWidth(item.score) }}
+                style={{ width: scoreWidth(item.trusted_score ?? item.score) }}
               />
             </div>
           </div>

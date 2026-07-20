@@ -40,7 +40,9 @@ test("selected proposal detail is not refreshed by the minute polling loop", () 
 });
 
 test("graph uses explicit coverage labels and no native metric tooltip", () => {
-  assert.match(graphSource, /overall estimado/);
+  assert.match(graphSource, /indice confiavel/);
+  assert.match(graphSource, /Score bruto/);
+  assert.match(graphSource, /Score confiavel/);
   assert.match(graphSource, /frentes sem amostra/);
   assert.match(graphSource, /fontes indisponíveis/);
   assert.doesNotMatch(graphSource, /title=\{`status=/);
