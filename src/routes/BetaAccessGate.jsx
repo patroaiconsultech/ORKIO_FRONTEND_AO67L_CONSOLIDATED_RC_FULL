@@ -68,6 +68,20 @@ async function validateAccessCode(code) {
 export default function BetaAccessGate({ children = null }) {
   usePatroaiSeo();
 
+  const authMode = useMemo(() => {
+    if (typeof window === "undefined") return "login";
+
+    const params = new URLSearchParams(window.location.search);
+    return String(params.get("mode") || "login").toLowerCase();
+  }, []);
+
+  const isAuthRoute =
+    typeof window !== "undefined" &&
+    window.location.pathname === "/auth";
+
+  const requiresSpecialCode =
+    !isAuthRoute || authMode === "register";
+
   const [state, setState] = useState("checking");
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
@@ -83,7 +97,13 @@ export default function BetaAccessGate({ children = null }) {
   });
 
   useEffect(() => {
+    if (!requiresSpecialCode) {
+      setState("granted");
+      return undefined;
+    }
+
     let active = true;
+
     getAccessGrantStatus()
       .then((payload) => {
         if (!active) return;
@@ -92,10 +112,11 @@ export default function BetaAccessGate({ children = null }) {
       .catch(() => {
         if (active) setState("denied");
       });
+
     return () => {
       active = false;
     };
-  }, []);
+  }, [requiresSpecialCode]);
 
   async function submitCode(event) {
     event?.preventDefault?.();
@@ -179,6 +200,10 @@ export default function BetaAccessGate({ children = null }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (!requiresSpecialCode && children) {
+    return children;
   }
 
   if (state === "granted" && children) return children;
