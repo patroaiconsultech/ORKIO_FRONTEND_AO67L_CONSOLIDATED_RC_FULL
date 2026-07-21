@@ -1,0 +1,17 @@
+{
+  "package": "ORKIO_FRONTEND_ACCESS_GRANT_TWO_STEP_R17_PATCH_ROOT_UPLOAD",
+  "repository": "patroaiconsultech/ORKIO_FRONTEND_AO67L_CONSOLIDATED_RC_FULL",
+  "target": "src/routes/AuthPage.jsx",
+  "delivery": "deterministic fail-closed patch applicator",
+  "files_added": [
+    "scripts/apply_access_grant_two_step_r17.py",
+    "tests/test_access_grant_two_step_r17.py",
+    "README_ACCESS_GRANT_TWO_STEP_R17.md"
+  ],
+  "files_modified_after_apply": [
+    "src/routes/AuthPage.jsx"
+  ],
+  "files_deleted": [],
+  "focused_tests": "3 passed",
+  "vite_build": "PENDING_REAL_FRONTEND_REPOSITORY"
+}
