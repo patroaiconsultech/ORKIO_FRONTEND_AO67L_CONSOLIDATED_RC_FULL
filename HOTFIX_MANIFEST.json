@@ -1,0 +1,30 @@
+{
+  "package": "ORKIO_FRONTEND_ACCESS_TYPE_STATUS_UX_R16_PATCH_ROOT_UPLOAD",
+  "repository": "patroaiconsultech/ORKIO_FRONTEND_AO67L_CONSOLIDATED_RC_FULL",
+  "target_path": "src/routes/AuthPage.jsx",
+  "base_branch": "main",
+  "base_commit": "NOT_PROVEN",
+  "delivery_type": "deterministic_patch_package",
+  "direct_source_replacement_included": false,
+  "reason": "The complete frontend repository was not included in the uploaded backend hotfix. The patch applicator validates the current source contract and fails closed on drift.",
+  "files_added": [
+    "scripts/apply_access_type_status_ux_r16.py",
+    "tests/test_access_type_status_ux_r16.py",
+    "patches/AUTH_REGISTER_ACCESS_TYPE_STATUS_UX_R16.diff",
+    "README_ACCESS_TYPE_STATUS_UX_R16.md"
+  ],
+  "files_modified_after_apply": [
+    "src/routes/AuthPage.jsx"
+  ],
+  "files_deleted": [],
+  "tests": {
+    "focused": "3 passed",
+    "vite_build": "NOT_EXECUTED_NO_FRONTEND_REPOSITORY"
+  },
+  "governance": {
+    "commit_executed": false,
+    "merge_executed": false,
+    "deploy_executed": false,
+    "human_review_required": true
+  }
+}
