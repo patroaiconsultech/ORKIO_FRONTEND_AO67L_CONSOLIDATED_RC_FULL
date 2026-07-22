@@ -12,6 +12,7 @@ import Contact from "./routes/Contact.jsx";
 import AdminTrademarkCenter from "./routes/AdminTrademarkCenter.jsx";
 import AdminValuationCenter from "./routes/AdminValuationCenter.jsx";
 import AdminEvolutionCenter from "./routes/AdminEvolutionCenter.jsx";
+import AdminAgentEvolutionMap from "./routes/AdminAgentEvolutionMap.jsx";
 import BillingWalletCenter from "./routes/BillingWalletCenter.jsx";
 import PrivacySettings from "./routes/PrivacySettings.jsx";
 import BetaAccessGate from "./routes/BetaAccessGate.jsx";
@@ -45,6 +46,7 @@ export default function App() {
         {/* AO-14B — Admin Evolution Console / PTE entrypoints.
             These routes are governance-only. They must not execute patches. */}
         <Route path="/admin/evolution" element={<AdminEvolutionCenter />} />
+        <Route path="/admin/evolution/agents" element={<BetaAccessGate><AdminAgentEvolutionMap /></BetaAccessGate>} />
         <Route path="/admin/pte" element={<AdminEvolutionCenter />} />
         <Route path="/admin/autoevolucao" element={<AdminEvolutionCenter />} />
 
