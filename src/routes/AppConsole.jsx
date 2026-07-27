@@ -24,6 +24,7 @@ import { useNavigate } from "react-router-dom";
 import { apiFetch, uploadFile, chat, chatStream, transcribeAudio, requestFounderHandoff, getRealtimeClientSecret, startRealtimeSession, startSummitSession, postRealtimeEventsBatch, endRealtimeSession, getRealtimeSession, getSummitSessionScore, submitSummitSessionReview, downloadRealtimeAta as downloadRealtimeAtaFile, downloadDocumentArtifact, guardRealtimeTranscript, getOrionSquadHealth, getOrionSquadPreview, getAgentCapabilities } from "../ui/api.js";
 import { clearSession, clearTenant, getTenant, getToken, getUser, isAdmin, isApproved, setSession, setUser as storeUser, logout } from "../lib/auth.js";
 import { canonicalAgentSlug as registryCanonicalAgentSlug, canonicalAgentDisplayNameFromSlug as registryCanonicalAgentDisplayNameFromSlug, resolveDirectAgentAddressFromMessage as registryResolveDirectAgentAddressFromMessage, resolveAgentTurnRouteFromMessage as registryResolveAgentTurnRouteFromMessage, findAgentByCanonicalSlug as registryFindAgentByCanonicalSlug, canonicalAgentVoiceProfile as registryCanonicalAgentVoiceProfile, buildCanonicalRealtimeAgentInstructions as registryBuildCanonicalRealtimeAgentInstructions } from "../lib/agentRegistry.js";
+import { agentUnavailableMessage, filterSelectableAgents, findAgentAvailabilityBySlug } from "../lib/executableAgentAvailability.mjs";
 import { ORKIO_CANONICAL_VOICE_ID, ORKIO_DEFAULT_TTS_SPEED, ORKIO_DEFAULT_VOICE_ID, ORKIO_VOICES, coerceTtsSpeed, coerceVoiceId } from "../lib/voices.js";
 import TermsModal from "../ui/TermsModal.jsx";
 import PWAInstallPrompt from "../components/PWAInstallPrompt.jsx";
@@ -4785,9 +4786,10 @@ useEffect(() => {
     try {
       const { data } = await apiFetch("/api/agents", { token, org: tenant });
       const list = Array.isArray(data) ? data : [];
+      const selectableList = filterSelectableAgents(list);
 
-      // EFATA777_V3: keep the previous visible roster if a transient fetch returns
-      // empty. The selector must not collapse or lose Orion during reloads.
+      // Preserve the complete availability catalog for explicit unavailable
+      // states, while destination normalization uses executable agents only.
       if (list.length) {
         setAgents(list);
       } else if (!(agents || []).length) {
@@ -4796,14 +4798,17 @@ useEffect(() => {
 
       try {
         const m = new Map();
-        (list.length ? list : (agents || [])).forEach(a => { if (a?.name) m.set(String(a.name).trim(), a.id); });
+        selectableList.forEach(a => { if (a?.name) m.set(String(a.name).trim(), a.id); });
         agentsByNameRef.current = m;
       } catch {}
 
-      // Preserve valid destination state, but do not let mobile PWA keep stale agent ids.
+      // Preserve valid destination state, but never keep a roster-only or
+      // explicitly unavailable agent id as a runtime destination.
       if (Array.isArray(list) && list.length) {
+        const resolveSelectableAgent = (value = "") =>
+          findAgentAvailabilityBySlug(selectableList, value)?.agent || null;
         const normalizedDestination = normalizeDestinationForAvailableAgents({
-          agents: list,
+          agents: selectableList,
           mode: destMode,
           single: destSingle,
           multi: destMulti,
@@ -4812,7 +4817,7 @@ useEffect(() => {
 
         setDestSingle((prev) => {
           const prevId = String(prev || "").trim();
-          const prevStillExists = prevId && Boolean(findAgentByRuntimeIdentity(prevId));
+          const prevStillExists = prevId && Boolean(resolveSelectableAgent(prevId));
           if (prevStillExists) return prev;
           const next = normalizedDestination.single || "";
           return String(prev || "") === next ? prev : next;
@@ -4820,7 +4825,7 @@ useEffect(() => {
 
         setDestMulti((prev) => {
           const prevClean = Array.isArray(prev) ? prev.map((v) => String(v || "").trim()).filter(Boolean) : [];
-          const validPrev = prevClean.map((id) => findAgentByRuntimeIdentity(id)?.id || "").filter(Boolean);
+          const validPrev = prevClean.map((id) => resolveSelectableAgent(id)?.id || "").filter(Boolean);
           if (validPrev.length === prevClean.length && prevClean.length) return prev;
           const next = Array.isArray(normalizedDestination.multi) ? normalizedDestination.multi : [];
           if (JSON.stringify(validPrev) === JSON.stringify(next)) return validPrev;
@@ -16329,7 +16334,8 @@ async function stopRealtime(reason = 'client_stop') {
     ].filter(Boolean).join(" ").toLowerCase();
     return raw.includes("orkio");
   };
-  const visibleAgents = publicBetaOrkioOnly ? agents.filter(isOrkioAgent) : agents;
+  const executableAgents = filterSelectableAgents(agents);
+  const visibleAgents = publicBetaOrkioOnly ? executableAgents.filter(isOrkioAgent) : executableAgents;
   const effectiveDestMode = publicBetaOrkioOnly ? "single" : destMode;
   const manualStickySlugForUi = normalizeManualAuthoritySlug(selectedManualAgentSlug || selectedManualAgentSlugRef.current || "", "");
   const manualStickyLabelForUi = manualStickySlugForUi
@@ -16825,13 +16831,21 @@ async function stopRealtime(reason = 'client_stop') {
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                     {["Team", "Orkio", "Chris", "Orion", "Laura"].map((agentLabel) => {
                       const agentSlug = canonicalAgentSlug(agentLabel);
+                      const availability = findAgentAvailabilityBySlug(agents, agentSlug);
+                      const unavailable = agentSlug !== "team" && !availability.selectable;
                       const activeSlug = normalizeManualAuthoritySlug(selectedManualAgentSlug || selectedManualAgentSlugRef.current || "", "team");
                       const isActive = activeSlug === agentSlug;
                       return (
                         <button
                           key={agentLabel}
                           type="button"
+                          disabled={unavailable}
                           onClick={() => {
+                            if (unavailable) {
+                              setUploadStatus(agentUnavailableMessage(availability));
+                              setTimeout(() => setUploadStatus(""), 2200);
+                              return;
+                            }
                             // PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX:
                             // Capture Team state before any manual slug mutation. Previously
                             // setManualAuthoritySlug(agentSlug) ran first and deactivated the
@@ -16880,10 +16894,11 @@ async function stopRealtime(reason = 'client_stop') {
                           style={{
                             ...styles.quickAgentBtn,
                             ...(isActive ? styles.quickAgentBtnActive : {}),
+                            ...(unavailable ? { opacity: 0.48, cursor: "not-allowed" } : {}),
                           }}
-                          title={`Selecionar ${agentLabel}`}
+                          title={unavailable ? agentUnavailableMessage(availability) : `Selecionar ${agentLabel}`}
                         >
-                          {agentLabel}
+                          {agentLabel}{unavailable ? " · indisponível" : ""}
                         </button>
                       );
                     })}
