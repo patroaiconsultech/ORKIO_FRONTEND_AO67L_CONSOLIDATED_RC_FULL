@@ -25,6 +25,7 @@ import { apiFetch, uploadFile, chat, chatStream, transcribeAudio, requestFounder
 import { clearSession, clearTenant, getTenant, getToken, getUser, isAdmin, isApproved, setSession, setUser as storeUser, logout } from "../lib/auth.js";
 import { canonicalAgentSlug as registryCanonicalAgentSlug, canonicalAgentDisplayNameFromSlug as registryCanonicalAgentDisplayNameFromSlug, resolveDirectAgentAddressFromMessage as registryResolveDirectAgentAddressFromMessage, resolveAgentTurnRouteFromMessage as registryResolveAgentTurnRouteFromMessage, findAgentByCanonicalSlug as registryFindAgentByCanonicalSlug, canonicalAgentVoiceProfile as registryCanonicalAgentVoiceProfile, buildCanonicalRealtimeAgentInstructions as registryBuildCanonicalRealtimeAgentInstructions } from "../lib/agentRegistry.js";
 import { agentUnavailableMessage, filterSelectableAgents, findAgentAvailabilityBySlug } from "../lib/executableAgentAvailability.mjs";
+import { isTraceOnlyTeamChildEvent, normalizeTeamExecutionRequest } from "../lib/teamExecutionContract.mjs";
 import { ORKIO_CANONICAL_VOICE_ID, ORKIO_DEFAULT_TTS_SPEED, ORKIO_DEFAULT_VOICE_ID, ORKIO_VOICES, coerceTtsSpeed, coerceVoiceId } from "../lib/voices.js";
 import TermsModal from "../ui/TermsModal.jsx";
 import PWAInstallPrompt from "../components/PWAInstallPrompt.jsx";
@@ -1176,16 +1177,17 @@ async function consumeChatStream(
     if (ev === "execution") {
       onExecution?.(payload);
     }
-    if (ev === "agent_started" || ev === "orchestrator_merge") {
+    if (["team_plan", "agent_started", "orchestrator_merge", "consolidation"].includes(ev)) {
       onExecution?.({ ...(payload || {}), event: ev, step: ev });
     }
     if (ev === "agent_chunk") {
+      const traceOnlyTeamChild = isTraceOnlyTeamChildEvent(payload);
       const delta = String(payload?.delta ?? payload?.content ?? payload?.text ?? "");
-      if (delta) {
+      if (delta && !traceOnlyTeamChild) {
         draftText += delta;
         firstUsefulChunkAt = firstUsefulChunkAt || Date.now();
+        onChunk?.(payload, draftText);
       }
-      onChunk?.(payload, draftText);
       onExecution?.({ ...(payload || {}), event: ev, step: ev });
     }
     if (ev === "chunk") {
@@ -1197,7 +1199,10 @@ async function consumeChatStream(
       onChunk?.(payload, draftText);
     }
     if (ev === "agent_done") {
-      const agentDoneText = extractAssistantVisibleTextFromPayload(payload);
+      const traceOnlyTeamChild = isTraceOnlyTeamChildEvent(payload);
+      const agentDoneText = traceOnlyTeamChild
+        ? ""
+        : extractAssistantVisibleTextFromPayload(payload);
       if (agentDoneText && (!draftText || agentDoneText.length > draftText.length)) {
         draftText = agentDoneText;
         firstUsefulChunkAt = firstUsefulChunkAt || Date.now();
@@ -6385,7 +6390,7 @@ function formatAgentOptionLabel(agent) {
 
   function buildDestinationContract(rawMessage = "", hostAgentId = null) {
     const manualContract = buildManualAgentAuthorityContract(rawMessage, hostAgentId, { realtime: false });
-    if (manualContract) return manualContract;
+    if (manualContract) return normalizeTeamExecutionRequest(manualContract);
 
     const structuredExecutiveResponseControl = isStructuredExecutiveTaskPrompt(rawMessage)
       ? AO69B_STRUCTURED_EXECUTIVE_RESPONSE_CONTROL
@@ -6440,7 +6445,7 @@ function formatAgentOptionLabel(agent) {
     ].map((name) => String(name || "").trim()).filter(Boolean)));
 
     if (primarySlug) {
-      return {
+      const routedContract = {
         dest_mode: "team",
         agent_id: primaryAgent?.id || null,
         agent_ids: routeAgents.map((agent) => String(agent.id)).filter(Boolean),
@@ -6451,9 +6456,12 @@ function formatAgentOptionLabel(agent) {
         multi_agent_turn: Boolean(turnRoute?.multi_agent_turn || routeSlugs.length > 1),
         response_control: structuredExecutiveResponseControl || turnRoute?.response_control || (routeSlugs.length > 1 ? "sequenced_team_turns" : "single_turn"),
       };
+      return routedContract.multi_agent_turn
+        ? normalizeTeamExecutionRequest(routedContract)
+        : routedContract;
     }
 
-    return {
+    const fallbackContract = {
       dest_mode: mode,
       agent_id: hostAgentId || null,
       agent_ids: mode === "multi" ? multiIds : [],
@@ -6461,9 +6469,12 @@ function formatAgentOptionLabel(agent) {
       target_agent_slugs: [],
       visible_agent: mode === "single" ? String(singleAgent?.name || "") : "",
       requested_agent_names: mentionedNames,
-      multi_agent_turn: false,
+      multi_agent_turn: mode === "team",
       response_control: structuredExecutiveResponseControl || (mode === "multi" ? "manual_multi" : "single_turn"),
     };
+    return mode === "team"
+      ? normalizeTeamExecutionRequest(fallbackContract)
+      : fallbackContract;
   }
 
 
@@ -7617,6 +7628,14 @@ async function sendMessage(presetMsg = null, opts = {}) {
             target_agent_slug: destinationContract.target_agent_slug,
             manual_target_slug: destinationContract.manual_target_slug || destinationContract.target_agent_slug || null,
             target_agent_slugs: destinationContract.target_agent_slugs,
+          target_kind: destinationContract.target_kind,
+          target_team_slug: destinationContract.target_team_slug,
+          orchestrator_slug: destinationContract.orchestrator_slug,
+          team_execution_version: destinationContract.team_execution_version,
+          ownership_locked: destinationContract.ownership_locked,
+          requested_agent: destinationContract.requested_agent,
+          resolved_agent: destinationContract.resolved_agent,
+          turn_owner: destinationContract.turn_owner,
             requested_agent_names: destinationContract.requested_agent_names,
             manual_agent_lock: Boolean(destinationContract.manual_agent_lock),
             manual_agent_source: destinationContract.manual_agent_source || "",
@@ -7757,6 +7776,14 @@ async function sendMessage(presetMsg = null, opts = {}) {
             target_agent_slug: destinationContract.target_agent_slug,
             manual_target_slug: destinationContract.manual_target_slug || destinationContract.target_agent_slug || null,
             target_agent_slugs: destinationContract.target_agent_slugs,
+          target_kind: destinationContract.target_kind,
+          target_team_slug: destinationContract.target_team_slug,
+          orchestrator_slug: destinationContract.orchestrator_slug,
+          team_execution_version: destinationContract.team_execution_version,
+          ownership_locked: destinationContract.ownership_locked,
+          requested_agent: destinationContract.requested_agent,
+          resolved_agent: destinationContract.resolved_agent,
+          turn_owner: destinationContract.turn_owner,
             requested_agent_names: destinationContract.requested_agent_names,
             multi_agent_turn: destinationContract.multi_agent_turn,
             response_control: destinationContract.response_control,

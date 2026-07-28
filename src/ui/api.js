@@ -12,6 +12,7 @@ import {
   getToken as readToken,
 } from "../lib/auth.js";
 import { resolveExecutiveResponseControl } from "../lib/executivePromptDetector.js";
+import { normalizeTeamExecutionRequest } from "../lib/teamExecutionContract.mjs";
 
 const PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_VERSION = "PATCH_33_REV_B_REALTIME_PROVIDER_PAYLOAD_SANITIZER_V1";
 const PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX_VERSION = "PATCH_33_REV_C_LIVE_AGENT_SWITCH_RUNTIME_FIX_V1";
@@ -174,8 +175,9 @@ async function parseResponseBody(response) {
 }
 
 function cleanChatRequestPayload(payload = {}) {
+  const canonicalPayload = normalizeTeamExecutionRequest(payload || {});
   const out = {};
-  for (const [key, value] of Object.entries(payload || {})) {
+  for (const [key, value] of Object.entries(canonicalPayload)) {
     if (value === undefined || value === null) continue;
     if (Array.isArray(value)) {
       const clean = value.map((item) => String(item || "").trim()).filter(Boolean);
@@ -499,6 +501,14 @@ export const chat = ({
   target_agent_slug = null,
   manual_target_slug = null,
   target_agent_slugs = null,
+  target_kind = null,
+  target_team_slug = null,
+  orchestrator_slug = null,
+  team_execution_version = null,
+  ownership_locked = null,
+  requested_agent = null,
+  resolved_agent = null,
+  turn_owner = null,
   requested_agent_names = null,
   multi_agent_turn = null,
   response_control = null,
@@ -548,6 +558,14 @@ export const chat = ({
       target_agent_slug,
         manual_target_slug,
       target_agent_slugs,
+      target_kind,
+      target_team_slug,
+      orchestrator_slug,
+      team_execution_version,
+      ownership_locked,
+      requested_agent,
+      resolved_agent,
+      turn_owner,
       requested_agent_names,
       multi_agent_turn,
       response_control: resolveExecutiveResponseControl(message, response_control),
@@ -594,6 +612,14 @@ export async function chatStream({
   target_agent_slug = null,
   manual_target_slug = null,
   target_agent_slugs = null,
+  target_kind = null,
+  target_team_slug = null,
+  orchestrator_slug = null,
+  team_execution_version = null,
+  ownership_locked = null,
+  requested_agent = null,
+  resolved_agent = null,
+  turn_owner = null,
   requested_agent_names = null,
   multi_agent_turn = null,
   response_control = null,
@@ -655,6 +681,14 @@ export async function chatStream({
         target_agent_slug,
         manual_target_slug,
         target_agent_slugs,
+        target_kind,
+        target_team_slug,
+        orchestrator_slug,
+        team_execution_version,
+        ownership_locked,
+        requested_agent,
+        resolved_agent,
+        turn_owner,
         requested_agent_names,
         multi_agent_turn,
         response_control: resolveExecutiveResponseControl(message, response_control),
