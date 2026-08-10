@@ -1,0 +1,63 @@
+{
+  "schema_version": 3,
+  "candidate": "EFATA777_FUNCTIONAL_PRE_OIDC_ALPHA3",
+  "status": "SOURCE_PASS_EXACT_BUILD_PENDING",
+  "toolchain_observed": {
+    "node": "v22.16.0",
+    "npm": "10.9.2",
+    "required_node": "20.20.2",
+    "required_npm": "10.8.2",
+    "exact_required_toolchain_executed": false
+  },
+  "lockfile": {
+    "present": true,
+    "lockfile_version": 3,
+    "package_count": 118,
+    "registry": "https://registry.npmjs.org/",
+    "verification": "PASS",
+    "sha256": "8a59d8b95b94382ff31ea91698c4cac38816c85c8c738152d874cc2a40aa7b10"
+  },
+  "tests": {
+    "node_static_contracts": {
+      "status": "PASS",
+      "passed": 80,
+      "failed": 0
+    },
+    "typescript_transpile_syntax": {
+      "status": "PASS",
+      "files": 14
+    },
+    "server_syntax": "PASS",
+    "service_worker_syntax": "PASS",
+    "json_parse": "PASS",
+    "yaml_parse": "PASS",
+    "secret_scan": "PASS"
+  },
+  "functional_source": {
+    "thread_wiring": "IMPLEMENTED",
+    "sse_client": "IMPLEMENTED",
+    "terminal_release": "IMPLEMENTED",
+    "attachments_client": "IMPLEMENTED_GOVERNANCE_DISABLED",
+    "invitation_flow": "IMPLEMENTED",
+    "oidc_authorization_code_pkce": "IMPLEMENTED",
+    "oidc_callback": "IMPLEMENTED",
+    "oidc_logout": "IMPLEMENTED",
+    "token_expiry_and_401_cleanup": "IMPLEMENTED"
+  },
+  "not_executed": {
+    "npm_ci": "INTERNAL_REGISTRY_E404_FOR_YALLIST",
+    "vite_build": "BLOCKED_BY_NPM_CI",
+    "verify_dist": "BLOCKED_BY_VITE_BUILD",
+    "browser_oidc_smoke": "PROVIDER_NOT_CONFIGURED",
+    "device_matrix": "NOT_EXECUTED",
+    "deploy": "NOT_EXECUTED"
+  },
+  "governance": {
+    "remote_write_executed": false,
+    "commit_executed": false,
+    "merge_executed": false,
+    "deploy_executed": false,
+    "migration_executed": false,
+    "human_approval_required": true
+  }
+}

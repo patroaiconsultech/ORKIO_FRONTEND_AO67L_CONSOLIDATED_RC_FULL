@@ -1,0 +1,20 @@
+{
+  "product": "ORKIO v2 Premium",
+  "component": "frontend",
+  "version": "2.0.0-alpha.2.2",
+  "channel": "github-upload-and-build-materialization-candidate",
+  "generated_at": "2026-08-06T13:27:00-03:00",
+  "exact_source_baseline": "ORKIO_FRONTEND_V2_PREMIUM_PWA_ANDROID_IOS_ALPHA2_ROOT_READY.zip",
+  "exact_source_baseline_sha256": "1566a41c97ca73b7e32c901f330619fd5c7e8e416fe74599c2f1a34c3bd644ff",
+  "master_alpha1_reference_sha256": "2529903bb068ad5bc1a5b2cb023467c78096fc1f3d293131cf6c510a15d56e19",
+  "ao01_input_sha256": "7e2295e07d30f1069dcb8b98a4bc394ab2b24bf13faa1bfc6c34dd7d0c048ba0",
+  "alpha2_1_primary_zip_available": false,
+  "reconstruction_basis": "Alpha 2 exact bytes plus AO-01 Alpha 2.1 behavior and build-gate requirements",
+  "node_required": "20.20.2",
+  "npm_required": "10.8.2",
+  "package_lock_present": false,
+  "package_lock_materialization": "manual GitHub workflow artifact; no automatic commit",
+  "production_approved": false,
+  "deploy_executed": false,
+  "human_approval_required": true
+}

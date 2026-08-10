@@ -1,0 +1,494 @@
+
+> orkio-v2-premium-frontend@2.0.0-alpha.2.2 test
+> node --test tests/*.test.mjs
+
+TAP version 13
+# Subtest: invite and composer controls remain in the console
+ok 1 - invite and composer controls remain in the console
+  ---
+  duration_ms: 0.71309
+  type: 'test'
+  ...
+# Subtest: frontend source contains no server-side secrets
+ok 2 - frontend source contains no server-side secrets
+  ---
+  duration_ms: 1.124441
+  type: 'test'
+  ...
+# Subtest: api exposes json, form and stream helpers
+ok 3 - api exposes json, form and stream helpers
+  ---
+  duration_ms: 1.372379
+  type: 'test'
+  ...
+# Subtest: form upload never sets Content-Type manually
+ok 4 - form upload never sets Content-Type manually
+  ---
+  duration_ms: 0.265825
+  type: 'test'
+  ...
+# Subtest: json helper only sets Content-Type when a body exists
+ok 5 - json helper only sets Content-Type when a body exists
+  ---
+  duration_ms: 0.136413
+  type: 'test'
+  ...
+# Subtest: api errors carry status and code
+ok 6 - api errors carry status and code
+  ---
+  duration_ms: 0.095612
+  type: 'test'
+  ...
+# Subtest: 401 clears the stored token
+ok 7 - 401 clears the stored token
+  ---
+  duration_ms: 0.323731
+  type: 'test'
+  ...
+# Subtest: token can be written, read and cleared
+ok 8 - token can be written, read and cleared
+  ---
+  duration_ms: 0.111325
+  type: 'test'
+  ...
+# Subtest: missing api base url is reported explicitly
+ok 9 - missing api base url is reported explicitly
+  ---
+  duration_ms: 3.146306
+  type: 'test'
+  ...
+# Subtest: stream parses status, chunk, error and done
+ok 10 - stream parses status, chunk, error and done
+  ---
+  duration_ms: 0.161871
+  type: 'test'
+  ...
+# Subtest: stream always reaches a terminal state
+ok 11 - stream always reaches a terminal state
+  ---
+  duration_ms: 0.357791
+  type: 'test'
+  ...
+# Subtest: stream uses fetch with Authorization instead of EventSource
+ok 12 - stream uses fetch with Authorization instead of EventSource
+  ---
+  duration_ms: 0.319245
+  type: 'test'
+  ...
+# Subtest: path parameters are encoded
+ok 13 - path parameters are encoded
+  ---
+  duration_ms: 0.140228
+  type: 'test'
+  ...
+# Subtest: new conversation button is wired
+ok 14 - new conversation button is wired
+  ---
+  duration_ms: 0.086579
+  type: 'test'
+  ...
+# Subtest: send button is wired and guarded
+ok 15 - send button is wired and guarded
+  ---
+  duration_ms: 0.816944
+  type: 'test'
+  ...
+# Subtest: file input is wired
+ok 16 - file input is wired
+  ---
+  duration_ms: 0.135962
+  type: 'test'
+  ...
+# Subtest: thread list is rendered and selectable
+ok 17 - thread list is rendered and selectable
+  ---
+  duration_ms: 0.067651
+  type: 'test'
+  ...
+# Subtest: voice button explains why it is disabled
+ok 18 - voice button explains why it is disabled
+  ---
+  duration_ms: 0.059108
+  type: 'test'
+  ...
+# Subtest: invite has error handling
+ok 19 - invite has error handling
+  ---
+  duration_ms: 0.05379
+  type: 'test'
+  ...
+# Subtest: errors are surfaced with role alert
+ok 20 - errors are surfaced with role alert
+  ---
+  duration_ms: 0.049924
+  type: 'test'
+  ...
+# Subtest: known backend error codes are translated
+ok 21 - known backend error codes are translated
+  ---
+  duration_ms: 0.07365
+  type: 'test'
+  ...
+# Subtest: console does not use window.alert
+ok 22 - console does not use window.alert
+  ---
+  duration_ms: 0.05378
+  type: 'test'
+  ...
+# Subtest: streaming text is announced politely
+ok 23 - streaming text is announced politely
+  ---
+  duration_ms: 0.048623
+  type: 'test'
+  ...
+# Subtest: invite route exists
+ok 24 - invite route exists
+  ---
+  duration_ms: 0.045388
+  type: 'test'
+  ...
+# Subtest: invite route requires authentication before accepting
+ok 25 - invite route requires authentication before accepting
+  ---
+  duration_ms: 0.046038
+  type: 'test'
+  ...
+# Subtest: invite route redirects to the thread on success
+ok 26 - invite route redirects to the thread on success
+  ---
+  duration_ms: 0.044716
+  type: 'test'
+  ...
+# Subtest: no secrets are present in the new sources
+ok 27 - no secrets are present in the new sources
+  ---
+  duration_ms: 0.139648
+  type: 'test'
+  ...
+# Subtest: token is never placed in a URL
+ok 28 - token is never placed in a URL
+  ---
+  duration_ms: 0.066478
+  type: 'test'
+  ...
+# Subtest: toolchain is exact and recorded
+ok 29 - toolchain is exact and recorded
+  ---
+  duration_ms: 2.477582
+  type: 'test'
+  ...
+# Subtest: lockfile workflow is manual and readonly
+ok 30 - lockfile workflow is manual and readonly
+  ---
+  duration_ms: 0.314718
+  type: 'test'
+  ...
+# Subtest: lockfile workflow uploads review evidence
+ok 31 - lockfile workflow uploads review evidence
+  ---
+  duration_ms: 0.301628
+  type: 'test'
+  ...
+# Subtest: normal workflow requires package-lock before npm ci
+ok 32 - normal workflow requires package-lock before npm ci
+  ---
+  duration_ms: 0.205225
+  type: 'test'
+  ...
+# Subtest: Docker build is fail-closed on package-lock
+ok 33 - Docker build is fail-closed on package-lock
+  ---
+  duration_ms: 0.286506
+  type: 'test'
+  ...
+# Subtest: lock verifier restricts resolved packages to official registry
+ok 34 - lock verifier restricts resolved packages to official registry
+  ---
+  duration_ms: 0.150894
+  type: 'test'
+  ...
+# Subtest: lock verifier requires integrity and lockfile version 3
+ok 35 - lock verifier requires integrity and lockfile version 3
+  ---
+  duration_ms: 0.203172
+  type: 'test'
+  ...
+# Subtest: workflows pin actions to full commits
+ok 36 - workflows pin actions to full commits
+  ---
+  duration_ms: 0.194098
+  type: 'test'
+  ...
+# Subtest: no workflow auto-commits generated lockfile
+ok 37 - no workflow auto-commits generated lockfile
+  ---
+  duration_ms: 0.519211
+  type: 'test'
+  ...
+# Subtest: landing and app are separate routes
+ok 38 - landing and app are separate routes
+  ---
+  duration_ms: 1.137541
+  type: 'test'
+  ...
+# Subtest: landing contains premium brand and trust sections
+ok 39 - landing contains premium brand and trust sections
+  ---
+  duration_ms: 0.191865
+  type: 'test'
+  ...
+# Subtest: install UX includes Android prompt and iOS instructions
+ok 40 - install UX includes Android prompt and iOS instructions
+  ---
+  duration_ms: 0.153087
+  type: 'test'
+  ...
+# Subtest: responsive layout includes safe areas and touch targets
+ok 41 - responsive layout includes safe areas and touch targets
+  ---
+  duration_ms: 0.165446
+  type: 'test'
+  ...
+# Subtest: OIDC uses Authorization Code with PKCE S256
+ok 42 - OIDC uses Authorization Code with PKCE S256
+  ---
+  duration_ms: 1.58131
+  type: 'test'
+  ...
+# Subtest: OIDC SPA never contains a client secret
+ok 43 - OIDC SPA never contains a client secret
+  ---
+  duration_ms: 0.353666
+  type: 'test'
+  ...
+# Subtest: OIDC validates state and nonce
+ok 44 - OIDC validates state and nonce
+  ---
+  duration_ms: 0.155411
+  type: 'test'
+  ...
+# Subtest: OIDC return path is same-origin only
+ok 45 - OIDC return path is same-origin only
+  ---
+  duration_ms: 0.132066
+  type: 'test'
+  ...
+# Subtest: OIDC token exchange is form encoded
+ok 46 - OIDC token exchange is form encoded
+  ---
+  duration_ms: 0.226287
+  type: 'test'
+  ...
+# Subtest: OIDC callback route exists
+ok 47 - OIDC callback route exists
+  ---
+  duration_ms: 0.123764
+  type: 'test'
+  ...
+# Subtest: access token expiry is enforced
+ok 48 - access token expiry is enforced
+  ---
+  duration_ms: 0.201139
+  type: 'test'
+  ...
+# Subtest: 401 clears auth and emits auth-required event
+ok 49 - 401 clears auth and emits auth-required event
+  ---
+  duration_ms: 0.110584
+  type: 'test'
+  ...
+# Subtest: stream configuration failure still reaches terminal finally
+ok 50 - stream configuration failure still reaches terminal finally
+  ---
+  duration_ms: 0.589977
+  type: 'test'
+  ...
+# Subtest: console always releases sending state in finally
+ok 51 - console always releases sending state in finally
+  ---
+  duration_ms: 0.341227
+  type: 'test'
+  ...
+# Subtest: console blocks product actions before authentication
+ok 52 - console blocks product actions before authentication
+  ---
+  duration_ms: 0.172286
+  type: 'test'
+  ...
+# Subtest: landing starts login when OIDC is configured
+ok 53 - landing starts login when OIDC is configured
+  ---
+  duration_ms: 0.08101
+  type: 'test'
+  ...
+# Subtest: invite preserves target through authentication
+ok 54 - invite preserves target through authentication
+  ---
+  duration_ms: 0.059999
+  type: 'test'
+  ...
+# Subtest: auth storage uses sessionStorage and never localStorage
+ok 55 - auth storage uses sessionStorage and never localStorage
+  ---
+  duration_ms: 0.066018
+  type: 'test'
+  ...
+# Subtest: manifest supports Android installability fields
+ok 56 - manifest supports Android installability fields
+  ---
+  duration_ms: 0.675293
+  type: 'test'
+  ...
+# Subtest: manifest includes dedicated maskable icons
+ok 57 - manifest includes dedicated maskable icons
+  ---
+  duration_ms: 0.146168
+  type: 'test'
+  ...
+# Subtest: iOS metadata and apple touch icon are present
+ok 58 - iOS metadata and apple touch icon are present
+  ---
+  duration_ms: 0.163102
+  type: 'test'
+  ...
+# Subtest: service worker never caches protected surfaces
+ok 59 - service worker never caches protected surfaces
+  ---
+  duration_ms: 0.256922
+  type: 'test'
+  ...
+# Subtest: service worker provides public offline fallback
+ok 60 - service worker provides public offline fallback
+  ---
+  duration_ms: 0.111076
+  type: 'test'
+  ...
+# Subtest: service worker update is user-controlled
+ok 61 - service worker update is user-controlled
+  ---
+  duration_ms: 0.271584
+  type: 'test'
+  ...
+# Subtest: service worker and manifest files exist
+ok 62 - service worker and manifest files exist
+  ---
+  duration_ms: 0.207608
+  type: 'test'
+  ...
+# Subtest: server serves manifest and service worker with correct controls
+ok 63 - server serves manifest and service worker with correct controls
+  ---
+  duration_ms: 0.695403
+  type: 'test'
+  ...
+# Subtest: server emits baseline security headers
+ok 64 - server emits baseline security headers
+  ---
+  duration_ms: 0.17515
+  type: 'test'
+  ...
+# Subtest: server keeps SPA fallback and blocks path traversal
+ok 65 - server keeps SPA fallback and blocks path traversal
+  ---
+  duration_ms: 0.110034
+  type: 'test'
+  ...
+# Subtest: update targets registration.waiting
+ok 66 - update targets registration.waiting
+  ---
+  duration_ms: 0.824245
+  type: 'test'
+  ...
+# Subtest: controllerchange listener is installed before SKIP_WAITING
+ok 67 - controllerchange listener is installed before SKIP_WAITING
+  ---
+  duration_ms: 0.218916
+  type: 'test'
+  ...
+# Subtest: timeout fails without page reload
+ok 68 - timeout fails without page reload
+  ---
+  duration_ms: 0.106418
+  type: 'test'
+  ...
+# Subtest: banner reloads only after activation promise resolves
+ok 69 - banner reloads only after activation promise resolves
+  ---
+  duration_ms: 0.090634
+  type: 'test'
+  ...
+# Subtest: banner prevents duplicate reload
+ok 70 - banner prevents duplicate reload
+  ---
+  duration_ms: 0.088401
+  type: 'test'
+  ...
+# Subtest: controlled update states are explicit
+ok 71 - controlled update states are explicit
+  ---
+  duration_ms: 0.131976
+  type: 'test'
+  ...
+# Subtest: registration dispatches the actual waiting worker
+ok 72 - registration dispatches the actual waiting worker
+  ---
+  duration_ms: 0.138336
+  type: 'test'
+  ...
+# Subtest: cache model is explicit allowlist
+ok 73 - cache model is explicit allowlist
+  ---
+  duration_ms: 0.088732
+  type: 'test'
+  ...
+# Subtest: protected paths are rejected before allowlist
+ok 74 - protected paths are rejected before allowlist
+  ---
+  duration_ms: 0.281649
+  type: 'test'
+  ...
+# Subtest: authorization requests are not intercepted
+ok 75 - authorization requests are not intercepted
+  ---
+  duration_ms: 0.348758
+  type: 'test'
+  ...
+# Subtest: private and no-store responses are not cached
+ok 76 - private and no-store responses are not cached
+  ---
+  duration_ms: 0.143012
+  type: 'test'
+  ...
+# Subtest: vary authorization and cookie responses are not cached
+ok 77 - vary authorization and cookie responses are not cached
+  ---
+  duration_ms: 0.079378
+  type: 'test'
+  ...
+# Subtest: old ORKIO caches are removed
+ok 78 - old ORKIO caches are removed
+  ---
+  duration_ms: 0.063264
+  type: 'test'
+  ...
+# Subtest: non-GET and cross-origin requests are not intercepted
+ok 79 - non-GET and cross-origin requests are not intercepted
+  ---
+  duration_ms: 0.056354
+  type: 'test'
+  ...
+# Subtest: service worker uses public offline fallback
+ok 80 - service worker uses public offline fallback
+  ---
+  duration_ms: 0.163082
+  type: 'test'
+  ...
+1..80
+# tests 80
+# suites 0
+# pass 80
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 182.216278

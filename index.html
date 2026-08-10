@@ -1,99 +1,40 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-    <meta name="theme-color" content="#030713" />
-    <meta name="color-scheme" content="dark light" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="application-name" content="Grupo Patroai" />
-    <meta name="msapplication-TileColor" content="#030713" />
-    <meta name="msapplication-TileImage" content="/icons/patroai-pwa-192-v18.png" />
-    <meta name="msapplication-tap-highlight" content="no" />
-    <meta name="format-detection" content="telephone=no" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-title" content="Grupo Patroai" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-
-    <title>Grupo Patroai | Consultech, Holding e AI Factory</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0B0F14" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="application-name" content="ORKIO" />
     <meta
       name="description"
-      content="Grupo Patroai atua como Consultech, Holding e AI Factory, conectando consultoria estratégica, inteligência artificial aplicada, ESG, novos negócios e relacionamento qualificado."
+      content="ORKIO — inteligência orquestrada, auditável e governada para decisões e operações."
     />
-
-    <link rel="canonical" href="https://www.patroai.com/" />
-    <link rel="alternate" hreflang="pt-BR" href="https://www.patroai.com/" />
-    <link rel="alternate" hreflang="en" href="https://www.patroai.com/en" />
-    <link rel="alternate" hreflang="x-default" href="https://www.patroai.com/" />
-
-    <!-- EFATA777 V20: polimento pós-auditoria de usuário; PWA V19/V20 mantido network-only. -->
-    <link rel="preconnect" href="https://cdn.tailwindcss.com" crossorigin />
-    <link rel="dns-prefetch" href="//cdn.tailwindcss.com" />
-
-    <link rel="icon" href="/favicon.ico?v=20" sizes="any" />
-    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png?v=20" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192x192.png?v=20" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=20" />
-    <link rel="manifest" href="/manifest.webmanifest?v=20" />
-
-    <meta property="og:title" content="Grupo Patroai | Consultech, Holding e AI Factory" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="ORKIO" />
     <meta
-      property="og:description"
-      content="Consultoria estratégica, IA aplicada, ESG, novos negócios e captação qualificada para empresas, investidores e consultores associados."
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
     />
-    <meta property="og:url" content="https://www.patroai.com/" />
-    <meta property="og:type" content="website" />
-    <meta property="og:locale" content="pt_BR" />
-    <meta property="og:site_name" content="Grupo Patroai" />
-    <meta property="og:image" content="https://www.patroai.com/patroai-assets/logo-patroai-novo.png" />
-    <meta property="og:image:alt" content="Grupo Patroai" />
-
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Grupo Patroai | Consultech, Holding e AI Factory" />
-    <meta
-      name="twitter:description"
-      content="Consultoria estratégica, IA aplicada, ESG, novos negócios e captação qualificada para empresas, investidores e consultores associados."
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="msapplication-TileColor" content="#0B0F14" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icons/orkio-48.png" sizes="48x48" />
+    <link
+      rel="apple-touch-icon"
+      href="/icons/apple-touch-icon-180.png"
+      sizes="180x180"
     />
-    <meta name="twitter:image" content="https://www.patroai.com/patroai-assets/logo-patroai-novo.png" />
-    <meta name="twitter:image:alt" content="Grupo Patroai" />
-
-    <script type="application/ld+json" data-seo-id="patroai-organization">
-      {
-        "@context": "https://schema.org",
-        "@type": "Organization",
-        "name": "Grupo Patroai",
-        "legalName": "PATROAI CONSULTECH LTDA",
-        "url": "https://www.patroai.com/",
-        "logo": "https://www.patroai.com/patroai-assets/logo-patroai-novo.png",
-        "slogan": "Consultech • Holding • AI Factory",
-        "description": "O Grupo Patroai conecta consultoria estratégica, tecnologia aplicada, inteligência artificial, ESG e desenvolvimento de novos negócios."
-      }
-    </script>
-
-
-
-    <script>window.__PATROAI_PWA_VERSION__ = "v20-polish-user-audit";</script>
-
-    <!-- EFATA777 V20: Tailwind CDN mantido temporariamente para preservar estabilidade visual; migração local fica para patch premium isolado. -->
-    <script>
-      window.tailwind = window.tailwind || {};
-      window.tailwind.config = {
-        theme: {
-          extend: {
-            fontFamily: {
-              sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"]
-            }
-          }
-        }
-      };
-    </script>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>ORKIO — Onde a inteligência encontra harmonia</title>
   </head>
-
   <body>
+    <noscript>Ative o JavaScript para usar a ORKIO.</noscript>
     <div id="root"></div>
     <script src="/env.js"></script>
-    <script type="module" src="/src/main.jsx"></script>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

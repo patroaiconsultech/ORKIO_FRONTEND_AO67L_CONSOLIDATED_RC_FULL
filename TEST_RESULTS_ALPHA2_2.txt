@@ -1,0 +1,250 @@
+TAP version 13
+# Subtest: invite and composer controls remain in the console
+ok 1 - invite and composer controls remain in the console
+  ---
+  duration_ms: 0.785988
+  type: 'test'
+  ...
+# Subtest: frontend source contains no server-side secrets
+ok 2 - frontend source contains no server-side secrets
+  ---
+  duration_ms: 0.374106
+  type: 'test'
+  ...
+# Subtest: toolchain is exact and recorded
+ok 3 - toolchain is exact and recorded
+  ---
+  duration_ms: 1.425568
+  type: 'test'
+  ...
+# Subtest: lockfile workflow is manual and readonly
+ok 4 - lockfile workflow is manual and readonly
+  ---
+  duration_ms: 0.248119
+  type: 'test'
+  ...
+# Subtest: lockfile workflow uploads review evidence
+ok 5 - lockfile workflow uploads review evidence
+  ---
+  duration_ms: 0.256601
+  type: 'test'
+  ...
+# Subtest: normal workflow requires package-lock before npm ci
+ok 6 - normal workflow requires package-lock before npm ci
+  ---
+  duration_ms: 0.180408
+  type: 'test'
+  ...
+# Subtest: Docker build is fail-closed on package-lock
+ok 7 - Docker build is fail-closed on package-lock
+  ---
+  duration_ms: 0.215199
+  type: 'test'
+  ...
+# Subtest: lock verifier restricts resolved packages to official registry
+ok 8 - lock verifier restricts resolved packages to official registry
+  ---
+  duration_ms: 0.098106
+  type: 'test'
+  ...
+# Subtest: lock verifier requires integrity and lockfile version 3
+ok 9 - lock verifier requires integrity and lockfile version 3
+  ---
+  duration_ms: 0.171094
+  type: 'test'
+  ...
+# Subtest: workflows pin actions to full commits
+ok 10 - workflows pin actions to full commits
+  ---
+  duration_ms: 0.14843
+  type: 'test'
+  ...
+# Subtest: no workflow auto-commits generated lockfile
+ok 11 - no workflow auto-commits generated lockfile
+  ---
+  duration_ms: 0.433764
+  type: 'test'
+  ...
+# Subtest: landing and app are separate routes
+ok 12 - landing and app are separate routes
+  ---
+  duration_ms: 0.672529
+  type: 'test'
+  ...
+# Subtest: landing contains premium brand and trust sections
+ok 13 - landing contains premium brand and trust sections
+  ---
+  duration_ms: 0.133238
+  type: 'test'
+  ...
+# Subtest: install UX includes Android prompt and iOS instructions
+ok 14 - install UX includes Android prompt and iOS instructions
+  ---
+  duration_ms: 0.093699
+  type: 'test'
+  ...
+# Subtest: responsive layout includes safe areas and touch targets
+ok 15 - responsive layout includes safe areas and touch targets
+  ---
+  duration_ms: 0.156442
+  type: 'test'
+  ...
+# Subtest: manifest supports Android installability fields
+ok 16 - manifest supports Android installability fields
+  ---
+  duration_ms: 0.671798
+  type: 'test'
+  ...
+# Subtest: manifest includes dedicated maskable icons
+ok 17 - manifest includes dedicated maskable icons
+  ---
+  duration_ms: 0.240418
+  type: 'test'
+  ...
+# Subtest: iOS metadata and apple touch icon are present
+ok 18 - iOS metadata and apple touch icon are present
+  ---
+  duration_ms: 0.170493
+  type: 'test'
+  ...
+# Subtest: service worker never caches protected surfaces
+ok 19 - service worker never caches protected surfaces
+  ---
+  duration_ms: 0.312274
+  type: 'test'
+  ...
+# Subtest: service worker provides public offline fallback
+ok 20 - service worker provides public offline fallback
+  ---
+  duration_ms: 0.111936
+  type: 'test'
+  ...
+# Subtest: service worker update is user-controlled
+ok 21 - service worker update is user-controlled
+  ---
+  duration_ms: 0.144124
+  type: 'test'
+  ...
+# Subtest: service worker and manifest files exist
+ok 22 - service worker and manifest files exist
+  ---
+  duration_ms: 0.205956
+  type: 'test'
+  ...
+# Subtest: server serves manifest and service worker with correct controls
+ok 23 - server serves manifest and service worker with correct controls
+  ---
+  duration_ms: 0.700891
+  type: 'test'
+  ...
+# Subtest: server emits baseline security headers
+ok 24 - server emits baseline security headers
+  ---
+  duration_ms: 0.173818
+  type: 'test'
+  ...
+# Subtest: server keeps SPA fallback and blocks path traversal
+ok 25 - server keeps SPA fallback and blocks path traversal
+  ---
+  duration_ms: 0.105767
+  type: 'test'
+  ...
+# Subtest: update targets registration.waiting
+ok 26 - update targets registration.waiting
+  ---
+  duration_ms: 0.779037
+  type: 'test'
+  ...
+# Subtest: controllerchange listener is installed before SKIP_WAITING
+ok 27 - controllerchange listener is installed before SKIP_WAITING
+  ---
+  duration_ms: 0.226006
+  type: 'test'
+  ...
+# Subtest: timeout fails without page reload
+ok 28 - timeout fails without page reload
+  ---
+  duration_ms: 0.108331
+  type: 'test'
+  ...
+# Subtest: banner reloads only after activation promise resolves
+ok 29 - banner reloads only after activation promise resolves
+  ---
+  duration_ms: 0.08761
+  type: 'test'
+  ...
+# Subtest: banner prevents duplicate reload
+ok 30 - banner prevents duplicate reload
+  ---
+  duration_ms: 0.089433
+  type: 'test'
+  ...
+# Subtest: controlled update states are explicit
+ok 31 - controlled update states are explicit
+  ---
+  duration_ms: 0.117464
+  type: 'test'
+  ...
+# Subtest: registration dispatches the actual waiting worker
+ok 32 - registration dispatches the actual waiting worker
+  ---
+  duration_ms: 0.13402
+  type: 'test'
+  ...
+# Subtest: cache model is explicit allowlist
+ok 33 - cache model is explicit allowlist
+  ---
+  duration_ms: 0.087871
+  type: 'test'
+  ...
+# Subtest: protected paths are rejected before allowlist
+ok 34 - protected paths are rejected before allowlist
+  ---
+  duration_ms: 0.285885
+  type: 'test'
+  ...
+# Subtest: authorization requests are not intercepted
+ok 35 - authorization requests are not intercepted
+  ---
+  duration_ms: 0.311022
+  type: 'test'
+  ...
+# Subtest: private and no-store responses are not cached
+ok 36 - private and no-store responses are not cached
+  ---
+  duration_ms: 0.140338
+  type: 'test'
+  ...
+# Subtest: vary authorization and cookie responses are not cached
+ok 37 - vary authorization and cookie responses are not cached
+  ---
+  duration_ms: 0.186177
+  type: 'test'
+  ...
+# Subtest: old ORKIO caches are removed
+ok 38 - old ORKIO caches are removed
+  ---
+  duration_ms: 0.070364
+  type: 'test'
+  ...
+# Subtest: non-GET and cross-origin requests are not intercepted
+ok 39 - non-GET and cross-origin requests are not intercepted
+  ---
+  duration_ms: 0.084866
+  type: 'test'
+  ...
+# Subtest: service worker uses public offline fallback
+ok 40 - service worker uses public offline fallback
+  ---
+  duration_ms: 0.175431
+  type: 'test'
+  ...
+1..40
+# tests 40
+# suites 0
+# pass 40
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 129.379138

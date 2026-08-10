@@ -1,4 +1,3 @@
 User-agent: *
 Allow: /
-
-Sitemap: https://www.patroai.com/sitemap.xml
+Disallow: /app

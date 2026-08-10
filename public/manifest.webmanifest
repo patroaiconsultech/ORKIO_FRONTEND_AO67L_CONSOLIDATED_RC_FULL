@@ -1,92 +1,78 @@
 {
   "id": "/app",
-  "name": "Grupo Patroai",
-  "short_name": "Patroai",
-  "description": "Ambiente privado do Grupo Patroai para inteligência aplicada, agentes personalizados e continuidade executiva.",
+  "name": "ORKIO — Inteligência Orquestrada",
+  "short_name": "ORKIO",
+  "description": "Plataforma premium de inteligência orquestrada, colaboração e governança.",
   "lang": "pt-BR",
   "dir": "ltr",
   "start_url": "/app?source=pwa",
   "scope": "/",
   "display": "standalone",
   "display_override": [
+    "window-controls-overlay",
     "standalone",
     "minimal-ui",
     "browser"
   ],
-  "orientation": "portrait-primary",
-  "theme_color": "#030713",
-  "background_color": "#030713",
+  "theme_color": "#0B0F14",
+  "background_color": "#0B0F14",
   "prefer_related_applications": false,
   "categories": [
     "business",
-    "productivity",
-    "finance"
+    "productivity"
   ],
   "icons": [
     {
-      "src": "/icons/patroai-pwa-192-v18.png",
+      "src": "/icons/orkio-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/patroai-maskable-192-v18.png",
+      "src": "/icons/orkio-maskable-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "/icons/patroai-pwa-512-v18.png",
+      "src": "/icons/orkio-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/patroai-maskable-512-v18.png",
+      "src": "/icons/orkio-maskable-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
-    },
-    {
-      "src": "/apple-touch-icon.png?v=19",
-      "sizes": "180x180",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/favicon-192x192.png?v=19",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
     }
   ],
   "shortcuts": [
     {
-      "name": "Abrir Console Patroai",
-      "short_name": "Console",
-      "description": "Acessar o ambiente privado do Grupo Patroai.",
+      "name": "Abrir Command Center",
+      "short_name": "Command Center",
+      "description": "Acessar a plataforma ORKIO.",
       "url": "/app?source=pwa_shortcut",
       "icons": [
         {
-          "src": "/icons/patroai-pwa-192-v18.png",
+          "src": "/icons/orkio-192.png",
           "sizes": "192x192",
           "type": "image/png"
         }
       ]
     },
     {
-      "name": "Entrar na Patroai",
-      "short_name": "Entrar",
-      "description": "Acessar login institucional da Patroai.",
-      "url": "/auth?source=pwa_shortcut",
+      "name": "Conhecer a ORKIO",
+      "short_name": "Início",
+      "description": "Abrir a apresentação da ORKIO.",
+      "url": "/?source=pwa_shortcut",
       "icons": [
         {
-          "src": "/icons/patroai-pwa-192-v18.png",
+          "src": "/icons/orkio-192.png",
           "sizes": "192x192",
           "type": "image/png"
         }
       ]
     }
-  ],
-  "version": "v20-polish-user-audit"
+  ]
 }

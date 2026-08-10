@@ -1,28 +1,36 @@
 {
-  "name": "patroai-web",
+  "name": "orkio-v2-premium-frontend",
+  "version": "2.0.0-alpha.2.2",
   "private": true,
-  "type": "commonjs",
+  "type": "module",
   "scripts": {
-    "dev": "node node_modules/vite/bin/vite.js --host 0.0.0.0 --port 5173",
-    "build": "node node_modules/vite/bin/vite.js build",
-    "build:verify": "npm run build && grep -R \"AO-17C-AO18A-apply-revert-restore-point\" dist && grep -R \"Aplicar patch na branch\" dist && grep -R \"Reverter patch da branch\" dist && grep -R \"restore_point=true\" dist && if grep -R \"AO-16D-R4-force-fresh-build-admin-dry-run\" dist; then echo \"ERRO: AO-16D-R4 encontrado no dist\"; exit 1; fi && if grep -R \"AO-14 é console visual\" dist; then echo \"ERRO: AO-14 encontrado no dist\"; exit 1; fi && if grep -R \"Dry-run futuro\" dist; then echo \"ERRO: Dry-run futuro encontrado no dist\"; exit 1; fi && if grep -R \"Nenhum botão de execução foi incluído\" dist; then echo \"ERRO: copy antiga encontrada no dist\"; exit 1; fi",
-    "start:prod": "node server.cjs",
-    "start": "npm run start:prod",
-    "test:sec001": "node --test tests/sec001_access_gate_contract.test.mjs",
-    "test:mz001": "node --test tests/evolution_marco_zero_preview_contract.test.mjs"
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "test": "node --test tests/*.test.mjs",
+    "start": "node server.mjs",
+    "test:pwa": "node --test tests/*.test.mjs",
+    "check:server": "node --check server.mjs",
+    "check:sw": "node --check public/sw.js",
+    "check": "npm run check:server && npm run check:sw && npm run test && npm run verify:lock",
+    "verify:lock": "node scripts/verify-lockfile.mjs",
+    "verify:dist": "node scripts/verify-dist.mjs",
+    "build:evidence": "node scripts/build-evidence.mjs"
   },
   "dependencies": {
-    "express": "^4.19.2",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.26.2"
+    "@vitejs/plugin-react": "4.3.4",
+    "vite": "5.4.14",
+    "typescript": "5.7.3",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "6.28.2"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.1",
-    "vite": "^5.4.11"
+    "@types/react": "18.3.18",
+    "@types/react-dom": "18.3.5"
   },
+  "packageManager": "npm@10.8.2",
   "engines": {
-    "node": ">=20 <23",
-    "npm": ">=10 <11"
+    "node": "20.20.2",
+    "npm": "10.8.2"
   }
 }
